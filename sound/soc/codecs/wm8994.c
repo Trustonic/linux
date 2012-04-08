@@ -431,7 +431,7 @@ static void wm8994_set_retune_mobile(struct snd_soc_codec *codec, int block)
 		wm8994->dac_rates[iface]);
 
 	/* The EQ will be disabled while reconfiguring it, remember the
-	 * current configuration. 
+	 * current configuration.
 	 */
 	save = snd_soc_read(codec, base);
 	save &= WM8994_AIF1DAC1_EQ_ENA;
@@ -1004,10 +1004,20 @@ static bool wm8994_check_class_w_digital(struct snd_soc_codec *codec)
 		return false;
 	}
 
-	/* Set the source up */
-	snd_soc_update_bits(codec, WM8994_CLASS_W_1,
-			    WM8994_CP_DYN_SRC_SEL_MASK, source);
-	return true;
+	if (enable) {
+		dev_dbg(codec->dev, "Class W enabled\n");
+		snd_soc_update_bits(codec, WM8994_CLASS_W_1,
+				    WM8994_CP_DYN_PWR |
+				    WM8994_CP_DYN_SRC_SEL_MASK,
+				    source | WM8994_CP_DYN_PWR);
+		wm8994->hubs.class_w = true;
+
+	} else {
+		dev_dbg(codec->dev, "Class W disabled\n");
+		snd_soc_update_bits(codec, WM8994_CLASS_W_1,
+				    WM8994_CP_DYN_PWR, 0);
+		wm8994->hubs.class_w = false;
+	}
 }
 
 static int aif1clk_ev(struct snd_soc_dapm_widget *w,
@@ -1515,7 +1525,7 @@ static const struct snd_kcontrol_new wm8958_aif3adc_mux =
 	SOC_DAPM_ENUM("AIF3ADC Mux", wm8958_aif3adc_enum);
 
 static const char *mono_pcm_out_text[] = {
-	"None", "AIF2ADCL", "AIF2ADCR", 
+	"None", "AIF2ADCL", "AIF2ADCR",
 };
 
 static const struct soc_enum mono_pcm_out_enum =
@@ -2296,7 +2306,7 @@ static int wm8994_set_dai_sysclk(struct snd_soc_dai *dai,
 
 	case WM8994_SYSCLK_OPCLK:
 		/* Special case - a division (times 10) is given and
-		 * no effect on main clocking. 
+		 * no effect on main clocking.
 		 */
 		if (freq) {
 			for (i = 0; i < ARRAY_SIZE(opclk_divs); i++)
@@ -3110,14 +3120,14 @@ static void wm8994_handle_retune_mobile_pdata(struct wm8994_priv *wm8994)
 
 		/* Expand the array... */
 		t = krealloc(wm8994->retune_mobile_texts,
-			     sizeof(char *) * 
+			     sizeof(char *) *
 			     (wm8994->num_retune_mobile_texts + 1),
 			     GFP_KERNEL);
 		if (t == NULL)
 			continue;
 
 		/* ...store the new entry... */
-		t[wm8994->num_retune_mobile_texts] = 
+		t[wm8994->num_retune_mobile_texts] =
 			pdata->retune_mobile_cfgs[i].name;
 
 		/* ...and remember the new version. */
@@ -4041,7 +4051,6 @@ static int wm8994_codec_probe(struct snd_soc_codec *codec)
 					  ARRAY_SIZE(wm8994_dac_widgets));
 		break;
 	}
-		
 
 	wm_hubs_add_analogue_routes(codec, 0, 0);
 	snd_soc_dapm_add_routes(dapm, intercon, ARRAY_SIZE(intercon));
