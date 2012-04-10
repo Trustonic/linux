@@ -1171,11 +1171,13 @@ static irqreturn_t gsc_irq_handler(int irq, void *priv)
 		/* schedule pm_runtime_put_sync */
 		queue_work(gsc->irq_workqueue, &gsc->work_struct);
 	} else if (test_bit(ST_OUTPUT_STREAMON, &gsc->state)) {
-		if (!list_empty(&gsc->out.active_buf_q)) {
+		if (!list_empty(&gsc->out.active_buf_q) &&
+		    !list_is_singular(&gsc->out.active_buf_q)) {
 			struct gsc_input_buf *done_buf;
 			done_buf = active_queue_pop(&gsc->out, gsc);
-			gsc_hw_set_input_buf_masking(gsc, done_buf->idx, true);
-			if (!list_is_last(&done_buf->list, &gsc->out.active_buf_q)) {
+
+			if (done_buf->idx != gsc_hw_get_curr_in_buf_idx(gsc)) {
+				gsc_hw_set_input_buf_masking(gsc, done_buf->idx, true);
 				vb2_buffer_done(&done_buf->vb, VB2_BUF_STATE_DONE);
 				list_del(&done_buf->list);
 			}
