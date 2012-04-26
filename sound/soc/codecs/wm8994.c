@@ -1009,18 +1009,11 @@ static bool wm8994_check_class_w_digital(struct snd_soc_codec *codec)
 		return false;
 	}
 
-	if (enable) {
-		dev_dbg(codec->dev, "Class W enabled\n");
-		snd_soc_update_bits(codec, WM8994_CLASS_W_1,
-				    WM8994_CP_DYN_PWR |
-				    WM8994_CP_DYN_SRC_SEL_MASK,
-				    source | WM8994_CP_DYN_PWR);
+	/* Set the source up */
+	snd_soc_update_bits(codec, WM8994_CLASS_W_1,
+			    WM8994_CP_DYN_SRC_SEL_MASK, source);
 
-	} else {
-		dev_dbg(codec->dev, "Class W disabled\n");
-		snd_soc_update_bits(codec, WM8994_CLASS_W_1,
-				    WM8994_CP_DYN_PWR, 0);
-	}
+	return true;
 }
 
 static int aif1clk_ev(struct snd_soc_dapm_widget *w,
