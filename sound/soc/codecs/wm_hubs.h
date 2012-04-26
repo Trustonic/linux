@@ -33,8 +33,7 @@ struct wm_hubs_data {
 	int no_series_update;
 
 	bool no_cache_dac_hp_direct;
-	struct list_head dcs_cache;
-	bool (*check_class_w_digital)(struct snd_soc_codec *);
+	u16 dac_hp_direct_dcs;
 
 	bool lineout1_se;
 	bool lineout1n_ena;
