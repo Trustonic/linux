@@ -31,14 +31,24 @@
 
 #define BLIT_TIMEOUT	msecs_to_jiffies(2000)
 
-static inline void fimg2d4x_blit_wait(struct fimg2d_control *info, struct fimg2d_bltcmd *cmd)
+static void fimg2d4x_blit_wait(struct fimg2d_control *info,
+		struct fimg2d_bltcmd *cmd)
 {
-	if (!wait_event_timeout(info->wait_q, !atomic_read(&info->busy), BLIT_TIMEOUT)) {
+	int ret;
+
+	ret = wait_event_timeout(info->wait_q, !atomic_read(&info->busy),
+			BLIT_TIMEOUT);
+	if (!ret) {
+		fimg2d4x_disable_irq(info);
+
+		if (!fimg2d4x_blit_done_status(info)) {
+			info->err = true;	/* device error */
+			printk(KERN_ERR "[%s] blit not finished\n", __func__);
+		} else {
+			atomic_set(&info->busy, 0);
+		}
 		printk(KERN_ERR "[%s] blit wait timeout\n", __func__);
 		fimg2d_dump_command(cmd);
-
-		if (!fimg2d4x_blit_done_status(info))
-			info->err = true; /* device error */
 	}
 }
 
@@ -62,18 +72,23 @@ void fimg2d4x_bitblt(struct fimg2d_control *info)
 #endif
 	fimg2d_clk_on(info);
 
-	while ((cmd = fimg2d_get_first_command(info))) {
+	while ((cmd = fimg2d_get_command(info))) {
 		ctx = cmd->ctx;
-		if (info->err) {
-			printk(KERN_ERR "[%s] device error\n", __func__);
-			goto blitend;
-		}
 
 		atomic_set(&info->busy, 1);
 
+		if (info->err) {
+			if (fimg2d4x_blit_done_status(info))
+				info->err = false;	/* device revived */
+			else
+				goto blitend;
+		}
+
 		ret = info->configure(info, cmd);
-		if (ret)
+		if (ret) {
+			atomic_set(&info->busy, 0);
 			goto blitend;
+		}
 
 		if (cmd->image[IDST].addr.type != ADDR_PHYS) {
 			pgd = (unsigned long *)ctx->mm->pgd;
@@ -106,8 +121,6 @@ blitend:
 		if (!atomic_read(&ctx->ncmd))
 			wake_up(&ctx->wait_q);
 	}
-
-	atomic_set(&info->active, 0);
 
 	fimg2d_clk_off(info);
 #ifdef CONFIG_PM_RUNTIME

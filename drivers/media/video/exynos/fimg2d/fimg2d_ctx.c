@@ -514,6 +514,19 @@ err_user:
 	return ret;
 }
 
+struct fimg2d_bltcmd *fimg2d_get_command(struct fimg2d_control *info)
+{
+	struct fimg2d_bltcmd *cmd;
+
+	cmd = fimg2d_get_first_command(info);
+	if (!cmd) {
+		spin_lock(&info->bltlock);
+		atomic_set(&info->active, 0);
+		spin_unlock(&info->bltlock);
+	}
+	return cmd;
+}
+
 void fimg2d_del_command(struct fimg2d_control *info, struct fimg2d_bltcmd *cmd)
 {
 	struct fimg2d_context *ctx = cmd->ctx;

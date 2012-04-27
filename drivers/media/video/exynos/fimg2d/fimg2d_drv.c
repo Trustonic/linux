@@ -38,7 +38,9 @@
 #include "fimg2d_ctx.h"
 #include "fimg2d_helper.h"
 
-#define CTX_TIMEOUT	msecs_to_jiffies(5000)
+#define POLL_TIMEOUT	2
+#define POLL_RETRY	2500
+#define CTX_TIMEOUT	msecs_to_jiffies(POLL_RETRY*POLL_TIMEOUT)
 
 static struct fimg2d_control *info;
 
@@ -101,22 +103,23 @@ next:
 
 static void fimg2d_context_wait(struct fimg2d_context *ctx)
 {
-	while (atomic_read(&ctx->ncmd)) {
-		if (!wait_event_timeout(ctx->wait_q, !atomic_read(&ctx->ncmd), CTX_TIMEOUT)) {
-			fimg2d_debug("[%s] ctx %p blit wait timeout\n", __func__, ctx);
-			if (info->err)
-				break;
-		}
-	}
+	int ret;
+
+	ret = wait_event_timeout(ctx->wait_q, !atomic_read(&ctx->ncmd),
+			CTX_TIMEOUT);
+	if (!ret)
+		fimg2d_debug("[%s] ctx %p wait timeout\n", __func__, ctx);
 }
 
 static void fimg2d_request_bitblt(struct fimg2d_context *ctx)
 {
+	spin_lock(&info->bltlock);
 	if (!atomic_read(&info->active)) {
 		atomic_set(&info->active, 1);
 		fimg2d_debug("dispatch ctx %p to kernel thread\n", ctx);
 		queue_work(info->work_q, &fimg2d_work);
 	}
+	spin_unlock(&info->bltlock);
 	fimg2d_context_wait(ctx);
 }
 
@@ -143,16 +146,16 @@ static int fimg2d_open(struct inode *inode, struct file *file)
 static int fimg2d_release(struct inode *inode, struct file *file)
 {
 	struct fimg2d_context *ctx = file->private_data;
+	int retry = POLL_RETRY;
 
 	fimg2d_debug("ctx %p\n", ctx);
-	while (1) {
+
+	while (retry--) {
 		if (!atomic_read(&ctx->ncmd))
 			break;
-
-		mdelay(2);
+		mdelay(POLL_TIMEOUT);
 	}
 	fimg2d_del_context(info, ctx);
-
 	kfree(ctx);
 	return 0;
 }
@@ -183,12 +186,6 @@ static long fimg2d_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	switch (cmd) {
 	case FIMG2D_BITBLT_BLIT:
-		if (info->err) {
-			printk(KERN_ERR "[%s] device error, do sw fallback\n",
-					__func__);
-			return -EFAULT;
-		}
-
 		if (copy_from_user(&blit, (void *)arg, sizeof(blit)))
 			return -EFAULT;
 
@@ -203,7 +200,7 @@ static long fimg2d_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	case FIMG2D_BITBLT_SYNC:
 		fimg2d_debug("FIMG2D_BITBLT_SYNC ctx: %p\n", ctx);
-		/* FIXME: */
+		fimg2d_context_wait(ctx);
 		break;
 
 	case FIMG2D_BITBLT_VERSION:
@@ -408,13 +405,14 @@ static int fimg2d_remove(struct platform_device *pdev)
 
 static int fimg2d_suspend(struct device *dev)
 {
+	int retry = POLL_RETRY;
+
 	fimg2d_debug("suspend... start\n");
 	atomic_set(&info->suspended, 1);
-	while (1) {
+	while (retry--) {
 		if (fimg2d_queue_is_empty(&info->cmd_q))
 			break;
-
-		mdelay(2);
+		mdelay(POLL_TIMEOUT);
 	}
 	fimg2d_debug("suspend... done\n");
 	return 0;
