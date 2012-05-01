@@ -131,6 +131,7 @@ struct dw_mci {
 	struct clk		*hclk;
 	struct clk		*cclk;
 	bool			prv_err;
+	struct workqueue_struct	*card_workqueue;
 
 	/* DMA interface members*/
 	int			use_dma;
