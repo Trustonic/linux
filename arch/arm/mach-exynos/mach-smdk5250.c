@@ -748,11 +748,26 @@ static struct i2c_board_info i2c_devs2[] __initdata = {
 	},
 };
 
+static struct i2c_board_info i2c_devs3[] __initdata = {
+	{
+		I2C_BOARD_INFO("pixcir_ts", 0x5C),
+		.irq		= IRQ_EINT(21),
+	},
+};
+
 static struct i2c_board_info i2c_devs7[] __initdata = {
 	{
 		I2C_BOARD_INFO("egalax_i2c", 0x04),
 		.irq		= IRQ_EINT(25),
 	},
+};
+
+struct s3c2410_platform_i2c i2c_data3 __initdata = {
+	.bus_num	= 3,
+	.flags		= 0,
+	.slave_addr	= 0x10,
+	.frequency	= 200*1000,
+	.sda_delay	= 100,
 };
 
 /* ADC */
@@ -1493,6 +1508,7 @@ static struct platform_device *smdk5250_devices[] __initdata = {
 	&s3c_device_i2c0,
 	&s3c_device_i2c1,
 	&s3c_device_i2c2,
+	&s3c_device_i2c3,
 	&s3c_device_i2c4,
 	&s3c_device_i2c5,
 	&s3c_device_i2c7,
@@ -1890,6 +1906,9 @@ static void __init smdk5250_machine_init(void)
 
 	s3c_i2c2_set_platdata(NULL);
 	i2c_register_board_info(2, i2c_devs2, ARRAY_SIZE(i2c_devs2));
+
+	s3c_i2c3_set_platdata(&i2c_data3);
+	i2c_register_board_info(3, i2c_devs3, ARRAY_SIZE(i2c_devs3));
 
 	s3c_i2c4_set_platdata(NULL);
 	s3c_i2c5_set_platdata(NULL);
