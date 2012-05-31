@@ -2759,6 +2759,7 @@ static __init int samsung_gpiolib_init(void)
 	int i, nr_chips;
 #if defined(CONFIG_CPU_EXYNOS4210) || defined(CONFIG_SOC_EXYNOS5250)
 	void __iomem *gpio_base1, *gpio_base2, *gpio_base3, *gpio_base4;
+	void __iomem *gpx_base;
 #endif
 	int group = 0;
 
@@ -2863,7 +2864,14 @@ static __init int samsung_gpiolib_init(void)
 		chip = exynos4_gpios_2;
 		nr_chips = ARRAY_SIZE(exynos4_gpios_2);
 
+		gpx_base = gpio_base2 + 0xC00;
 		for (i = 0; i < nr_chips; i++, chip++) {
+			/* need to set base address for gpx */
+			if (chip->chip.base >= EXYNOS4_GPX0(0) &&
+				chip->chip.base <= EXYNOS4_GPX3(0)) {
+				chip->base = gpx_base;
+				gpx_base += 0x20;
+			}
 			if (!chip->config) {
 				chip->config = &exynos_gpio_cfg;
 				chip->group = group++;
@@ -2910,16 +2918,21 @@ static __init int samsung_gpiolib_init(void)
 			goto err_ioremap1;
 		}
 
-		exynos5_gpios_1[20].base = gpio_base1 + 0x2E0;	/* GPC4 */
-		exynos5_gpios_1[21].base = gpio_base1 + 0xC00;	/* GPX0 */
-		exynos5_gpios_1[22].base = gpio_base1 + 0xC20;	/* GPX1 */
-		exynos5_gpios_1[23].base = gpio_base1 + 0xC40;	/* GPX2 */
-		exynos5_gpios_1[24].base = gpio_base1 + 0xC60;	/* GPX3 */
-
 		chip = exynos5_gpios_1;
 		nr_chips = ARRAY_SIZE(exynos5_gpios_1);
 
+		gpx_base = gpio_base1 + 0xC00;
 		for (i = 0; i < nr_chips; i++, chip++) {
+			/* need to set base address for gpc */
+			if (chip->chip.base == EXYNOS5_GPC4(0))
+				chip->base = gpio_base1 + 0x2E0;
+
+			/* need to set base address for gpx */
+			if (chip->chip.base >= EXYNOS5_GPX0(0) &&
+				chip->chip.base <= EXYNOS5_GPX3(0)) {
+				chip->base = gpx_base;
+				gpx_base += 0x20;
+			}
 			if (!chip->config) {
 				chip->config = &exynos_gpio_cfg;
 				chip->group = group++;
@@ -2958,14 +2971,18 @@ static __init int samsung_gpiolib_init(void)
 			goto err_ioremap3;
 		}
 
-		exynos5_gpios_3[2].base = gpio_base3 + 0x60;	/* GPV2 */
-		exynos5_gpios_3[3].base = gpio_base3 + 0x80;	/* GPV3 */
-		exynos5_gpios_3[4].base = gpio_base3 + 0xC0;	/* GPV4 */
-
 		chip = exynos5_gpios_3;
 		nr_chips = ARRAY_SIZE(exynos5_gpios_3);
 
 		for (i = 0; i < nr_chips; i++, chip++) {
+			/* need to set base address for gpv */
+			if (chip->chip.base == EXYNOS5_GPV2(0))
+				chip->base = gpio_base3 + 0x60;
+			if (chip->chip.base == EXYNOS5_GPV3(0))
+				chip->base = gpio_base3 + 0x80;
+			if (chip->chip.base == EXYNOS5_GPV4(0))
+				chip->base = gpio_base3 + 0xC0;
+
 			if (!chip->config) {
 				chip->config = &exynos_gpio_cfg;
 				chip->group = group++;
