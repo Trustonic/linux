@@ -1,0 +1,486 @@
+/*
+ * Copyright (C) 2012 Samsung Electronics Co., Ltd.
+ *
+ * Exynos5 series HS-I2C driver
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+*/
+
+#include <linux/kernel.h>
+#include <linux/module.h>
+
+#include <linux/i2c.h>
+#include <linux/init.h>
+#include <linux/time.h>
+#include <linux/interrupt.h>
+#include <linux/delay.h>
+#include <linux/errno.h>
+#include <linux/err.h>
+#include <linux/platform_device.h>
+#include <linux/clk.h>
+#include <linux/slab.h>
+#include <linux/io.h>
+
+#include <asm/irq.h>
+
+#include <mach/hs-iic.h>
+
+#include "i2c-exynos5.h"
+
+#define EXYNOS5_I2C_TIMEOUT (msecs_to_jiffies(1000))
+
+struct exynos5_i2c {
+	unsigned int		suspended:1;
+
+	struct i2c_msg		*msg;
+	struct completion	msg_complete;
+	unsigned int		msg_byte_ptr;
+
+	unsigned int		irq;
+
+	void __iomem		*regs;
+	struct clk		*clk;
+	struct device		*dev;
+	struct resource		*ioarea;
+	struct i2c_adapter	adap;
+};
+
+static inline void dump_i2c_register(struct exynos5_i2c *i2c)
+{
+	dev_dbg(i2c->dev,
+		"Register dump(%d) : \n %x\n %x\n %x\n %x\n"
+		" %x\n %x\n %x\n %x\n %x\n"
+		" %x\n %x\n %x\n %x\n %x\n"
+		" %x\n %x\n %x\n %x\n %x\n"
+		" %x\n %x\n %x\n %x\n %x\n"
+		, i2c->suspended
+		, readl(i2c->regs + HSI2C_CTL)
+		, readl(i2c->regs + HSI2C_FIFO_CTL)
+		, readl(i2c->regs + HSI2C_TRAILIG_CTL)
+		, readl(i2c->regs + HSI2C_CLK_CTL)
+		, readl(i2c->regs + HSI2C_CLK_SLOT)
+		, readl(i2c->regs + HSI2C_INT_ENABLE)
+		, readl(i2c->regs + HSI2C_INT_STATUS)
+		, readl(i2c->regs + HSI2C_ERR_STATUS)
+		, readl(i2c->regs + HSI2C_FIFO_STATUS)
+		, readl(i2c->regs + HSI2C_TX_DATA)
+		, readl(i2c->regs + HSI2C_RX_DATA)
+		, readl(i2c->regs + HSI2C_CONF)
+		, readl(i2c->regs + HSI2C_AUTO_CONFING)
+		, readl(i2c->regs + HSI2C_TIMEOUT)
+		, readl(i2c->regs + HSI2C_MANUAL_CMD)
+		, readl(i2c->regs + HSI2C_TRANS_STATUS)
+		, readl(i2c->regs + HSI2C_TIMING_HS1)
+		, readl(i2c->regs + HSI2C_TIMING_HS2)
+		, readl(i2c->regs + HSI2C_TIMING_HS3)
+		, readl(i2c->regs + HSI2C_TIMING_FS1)
+		, readl(i2c->regs + HSI2C_TIMING_FS2)
+		, readl(i2c->regs + HSI2C_TIMING_FS3)
+		, readl(i2c->regs + HSI2C_TIMING_SLA)
+		, readl(i2c->regs + HSI2C_ADDR));
+}
+
+static inline void exynos5_i2c_stop(struct exynos5_i2c *i2c)
+{
+	writel(0, i2c->regs + HSI2C_INT_ENABLE);
+
+	complete(&i2c->msg_complete);
+}
+
+static irqreturn_t exynos5_i2c_irq(int irqno, void *dev_id)
+{
+	struct exynos5_i2c *i2c = dev_id;
+	unsigned long tmp;
+	unsigned char byte;
+
+	if (i2c->msg->flags & I2C_M_RD) {
+		while ((readl(i2c->regs + HSI2C_FIFO_STATUS) &
+			0x1000000) == 0) {
+			byte = (unsigned char)readl(i2c->regs + HSI2C_RX_DATA);
+			i2c->msg->buf[i2c->msg_byte_ptr++] = byte;
+		}
+
+		if (i2c->msg_byte_ptr >= i2c->msg->len)
+			exynos5_i2c_stop(i2c);
+	} else {
+		byte = i2c->msg->buf[i2c->msg_byte_ptr++];
+		writel(byte, i2c->regs + HSI2C_TX_DATA);
+
+		if (i2c->msg_byte_ptr >= i2c->msg->len)
+			exynos5_i2c_stop(i2c);
+	}
+
+	tmp = readl(i2c->regs + HSI2C_INT_STATUS);
+	writel(tmp, i2c->regs +  HSI2C_INT_STATUS);
+
+	return IRQ_HANDLED;
+}
+
+static int exynos5_i2c_xfer_msg(struct exynos5_i2c *i2c,
+			      struct i2c_msg *msgs, int num)
+{
+	unsigned long timeout;
+	unsigned long trans_status;
+	unsigned long usi_fifo_stat;
+	unsigned long usi_ctl;
+	unsigned long i2c_auto_conf;
+	unsigned long i2c_timeout;
+	unsigned long i2c_addr;
+	unsigned long usi_int_en;
+	unsigned long usi_fifo_ctl;
+	int ret = 0;
+
+	i2c->msg = msgs;
+	i2c->msg_byte_ptr = 0;
+
+	init_completion(&i2c->msg_complete);
+
+	usi_ctl = readl(i2c->regs + HSI2C_CTL);
+	i2c_auto_conf = readl(i2c->regs + HSI2C_AUTO_CONFING);
+	i2c_timeout = readl(i2c->regs + HSI2C_TIMEOUT);
+	i2c_timeout &= ~HSI2C_TIMEOUT_EN;
+	writel(i2c_timeout, i2c->regs + HSI2C_TIMEOUT);
+
+	usi_fifo_ctl = HSI2C_RXFIFO_EN | HSI2C_TXFIFO_EN |
+		HSI2C_TXFIFO_TRIGGER_LEVEL | HSI2C_RXFIFO_TRIGGER_LEVEL;
+	writel(usi_fifo_ctl, i2c->regs + HSI2C_FIFO_CTL);
+
+	usi_int_en = 0;
+	if (msgs->flags & I2C_M_RD) {
+		usi_ctl &= ~HSI2C_TXCHON;
+		usi_ctl |= HSI2C_RXCHON;
+
+		i2c_auto_conf |= HSI2C_READ_WRITE;
+
+		usi_int_en |= (HSI2C_INT_RX_ALMOSTFULL_EN |
+			HSI2C_INT_TRAILING_EN);
+	} else {
+		usi_ctl &= ~HSI2C_RXCHON;
+		usi_ctl |= HSI2C_TXCHON;
+
+		i2c_auto_conf &= ~HSI2C_READ_WRITE;
+
+		usi_int_en |= HSI2C_INT_TX_ALMOSTEMPTY_EN;
+	}
+
+	i2c_addr = readl(i2c->regs + HSI2C_ADDR);
+	i2c_addr &= ~(0x3ff << 10);
+	i2c_addr &= ~(0x3ff << 0);
+	i2c_addr &= ~(0xff << 24);
+	i2c_addr |= ((msgs->addr & 0x7f) << 10);
+	writel(i2c_addr, i2c->regs + HSI2C_ADDR);
+
+	writel(usi_ctl, i2c->regs + HSI2C_CTL);
+
+	i2c_auto_conf &= ~(0xffff);
+	i2c_auto_conf |= i2c->msg->len;
+	i2c_auto_conf |= HSI2C_STOP_AFTER_TRANS;
+	writel(i2c_auto_conf, i2c->regs + HSI2C_AUTO_CONFING);
+
+	i2c_auto_conf = readl(i2c->regs + HSI2C_AUTO_CONFING);
+	i2c_auto_conf |= HSI2C_MASTER_RUN;
+	writel(i2c_auto_conf, i2c->regs + HSI2C_AUTO_CONFING);
+	writel(usi_int_en, i2c->regs + HSI2C_INT_ENABLE);
+
+	timeout = wait_for_completion_timeout(&i2c->msg_complete,
+		EXYNOS5_I2C_TIMEOUT);
+
+	if (timeout == 0) {
+		dev_dbg(i2c->dev, "timeout\n");
+		return -EAGAIN;
+	}
+
+	do {
+		usi_fifo_stat = readl(i2c->regs + HSI2C_FIFO_STATUS);
+		trans_status = readl(i2c->regs + HSI2C_TRANS_STATUS);
+	} while (!((usi_fifo_stat == HSI2C_FIFO_EMPTY) && (trans_status == 0)));
+
+	return ret;
+}
+
+static int exynos5_i2c_xfer(struct i2c_adapter *adap,
+			struct i2c_msg *msgs, int num)
+{
+	struct exynos5_i2c *i2c = (struct exynos5_i2c *)adap->algo_data;
+	int retry, i;
+	int ret;
+	struct i2c_msg *msgs_ptr = msgs;
+
+	if (i2c->suspended) {
+		dev_err(i2c->dev, "HS-I2C is not initialzed.\n");
+		return -EIO;
+	}
+
+	clk_enable(i2c->clk);
+
+	for (retry = 0; retry < adap->retries; retry++) {
+		for (i = 0; i < num; i++) {
+			ret = exynos5_i2c_xfer_msg(i2c, msgs_ptr, 1);
+			msgs_ptr++;
+
+			if (ret == -EAGAIN)
+				break;
+		}
+		if (i == num)
+			return num;
+
+		dev_dbg(i2c->dev, "retrying transfer (%d)\n", retry);
+
+		udelay(100);
+	}
+
+	clk_disable(i2c->clk);
+
+	return -EREMOTEIO;
+}
+
+static u32 exynos5_i2c_func(struct i2c_adapter *adap)
+{
+	return I2C_FUNC_I2C;
+}
+
+static const struct i2c_algorithm exynos5_i2c_algorithm = {
+	.master_xfer		= exynos5_i2c_xfer,
+	.functionality		= exynos5_i2c_func,
+};
+
+static int exynos5_i2c_init(struct exynos5_i2c *i2c)
+{
+	unsigned long usi_ctl = HSI2C_FUNC_MODE_I2C | HSI2C_MASTER;
+	unsigned long usi_trailing_ctl = HSI2C_TRAILING_COUNT;
+	unsigned long i2c_timing_fs1 = HSI2C_TIMING_FS1_VAL;
+	unsigned long i2c_timing_fs2 = HSI2C_TIMING_FS2_VAL;
+	unsigned long i2c_timing_fs3 = HSI2C_TIMING_FS3_VAL;
+	unsigned long i2c_timing_sla = HSI2C_TIMING_SLA_VAL;
+	unsigned long i2c_conf = readl(i2c->regs + HSI2C_CONF);
+	struct exynos5_platform_i2c *pdata;
+
+	pdata = i2c->dev->platform_data;
+
+	if (pdata->cfg_gpio)
+		pdata->cfg_gpio(to_platform_device(i2c->dev));
+
+	writel(usi_ctl, i2c->regs + HSI2C_CTL);
+	writel(usi_trailing_ctl, i2c->regs + HSI2C_TRAILIG_CTL);
+	writel(i2c_timing_fs1, i2c->regs + HSI2C_TIMING_FS1);
+	writel(i2c_timing_fs2, i2c->regs + HSI2C_TIMING_FS2);
+	writel(i2c_timing_fs3, i2c->regs + HSI2C_TIMING_FS3);
+	writel(i2c_timing_sla, i2c->regs + HSI2C_TIMING_SLA);
+	if (pdata->speed_mode == HSI2C_HIGH_SPD) {
+		i2c_conf |= (1 << 29);
+		writel(i2c_conf, i2c->regs + HSI2C_CONF);
+	}
+
+	return 0;
+}
+
+static int exynos5_i2c_probe(struct platform_device *pdev)
+{
+	struct exynos5_i2c *i2c;
+	struct exynos5_platform_i2c *pdata;
+	struct resource *res;
+	int ret;
+
+	pdata = pdev->dev.platform_data;
+	if (!pdata) {
+		dev_err(&pdev->dev, "no platform data\n");
+		return -EINVAL;
+	}
+
+	i2c = kzalloc(sizeof(struct exynos5_i2c), GFP_KERNEL);
+	if (!i2c) {
+		dev_err(&pdev->dev, "no memory for state\n");
+		return -ENOMEM;
+	}
+
+	strlcpy(i2c->adap.name, "exynos5250-i2c", sizeof(i2c->adap.name));
+	i2c->adap.owner   = THIS_MODULE;
+	i2c->adap.algo    = &exynos5_i2c_algorithm;
+	i2c->adap.retries = 2;
+	i2c->adap.class   = I2C_CLASS_HWMON | I2C_CLASS_SPD;
+
+	i2c->dev = &pdev->dev;
+	i2c->clk = clk_get(&pdev->dev, "i2c");
+	if (IS_ERR(i2c->clk)) {
+		dev_err(&pdev->dev, "cannot get clock\n");
+		ret = -ENOENT;
+		goto err_noclk;
+	}
+
+	clk_enable(i2c->clk);
+
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (res == NULL) {
+		dev_err(&pdev->dev, "cannot find HS-I2C IO resource\n");
+		ret = -ENOENT;
+		goto err_clk;
+	}
+
+	i2c->ioarea = request_mem_region(res->start, resource_size(res),
+					 pdev->name);
+
+	if (i2c->ioarea == NULL) {
+		dev_err(&pdev->dev, "cannot request HS-I2C IO\n");
+		ret = -ENXIO;
+		goto err_clk;
+	}
+
+	i2c->regs = ioremap(res->start, resource_size(res));
+
+	if (i2c->regs == NULL) {
+		dev_err(&pdev->dev, "cannot map HS-I2C IO\n");
+		ret = -ENXIO;
+		goto err_ioarea;
+	}
+
+	dev_dbg(&pdev->dev, "registers %p (%p, %p)\n",
+		i2c->regs, i2c->ioarea, res);
+
+	i2c->adap.algo_data = i2c;
+	i2c->adap.dev.parent = &pdev->dev;
+
+	ret = exynos5_i2c_init(i2c);
+	if (ret != 0)
+		goto err_iomap;
+
+	i2c->irq = ret = platform_get_irq(pdev, 0);
+	if (ret <= 0) {
+		dev_err(&pdev->dev, "cannot find HS-I2C IRQ\n");
+		goto err_iomap;
+	}
+
+	ret = request_irq(i2c->irq, exynos5_i2c_irq, IRQF_DISABLED,
+			  dev_name(&pdev->dev), i2c);
+
+	if (ret != 0) {
+		dev_err(&pdev->dev, "cannot request HS-I2C IRQ %d\n", i2c->irq);
+		goto err_iomap;
+	}
+
+	i2c->adap.nr = pdata->bus_number;
+
+	ret = i2c_add_numbered_adapter(&i2c->adap);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "failed to add bus to i2c core\n");
+		goto err_irq;
+	}
+
+	platform_set_drvdata(pdev, i2c);
+
+	dev_info(&pdev->dev, "%s: Exynos5 HS-I2C adapter\n",
+		dev_name(&i2c->adap.dev));
+	clk_disable(i2c->clk);
+	return 0;
+
+ err_irq:
+	free_irq(i2c->irq, i2c);
+
+ err_iomap:
+	iounmap(i2c->regs);
+
+ err_ioarea:
+	release_resource(i2c->ioarea);
+	kfree(i2c->ioarea);
+
+ err_clk:
+	clk_disable(i2c->clk);
+	clk_put(i2c->clk);
+
+ err_noclk:
+	kfree(i2c);
+	return ret;
+}
+
+static int exynos5_i2c_remove(struct platform_device *pdev)
+{
+	struct exynos5_i2c *i2c = platform_get_drvdata(pdev);
+
+	i2c_del_adapter(&i2c->adap);
+	free_irq(i2c->irq, i2c);
+
+	clk_disable(i2c->clk);
+	clk_put(i2c->clk);
+
+	iounmap(i2c->regs);
+
+	release_resource(i2c->ioarea);
+	kfree(i2c->ioarea);
+	kfree(i2c);
+
+	return 0;
+}
+
+#ifdef CONFIG_PM
+static int exynos5_i2c_suspend_noirq(struct device *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct exynos5_i2c *i2c = platform_get_drvdata(pdev);
+
+	i2c_lock_adapter(&i2c->adap);
+	i2c->suspended = 1;
+	i2c_unlock_adapter(&i2c->adap);
+
+	return 0;
+}
+
+static int exynos5_i2c_resume(struct device *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct exynos5_i2c *i2c = platform_get_drvdata(pdev);
+
+	i2c_lock_adapter(&i2c->adap);
+	clk_enable(i2c->clk);
+	exynos5_i2c_init(i2c);
+	clk_disable(i2c->clk);
+	i2c->suspended = 0;
+	i2c_unlock_adapter(&i2c->adap);
+
+	return 0;
+}
+
+static const struct dev_pm_ops exynos5_i2c_dev_pm_ops = {
+	.suspend_noirq = exynos5_i2c_suspend_noirq,
+	.resume = exynos5_i2c_resume,
+};
+
+#define EXYNOS5_DEV_PM_OPS (&exynos5_i2c_dev_pm_ops)
+#else
+#define EXYNOS5_DEV_PM_OPS NULL
+#endif
+
+static struct platform_device_id exynos5_driver_ids[] = {
+	{
+		.name		= "exynos5-hs-i2c",
+		.driver_data	= 0,
+	}, { },
+};
+MODULE_DEVICE_TABLE(platform, exynos5_driver_ids);
+
+static struct platform_driver exynos5_i2c_driver = {
+	.probe		= exynos5_i2c_probe,
+	.remove		= exynos5_i2c_remove,
+	.id_table	= exynos5_driver_ids,
+	.driver		= {
+		.owner	= THIS_MODULE,
+		.name	= "exynos5-i2c",
+		.pm	= EXYNOS5_DEV_PM_OPS,
+	},
+};
+
+static int __init i2c_adap_exynos5_init(void)
+{
+	return platform_driver_register(&exynos5_i2c_driver);
+}
+subsys_initcall(i2c_adap_exynos5_init);
+
+static void __exit i2c_adap_exynos5_exit(void)
+{
+	platform_driver_unregister(&exynos5_i2c_driver);
+}
+module_exit(i2c_adap_exynos5_exit);
+
+MODULE_DESCRIPTION("Exynos5 HS-I2C Bus driver");
+MODULE_AUTHOR("Taekgyun Ko, <taeggyun.ko@samsung.com>");
+MODULE_LICENSE("GPL");
