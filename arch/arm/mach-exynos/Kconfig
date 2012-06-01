@@ -30,6 +30,7 @@ config ARCH_EXYNOS5
 	select ARCH_NEEDS_CPU_IDLE_COUPLED
 	select ARM_ERRATA_773022
 	select ARM_ERRATA_774769
+	select HAVE_EXYNOS5_HSI2C if I2C
 	help
 	  Samsung EXYNOS5 (Cortex-A15) SoC based systems
 
@@ -172,6 +173,26 @@ config EXYNOS_DEV_USB_SWITCH
 	help
 	  Compile in platform device definitions for USB-SWITCH
 
+config EXYNOS5_DEV_HSI2C0
+	bool
+	help
+	  Compile in platform device definitions for HS-I2C channel 0
+
+config EXYNOS5_DEV_HSI2C1
+	bool
+	help
+	  Compile in platform device definitions for HS-I2C channel 1
+
+config EXYNOS5_DEV_HSI2C2
+	bool
+	help
+	  Compile in platform device definitions for HS-I2C channel 2
+
+config EXYNOS5_DEV_HSI2C3
+	bool
+	help
+	  Compile in platform device definitions for HS-I2C channel 3
+
 config EXYNOS4_SETUP_I2C1
 	bool
 	help
@@ -206,6 +227,26 @@ config EXYNOS4_SETUP_I2C7
 	bool
 	help
 	  Common setup code for i2c bus 7.
+
+config EXYNOS5_SETUP_HSI2C0
+	bool
+	help
+	  Common setup code for hs-i2c bus 0.
+
+config EXYNOS5_SETUP_HSI2C1
+	bool
+	help
+	  Common setup code for hs-i2c bus 1.
+
+config EXYNOS5_SETUP_HSI2C2
+	bool
+	help
+	  Common setup code for hs-i2c bus 2.
+
+config EXYNOS5_SETUP_HSI2C3
+	bool
+	help
+	  Common setup code for hs-i2c bus 3.
 
 config EXYNOS4_SETUP_KEYPAD
 	bool
@@ -542,6 +583,14 @@ config MACH_SMDK5250
 	select S3C64XX_DEV_SPI2
 	select EXYNOS_SETUP_SPI
 	select EXYNOS5_DEV_BTS
+	select EXYNOS5_DEV_HSI2C0
+	select EXYNOS5_DEV_HSI2C1
+	select EXYNOS5_DEV_HSI2C2
+	select EXYNOS5_DEV_HSI2C3
+	select EXYNOS5_SETUP_HSI2C0
+	select EXYNOS5_SETUP_HSI2C1
+	select EXYNOS5_SETUP_HSI2C2
+	select EXYNOS5_SETUP_HSI2C3
 	help
 	  Machine support for Samsung SMDK5250
 
