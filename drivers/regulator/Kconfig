@@ -240,6 +240,15 @@ config REGULATOR_S5M8767
 	 via I2C bus. S5M8767A have 9 Bucks and 28 LDOs output and
 	 supports DVS mode with 8bits of output voltage control.
 
+config REGULATOR_S2MPS11
+	tristate "Samsung S2MPS11 voltage regulator"
+	depends on MFD_S2MPS11_CORE
+	help
+	 This driver controls a Samsung S2MPS11 voltage output regulator
+	 via I2C bus. S2MPS11 have 10 Bucks and 38 LDOs output.
+	 S2MPS11 provide stable power to the ARM core/cache, internal logic,
+	 memory, camera processor, and sub-regulators
+
 config REGULATOR_AB3100
 	tristate "ST-Ericsson AB3100 Regulator functions"
 	depends on AB3100_CORE
