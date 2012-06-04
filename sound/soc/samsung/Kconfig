@@ -70,7 +70,8 @@ config SND_SOC_SAMSUNG_SMDK_WM8580
 
 config SND_SOC_SAMSUNG_SMDK_WM8994
 	tristate "SoC I2S Audio support for WM8994 on SMDK"
-	depends on SND_SOC_SAMSUNG && (MACH_SMDKV310 || MACH_SMDKC210 || MACH_SMDK4212 || MACH_SMDK5250)
+	depends on SND_SOC_SAMSUNG && (MACH_SMDKV310 || MACH_SMDKC210 || \
+MACH_SMDK4212 || MACH_SMDK5250)
 	depends on I2C=y && GENERIC_HARDIRQS
 	select MFD_WM8994
 	select SND_SOC_WM8994
@@ -100,8 +101,35 @@ config SND_SAMSUNG_ALP
 	help
 	  Say Y if you want to support ALP audio.
 
+config SND_SAMSUNG_RUNTIME_PM
+	tristate "Runtime PM support for Audio subsystem"
+	depends on SND_SAMSUNG_I2S && MACH_SMDK5250
+	help
+	  Say Y if you want to support Runtime PM for Audio subsystem.
+
+choice
+	prompt "Samsung I2S Audio type"
+	depends on SND_SAMSUNG_I2S && (ARCH_EXYNOS4 || ARCH_S5PV210 || ARCH_EXYNOS5)
+	default SND_SAMSUNG_NORMAL
+
+config SND_SAMSUNG_NORMAL
+	bool "Normal Audio support"
+	help
+	  Say Y if you want to support normal audio.
+
+config SND_SAMSUNG_LP
+	bool "LP Audio support"
+	help
+	  Say Y if you want to support LP audio.
+
 # For support ALP audio
 source "sound/soc/samsung/srp_alp/Kconfig"
+
+endchoice
+
+config SND_SAMSUNG_I2S_MASTER
+	bool "I2S Master Mode"
+	depends on SND_SAMSUNG_I2S
 
 config SND_SOC_SAMSUNG_MANTA_SPDIF
 	tristate "SoC S/PDIF Audio support for MANTA"
@@ -201,7 +229,8 @@ config SND_SOC_GONI_AQUILA_WM8994
 
 config SND_SOC_SAMSUNG_SMDK_SPDIF
 	tristate "SoC S/PDIF Audio support for SMDK"
-	depends on SND_SOC_SAMSUNG && (MACH_SMDKC100 || MACH_SMDKC110 || MACH_SMDKV210 || MACH_SMDKV310 || MACH_SMDK4212 || MACH_SMDK5250)
+	depends on SND_SOC_SAMSUNG && (MACH_SMDKC100 || MACH_SMDKC110 || \
+MACH_SMDKV210 || MACH_SMDKV310 || MACH_SMDK4212 || MACH_SMDK5250)
 	select SND_SAMSUNG_SPDIF
 	help
 	  Say Y if you want to add support for SoC S/PDIF audio on the SMDK.
@@ -216,7 +245,8 @@ config SND_SOC_SMDK_WM8580_PCM
 
 config SND_SOC_SMDK_WM8994_PCM
 	tristate "SoC PCM Audio support for WM8994 on SMDK"
-	depends on SND_SOC_SAMSUNG && (MACH_SMDKC210 || MACH_SMDKV310 || MACH_SMDK4212 || MACH_SMDK5250)
+	depends on SND_SOC_SAMSUNG && (MACH_SMDKC210 || MACH_SMDKV310 || \
+MACH_SMDK4212 || MACH_SMDK5250)
 	depends on I2C=y && GENERIC_HARDIRQS
 	select MFD_WM8994
 	select SND_SOC_WM8994
