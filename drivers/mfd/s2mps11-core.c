@@ -11,10 +11,10 @@
  *
  */
 
-
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/init.h>
+#include <linux/err.h>
 #include <linux/slab.h>
 #include <linux/i2c.h>
 #include <linux/interrupt.h>
@@ -23,6 +23,7 @@
 #include <linux/mfd/core.h>
 #include <linux/mfd/s2mps11/s2mps11-core.h>
 #include <linux/mfd/s2mps11/s2mps11-pmic.h>
+#include <linux/regmap.h>
 
 #define RTC_I2C_ADDR		(0x0c>>1)
 
@@ -30,81 +31,40 @@ static struct mfd_cell s2mps11_devs[] = {
 	{.name = "s2mps11-pmic"},
 };
 
-int s2mps11_reg_read(struct i2c_client *i2c, u8 reg, u8 *dest)
+int s2mps11_reg_read(struct s2mps11_dev *s2mps11, u8 reg, void *dest)
 {
-	struct s2mps11_dev *s2mps11 = i2c_get_clientdata(i2c);
-	int ret;
-
-	mutex_lock(&s2mps11->iolock);
-	ret = i2c_smbus_read_byte_data(i2c, reg);
-	mutex_unlock(&s2mps11->iolock);
-	if (ret < 0)
-		return ret;
-
-	ret &= 0xff;
-	*dest = ret;
-	return 0;
+	return regmap_read(s2mps11->regmap, reg, dest);
 }
 EXPORT_SYMBOL(s2mps11_reg_read);
 
-int s2mps11_bulk_read(struct i2c_client *i2c, u8 reg, int count, u8 *buf)
+int s2mps11_bulk_read(struct s2mps11_dev *s2mps11, u8 reg, int count, u8 *buf)
 {
-	struct s2mps11_dev *s2mps11 = i2c_get_clientdata(i2c);
-	int ret;
-
-	mutex_lock(&s2mps11->iolock);
-	ret = i2c_smbus_read_i2c_block_data(i2c, reg, count, buf);
-	mutex_unlock(&s2mps11->iolock);
-	if (ret < 0)
-		return ret;
-
-	return 0;
+	return regmap_bulk_read(s2mps11->regmap, reg, buf, count);
 }
 EXPORT_SYMBOL(s2mps11_bulk_read);
 
-int s2mps11_reg_write(struct i2c_client *i2c, u8 reg, u8 value)
+int s2mps11_reg_write(struct s2mps11_dev *s2mps11, u8 reg, u8 value)
 {
-	struct s2mps11_dev *s2mps11 = i2c_get_clientdata(i2c);
-	int ret;
-
-	mutex_lock(&s2mps11->iolock);
-	ret = i2c_smbus_write_byte_data(i2c, reg, value);
-	mutex_unlock(&s2mps11->iolock);
-	return ret;
+return regmap_write(s2mps11->regmap, reg, value);
 }
 EXPORT_SYMBOL(s2mps11_reg_write);
 
-int s2mps11_bulk_write(struct i2c_client *i2c, u8 reg, int count, u8 *buf)
+int s2mps11_bulk_write(struct s2mps11_dev *s2mps11, u8 reg, int count, u8 *buf)
 {
-	struct s2mps11_dev *s2mps11 = i2c_get_clientdata(i2c);
-	int ret;
-
-	mutex_lock(&s2mps11->iolock);
-	ret = i2c_smbus_write_i2c_block_data(i2c, reg, count, buf);
-	mutex_unlock(&s2mps11->iolock);
-	if (ret < 0)
-		return ret;
-
-	return 0;
+	return regmap_raw_write(s2mps11->regmap, reg, buf, count);
 }
 EXPORT_SYMBOL(s2mps11_bulk_write);
 
-int s2mps11_reg_update(struct i2c_client *i2c, u8 reg, u8 val, u8 mask)
+int s2mps11_reg_update(struct s2mps11_dev *s2mps11, u8 reg, u8 val, u8 mask)
 {
-	struct s2mps11_dev *s2mps11 = i2c_get_clientdata(i2c);
-	int ret;
-
-	mutex_lock(&s2mps11->iolock);
-	ret = i2c_smbus_read_byte_data(i2c, reg);
-	if (ret >= 0) {
-		u8 old_val = ret & 0xff;
-		u8 new_val = (val & mask) | (old_val & (~mask));
-		ret = i2c_smbus_write_byte_data(i2c, reg, new_val);
-	}
-	mutex_unlock(&s2mps11->iolock);
-	return ret;
+	return regmap_update_bits(s2mps11->regmap, reg, mask, val);
 }
 EXPORT_SYMBOL(s2mps11_reg_update);
+
+static struct regmap_config sec_regmap_config = {
+	.reg_bits = 8,
+	.val_bits = 8,
+};
 
 static int s2mps11_i2c_probe(struct i2c_client *i2c,
 			    const struct i2c_device_id *id)
@@ -113,7 +73,8 @@ static int s2mps11_i2c_probe(struct i2c_client *i2c,
 	struct s2mps11_dev *s2mps11;
 	int ret = 0;
 
-	s2mps11 = kzalloc(sizeof(struct s2mps11_dev), GFP_KERNEL);
+	s2mps11 = devm_kzalloc(&i2c->dev, sizeof(struct s2mps11_dev),
+				GFP_KERNEL);
 	if (s2mps11 == NULL)
 		return -ENOMEM;
 
@@ -130,7 +91,13 @@ static int s2mps11_i2c_probe(struct i2c_client *i2c,
 		s2mps11->wtsr_smpl = pdata->wtsr_smpl;
 	}
 
-	mutex_init(&s2mps11->iolock);
+	s2mps11->regmap = regmap_init_i2c(i2c, &sec_regmap_config);
+	if (IS_ERR(s2mps11->regmap)) {
+		ret = PTR_ERR(s2mps11->regmap);
+		dev_err(&i2c->dev, "Failed to allocate register map: %d\n",
+			ret);
+		goto err;
+	}
 
 	s2mps11->rtc = i2c_new_dummy(i2c->adapter, RTC_I2C_ADDR);
 	i2c_set_clientdata(s2mps11->rtc, s2mps11);
@@ -156,7 +123,7 @@ err:
 	mfd_remove_devices(s2mps11->dev);
 	s2mps11_irq_exit(s2mps11);
 	i2c_unregister_device(s2mps11->rtc);
-	kfree(s2mps11);
+	regmap_exit(s2mps11->regmap);
 	return ret;
 }
 
@@ -167,8 +134,7 @@ static int s2mps11_i2c_remove(struct i2c_client *i2c)
 	mfd_remove_devices(s2mps11->dev);
 	s2mps11_irq_exit(s2mps11);
 	i2c_unregister_device(s2mps11->rtc);
-	kfree(s2mps11);
-
+	regmap_exit(s2mps11->regmap);
 	return 0;
 }
 
@@ -238,6 +204,6 @@ static void __exit s2mps11_i2c_exit(void)
 }
 module_exit(s2mps11_i2c_exit);
 
-MODULE_AUTHOR("Junhan Bae <junhan84.bae@samsung.com>");
-MODULE_DESCRIPTION("Core support for the s2mps11 MFD");
+MODULE_AUTHOR("Sangbeom Kim <sbkim73@samsung.com>");
+MODULE_DESCRIPTION("Core support for the SAMSUNG MFD");
 MODULE_LICENSE("GPL");

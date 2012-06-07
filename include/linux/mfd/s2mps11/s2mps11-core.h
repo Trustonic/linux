@@ -177,6 +177,7 @@ enum s2mps11_irq {
  */
 struct s2mps11_dev {
 	struct device *dev;
+	struct regmap *regmap;
 	struct i2c_client *i2c;
 	struct i2c_client *rtc;
 	struct mutex iolock;
@@ -198,13 +199,11 @@ int s2mps11_irq_init(struct s2mps11_dev *s2mps11);
 void s2mps11_irq_exit(struct s2mps11_dev *s2mps11);
 int s2mps11_irq_resume(struct s2mps11_dev *s2mps11);
 
-extern int s2mps11_reg_read(struct i2c_client *i2c, u8 reg, u8 *dest);
-extern int s2mps11_bulk_read(struct i2c_client *i2c,
-					u8 reg, int count, u8 *buf);
-extern int s2mps11_reg_write(struct i2c_client *i2c, u8 reg, u8 value);
-extern int s2mps11_bulk_write(struct i2c_client *i2c,
-					u8 reg, int count, u8 *buf);
-extern int s2mps11_reg_update(struct i2c_client *i2c, u8 reg, u8 val, u8 mask);
+extern int s2mps11_reg_read(struct s2mps11_dev *s2mps11, u8 reg, void *dest);
+extern int s2mps11_bulk_read(struct s2mps11_dev *s2mps11, u8 reg, int count, u8 *buf);
+extern int s2mps11_reg_write(struct s2mps11_dev *s2mps11, u8 reg, u8 value);
+extern int s2mps11_bulk_write(struct s2mps11_dev *s2mps11, u8 reg, int count, u8 *buf);
+extern int s2mps11_reg_update(struct s2mps11_dev *s2mps11, u8 reg, u8 val, u8 mask);
 
 struct s2mps11_platform_data {
 	struct s2mps11_regulator_data	*regulators;

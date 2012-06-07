@@ -111,7 +111,7 @@ static void s2mps11_irq_sync_unlock(struct irq_data *data)
 	for (i = 0; i < ARRAY_SIZE(s2mps11->irq_masks_cur); i++) {
 		if (s2mps11->irq_masks_cur[i] != s2mps11->irq_masks_cache[i]) {
 			s2mps11->irq_masks_cache[i] = s2mps11->irq_masks_cur[i];
-			s2mps11_reg_write(s2mps11->i2c, S2MPS11_REG_INT1M + i,
+			s2mps11_reg_write(s2mps11, S2MPS11_REG_INT1M + i,
 					s2mps11->irq_masks_cur[i]);
 		}
 	}
@@ -152,7 +152,7 @@ static irqreturn_t s2mps11_irq_thread(int irq, void *data)
 	int ret;
 	int i;
 
-	ret = s2mps11_bulk_read(s2mps11->i2c, S2MPS11_REG_INT1,
+	ret = s2mps11_bulk_read(s2mps11, S2MPS11_REG_INT1,
 				NUM_IRQ_REGS - 1, irq_reg);
 	if (ret < 0) {
 		dev_err(s2mps11->dev, "Failed to read interrupt register: %d\n",
@@ -202,7 +202,7 @@ int s2mps11_irq_init(struct s2mps11_dev *s2mps11)
 	for (i = 0; i < NUM_IRQ_REGS - 1; i++) {
 		s2mps11->irq_masks_cur[i] = 0xff;
 		s2mps11->irq_masks_cache[i] = 0xff;
-		s2mps11_reg_write(s2mps11->i2c, S2MPS11_REG_INT1M + i,
+		s2mps11_reg_write(s2mps11, S2MPS11_REG_INT1M + i,
 					0xff);
 	}
 	for (i = 0; i < S2MPS11_IRQ_NR; i++) {
