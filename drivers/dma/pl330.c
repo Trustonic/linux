@@ -3070,6 +3070,9 @@ pl330_probe(struct amba_device *adev, const struct amba_id *id)
 	pd->device_control = pl330_control;
 	pd->device_issue_pending = pl330_issue_pending;
 
+	if (pdat->copy_align)
+		pd->copy_align = pdat->copy_align;
+
 	ret = dma_async_device_register(pd);
 	if (ret) {
 		dev_err(&adev->dev, "unable to register DMAC\n");
