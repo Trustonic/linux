@@ -20,15 +20,15 @@
 #include <linux/platform_device.h>
 #include <linux/regulator/driver.h>
 #include <linux/regulator/machine.h>
-#include <linux/mfd/s2mps11/s2mps11-core.h>
-#include <linux/mfd/s2mps11/s2mps11-pmic.h>
+#include <linux/mfd/samsung/core.h>
+#include <linux/mfd/samsung/s2mps11.h>
 
 struct s2mps11_info {
 	struct device *dev;
-	struct s2mps11_dev *iodev;
+	struct sec_pmic_dev *iodev;
 	int num_regulators;
 	struct regulator_dev **rdev;
-	struct s2mps11_opmode_data *opmode_data;
+	struct sec_opmode_data *opmode_data;
 
 	int ramp_delay2;
 	int ramp_delay34;
@@ -256,7 +256,7 @@ static int s2mps11_reg_is_enabled(struct regulator_dev *rdev)
 	else if (ret)
 		return ret;
 
-	ret = s2mps11_reg_read(s2mps11->iodev, reg, &val);
+	ret = sec_reg_read(s2mps11->iodev, reg, &val);
 	if (ret)
 		return ret;
 
@@ -308,7 +308,7 @@ static int s2mps11_reg_enable(struct regulator_dev *rdev)
 		return -EINVAL;
 	}
 
-	return s2mps11_reg_update(s2mps11->iodev, reg, pmic_en, mask);
+	return sec_reg_update(s2mps11->iodev, reg, pmic_en, mask);
 }
 
 static int s2mps11_reg_disable(struct regulator_dev *rdev)
@@ -339,7 +339,7 @@ static int s2mps11_reg_disable(struct regulator_dev *rdev)
 		return -EINVAL;
 	}
 
-	return s2mps11_reg_update(s2mps11->iodev, reg, ~mask, mask);
+	return sec_reg_update(s2mps11->iodev, reg, ~mask, mask);
 }
 
 static int s2mps11_get_voltage_register(struct regulator_dev *rdev, int *_reg)
@@ -397,7 +397,7 @@ static int s2mps11_get_voltage_sel(struct regulator_dev *rdev)
 		return -EINVAL;
 	}
 
-	ret = s2mps11_reg_read(s2mps11->iodev, reg, &val);
+	ret = sec_reg_read(s2mps11->iodev, reg, &val);
 	if (ret)
 		return ret;
 
@@ -448,11 +448,11 @@ static int s2mps11_set_voltage(struct regulator_dev *rdev,
 	if (ret)
 		return ret;
 
-	s2mps11_reg_read(s2mps11->iodev, reg, &val);
+	sec_reg_read(s2mps11->iodev, reg, &val);
 	val &= ~mask;
 	val |= sel;
 
-	ret = s2mps11_reg_write(s2mps11->iodev, reg, val);
+	ret = sec_reg_write(s2mps11->iodev, reg, val);
 	*selector = sel;
 
 	return ret;
@@ -526,7 +526,7 @@ static int s2mps11_set_voltage_sel(struct regulator_dev *rdev, unsigned selector
 		return -EINVAL;
 	}
 
-	return s2mps11_reg_update(s2mps11->iodev, reg, selector, mask);
+	return sec_reg_update(s2mps11->iodev, reg, selector, mask);
 }
 
 static int get_ramp_delay(int ramp_delay)
@@ -657,8 +657,8 @@ static struct regulator_desc regulators[] = {
 
 static __devinit int s2mps11_pmic_probe(struct platform_device *pdev)
 {
-	struct s2mps11_dev *iodev = dev_get_drvdata(pdev->dev.parent);
-	struct s2mps11_platform_data *pdata = dev_get_platdata(iodev->dev);
+	struct sec_pmic_dev *iodev = dev_get_drvdata(pdev->dev.parent);
+	struct sec_pmic_platform_data *pdata = dev_get_platdata(iodev->dev);
 	struct regulator_dev **rdev;
 	struct s2mps11_info *s2mps11;
 	int i, ret, size;
@@ -707,7 +707,7 @@ static __devinit int s2mps11_pmic_probe(struct platform_device *pdev)
 			ramp_reg |= get_ramp_delay(s2mps11->ramp_delay2) >> 6;
 		if (s2mps11->buck3_ramp || s2mps11->buck4_ramp)
 			ramp_reg |= get_ramp_delay(s2mps11->ramp_delay34) >> 4;
-		s2mps11_reg_update(s2mps11->iodev, S2MPS11_REG_RAMP,
+		sec_reg_update(s2mps11->iodev, S2MPS11_REG_RAMP,
 			ramp_reg | ramp_enable, 0xff);
 	}
 
@@ -716,7 +716,7 @@ static __devinit int s2mps11_pmic_probe(struct platform_device *pdev)
 	ramp_reg |= get_ramp_delay(s2mps11->ramp_delay16) >> 4;
 	ramp_reg |= get_ramp_delay(s2mps11->ramp_delay7810) >> 2;
 	ramp_reg |= get_ramp_delay(s2mps11->ramp_delay9);
-	s2mps11_reg_update(s2mps11->iodev, S2MPS11_REG_RAMP_BUCK, ramp_reg, 0xff);
+	sec_reg_update(s2mps11->iodev, S2MPS11_REG_RAMP_BUCK, ramp_reg, 0xff);
 
 	for (i = 0; i < pdata->num_regulators; i++) {
 		const struct s2mps11_voltage_desc *desc;
