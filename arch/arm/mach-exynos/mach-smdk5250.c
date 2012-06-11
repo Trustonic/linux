@@ -21,7 +21,6 @@
 #include <linux/pwm_backlight.h>
 #include <linux/input.h>
 #include <linux/gpio_event.h>
-#include <linux/platform_data/exynos_usb3_drd.h>
 #include <linux/persistent_ram.h>
 #include <linux/clk.h>
 #include <linux/spi/spi.h>
@@ -52,7 +51,6 @@
 #include <plat/mipi_csis.h>
 #include <plat/jpeg.h>
 #include <plat/tv-core.h>
-#include <plat/ehci.h>
 #include <plat/s3c64xx-spi.h>
 
 #include <mach/exynos_fiq_debugger.h>
@@ -62,7 +60,6 @@
 #include <mach/exynos-mfc.h>
 #include <mach/tmu.h>
 #include <mach/dwmci.h>
-#include <mach/ohci.h>
 #include <mach/spi-clocks.h>
 
 #include <plat/dsim.h>
@@ -70,6 +67,7 @@
 #include <plat/fimg2d.h>
 
 #include "common.h"
+#include "board-smdk5250.h"
 
 static struct platform_device ramconsole_device = {
 	.name           = "ram_console",
@@ -1575,9 +1573,6 @@ static struct platform_device *smdk5250_devices[] __initdata = {
 	&exynos5_device_i2s0,
 	&exynos5_device_pcm0,
 	&exynos5_device_spdif,
-	&s5p_device_ehci,
-	&exynos4_device_ohci,
-	&exynos_device_ss_udc,
 #ifdef CONFIG_VIDEO_EXYNOS_JPEG
 	&s5p_device_jpeg,
 #endif
@@ -1728,35 +1723,6 @@ static inline void exynos_reserve_mem(void)
 {
 }
 #endif
-
-/* USB EHCI */
-static struct s5p_ehci_platdata smdk5250_ehci_pdata;
-
-static void __init smdk5250_ehci_init(void)
-{
-	struct s5p_ehci_platdata *pdata = &smdk5250_ehci_pdata;
-
-	s5p_ehci_set_platdata(pdata);
-}
-
-/* USB OHCI */
-static struct exynos4_ohci_platdata smdk5250_ohci_pdata;
-
-static void __init smdk5250_ohci_init(void)
-{
-	struct exynos4_ohci_platdata *pdata = &smdk5250_ohci_pdata;
-
-	exynos4_ohci_set_platdata(pdata);
-}
-
-static struct exynos_usb3_drd_pdata smdk5250_ss_udc_pdata;
-
-static void __init smdk5250_ss_udc_init(void)
-{
-	struct exynos_usb3_drd_pdata *pdata = &smdk5250_ss_udc_pdata;
-
-	exynos_ss_udc_set_platdata(pdata);
-}
 
 static void __init smdk5250_dwmci_init(void)
 {
@@ -1957,9 +1923,7 @@ static void __init smdk5250_machine_init(void)
 #endif
 	smdk5250_gpio_power_init();
 
-	smdk5250_ehci_init();
-	smdk5250_ohci_init();
-	smdk5250_ss_udc_init();
+	exynos5_smdk5250_usb_init();
 
 	platform_add_devices(smdk5250_devices, ARRAY_SIZE(smdk5250_devices));
 
