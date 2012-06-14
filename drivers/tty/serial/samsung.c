@@ -42,15 +42,26 @@
 #include <linux/delay.h>
 #include <linux/clk.h>
 #include <linux/cpufreq.h>
+#ifdef CONFIG_SERIAL_SAMSUNG_DMA
+#include <linux/spinlock.h>
+#endif
 #include <linux/of.h>
 
 #include <asm/irq.h>
 
 #include <mach/hardware.h>
 #include <mach/map.h>
+#ifdef CONFIG_SERIAL_SAMSUNG_DMA
+#include <mach/regs-clock.h>
+#include <mach/dma.h>
+#endif
 
 #include <plat/regs-serial.h>
 #include <plat/clock.h>
+
+#ifdef CONFIG_SERIAL_SAMSUNG_DMA
+#include <linux/dma-mapping.h>
+#endif
 
 #include "samsung.h"
 
@@ -64,6 +75,14 @@
 #define MAX_BAUD	3000000
 #define MIN_BAUD	0
 
+
+#ifdef CONFIG_SERIAL_SAMSUNG_DMA
+/* definitions for dma mode */
+#define ENABLE_UART_DMA_MODE	true
+#define DMA_TRANS_LIMIT	64
+#define RX_BUFFER_SIZE	256
+#endif
+
 /* macros to change one thing to another */
 
 #define tx_enabled(port) ((port)->unused[0])
@@ -71,6 +90,9 @@
 
 /* flag to ignore all characters coming in */
 #define RXSTAT_DUMMY_READ (0x10000000)
+
+/* ? - where has parity gone?? */
+#define S3C2410_UERSTAT_PARITY (0x1000)
 
 static inline struct s3c24xx_uart_port *to_ourport(struct uart_port *port)
 {
@@ -215,10 +237,6 @@ static int s3c24xx_serial_rx_fifocnt(struct s3c24xx_uart_port *ourport,
 
 	return (ufstat & info->rx_fifomask) >> info->rx_fifoshift;
 }
-
-
-/* ? - where has parity gone?? */
-#define S3C2410_UERSTAT_PARITY (0x1000)
 
 static irqreturn_t
 s3c24xx_serial_rx_chars(int irq, void *dev_id)
