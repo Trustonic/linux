@@ -743,8 +743,7 @@ static int s5p_ace_aes_crypt_dma_start(struct s5p_ace_device *dev)
 	if (!PageHighMem(sg_page(sctx->in_sg))) {
 		sctx->src_addr = (u8 *)phys_to_virt((u32)src);
 	} else {
-		sctx->src_addr = crypto_kmap(sg_page(sctx->in_sg),
-						crypto_kmap_type(0));
+		sctx->src_addr = kmap_atomic(sg_page(sctx->in_sg));
 		sctx->src_addr += sctx->in_sg->offset + sctx->in_ofs;
 	}
 
@@ -753,8 +752,7 @@ static int s5p_ace_aes_crypt_dma_start(struct s5p_ace_device *dev)
 	if (!PageHighMem(sg_page(sctx->out_sg))) {
 		sctx->dst_addr = (u8 *)phys_to_virt((u32)dst);
 	} else {
-		sctx->dst_addr = crypto_kmap(sg_page(sctx->out_sg),
-						crypto_kmap_type(1));
+		sctx->dst_addr = kmap_atomic(sg_page(sctx->out_sg));
 		sctx->dst_addr += sctx->out_sg->offset + sctx->out_ofs;
 	}
 
@@ -804,9 +802,9 @@ run:
 
 	if (sctx->dma_size) {
 		if (PageHighMem(sg_page(sctx->in_sg)))
-			crypto_kunmap(sctx->src_addr, crypto_kmap_type(0));
+			kunmap_atomic(sctx->src_addr);
 		if (PageHighMem(sg_page(sctx->out_sg)))
-			crypto_kunmap(sctx->dst_addr, crypto_kmap_type(1));
+			kunmap_atomic(sctx->dst_addr);
 	}
 
 #ifndef CONFIG_ACE_BC_IRQMODE
@@ -835,14 +833,12 @@ static int s5p_ace_aes_crypt_dma_wait(struct s5p_ace_device *dev)
 #ifdef CONFIG_ACE_BC_ASYNC
 	if (!sctx->directcall) {
 		if (PageHighMem(sg_page(sctx->in_sg))) {
-			sctx->src_addr = crypto_kmap(sg_page(sctx->in_sg),
-							crypto_kmap_type(0));
+			sctx->src_addr = kmap_atomic(sg_page(sctx->in_sg));
 			sctx->src_addr += sctx->in_sg->offset + sctx->in_ofs;
 		}
 
 		if (PageHighMem(sg_page(sctx->out_sg))) {
-			sctx->dst_addr = crypto_kmap(sg_page(sctx->out_sg),
-							crypto_kmap_type(1));
+			sctx->dst_addr = kmap_atomic(sg_page(sctx->out_sg));
 			sctx->dst_addr += sctx->out_sg->offset + sctx->out_ofs;
 		}
 	}
@@ -875,9 +871,9 @@ static int s5p_ace_aes_crypt_dma_wait(struct s5p_ace_device *dev)
 		return -EINVAL;
 
 	if (PageHighMem(sg_page(sctx->in_sg)))
-		crypto_kunmap(sctx->src_addr, crypto_kmap_type(0));
+		kunmap_atomic(sctx->src_addr);
 	if (PageHighMem(sg_page(sctx->out_sg)))
-		crypto_kunmap(sctx->dst_addr, crypto_kmap_type(1));
+		kunmap_atomic(sctx->dst_addr);
 
 	sctx->total -= sctx->dma_size;
 
