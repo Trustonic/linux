@@ -17,3 +17,4 @@ obj-$(CONFIG_VIDEO_EXYNOS_FIMG2D) += fimg2d_drv.o fimg2d_clk.o \
 ifeq ($(CONFIG_VIDEO_FIMG2D_DEBUG),y)
 EXTRA_CFLAGS += -DDEBUG
 endif
+ccflags-y += -DBLIT_WORKQUE

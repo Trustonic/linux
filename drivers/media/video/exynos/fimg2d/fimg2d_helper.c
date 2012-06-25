@@ -36,6 +36,7 @@ void fimg2d_dump_command(struct fimg2d_bltcmd *cmd)
 {
 	int i;
 	struct fimg2d_param *p = &cmd->param;
+	struct fimg2d_param *p = &blt->param;
 	struct fimg2d_image *img;
 	struct fimg2d_rect *r;
 	struct fimg2d_dma *c;

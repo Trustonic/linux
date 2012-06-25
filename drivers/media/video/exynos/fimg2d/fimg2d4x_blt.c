@@ -31,7 +31,7 @@
 
 #define BLIT_TIMEOUT	msecs_to_jiffies(2000)
 
-static void fimg2d4x_blit_wait(struct fimg2d_control *info,
+static int fimg2d4x_blit_wait(struct fimg2d_control *info,
 		struct fimg2d_bltcmd *cmd)
 {
 	int ret;
@@ -41,15 +41,16 @@ static void fimg2d4x_blit_wait(struct fimg2d_control *info,
 	if (!ret) {
 		fimg2d4x_disable_irq(info);
 
-		if (!fimg2d4x_blit_done_status(info)) {
-			info->err = true;	/* device error */
+		if (!fimg2d4x_blit_done_status(info))
 			printk(KERN_ERR "[%s] blit not finished\n", __func__);
-		} else {
-			atomic_set(&info->busy, 0);
-		}
+
 		printk(KERN_ERR "[%s] blit wait timeout\n", __func__);
 		fimg2d_dump_command(cmd);
+		fimg2d4x_reset(info);
+
+		return -1;
 	}
+	return 0;
 }
 
 static void fimg2d4x_pre_bitblt(struct fimg2d_control *info, struct fimg2d_bltcmd *cmd)
@@ -57,7 +58,7 @@ static void fimg2d4x_pre_bitblt(struct fimg2d_control *info, struct fimg2d_bltcm
 	/* TODO */
 }
 
-void fimg2d4x_bitblt(struct fimg2d_control *info)
+int fimg2d4x_bitblt(struct fimg2d_control *info)
 {
 	struct fimg2d_context *ctx;
 	struct fimg2d_bltcmd *cmd;
@@ -66,23 +67,14 @@ void fimg2d4x_bitblt(struct fimg2d_control *info)
 
 	fimg2d_debug("enter blitter\n");
 
-#ifdef CONFIG_PM_RUNTIME
-	pm_runtime_get_sync(info->dev);
-	fimg2d_debug("pm_runtime_get_sync\n");
-#endif
-	fimg2d_clk_on(info);
+	while (1) {
+		cmd = fimg2d_get_command(info);
+		if (!cmd)
+			break;
 
-	while ((cmd = fimg2d_get_command(info))) {
 		ctx = cmd->ctx;
 
 		atomic_set(&info->busy, 1);
-
-		if (info->err) {
-			if (fimg2d4x_blit_done_status(info))
-				info->err = false;	/* device revived */
-			else
-				goto blitend;
-		}
 
 		ret = info->configure(info, cmd);
 		if (ret) {
@@ -105,7 +97,7 @@ void fimg2d4x_bitblt(struct fimg2d_control *info)
 #endif
 		/* start blit */
 		info->run(info);
-		fimg2d4x_blit_wait(info, cmd);
+		ret = fimg2d4x_blit_wait(info, cmd);
 
 #ifdef PERF_PROFILE
 		perf_end(cmd->ctx, PERF_BLIT);
@@ -114,21 +106,13 @@ void fimg2d4x_bitblt(struct fimg2d_control *info)
 			exynos_sysmmu_disable(info->dev);
 			fimg2d_debug("sysmmu disable\n");
 		}
-blitend:
-		fimg2d_del_command(info, cmd);
 
-		/* wake up context */
-		if (!atomic_read(&ctx->ncmd))
-			wake_up(&ctx->wait_q);
+		fimg2d_del_command(info, cmd);
 	}
 
-	fimg2d_clk_off(info);
-#ifdef CONFIG_PM_RUNTIME
-	pm_runtime_put_sync(info->dev);
-	fimg2d_debug("pm_runtime_put_sync\n");
-#endif
-
 	fimg2d_debug("exit blitter\n");
+
+	return ret;
 }
 
 static inline int is_opaque(enum color_format fmt)
@@ -231,8 +215,7 @@ static int fimg2d4x_configure(struct fimg2d_control *info,
 	msk = &cmd->image[IMSK];
 	dst = &cmd->image[IDST];
 
-	/* TODO: batch blit */
-	fimg2d4x_reset(info);
+	fimg2d4x_init(info);
 
 	/* src and dst select */
 	srcsel = dstsel = IMG_MEMORY;

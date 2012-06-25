@@ -20,21 +20,23 @@
 
 void fimg2d_clk_on(struct fimg2d_control *info)
 {
-	spin_lock(&info->bltlock);
+	unsigned long flags;
+
+	g2d_spin_lock(&info->bltlock, flags);
 	clk_enable(info->clock);
 	atomic_set(&info->clkon, 1);
-	spin_unlock(&info->bltlock);
-
+	g2d_spin_unlock(&info->bltlock, flags);
 	fimg2d_debug("clock enable\n");
 }
 
 void fimg2d_clk_off(struct fimg2d_control *info)
 {
-	spin_lock(&info->bltlock);
+	unsigned long flags;
+
+	g2d_spin_lock(&info->bltlock, flags);
 	atomic_set(&info->clkon, 0);
 	clk_disable(info->clock);
-	spin_unlock(&info->bltlock);
-
+	g2d_spin_unlock(&info->bltlock, flags);
 	fimg2d_debug("clock disable\n");
 }
 
@@ -43,14 +45,14 @@ void fimg2d_clk_save(struct fimg2d_control *info)
 	if (soc_is_exynos4212() || soc_is_exynos4412()) {
 		struct fimg2d_platdata *pdata;
 		struct clk *sclk;
+		unsigned long flags;
 
 		pdata = to_fimg2d_plat(info->dev);
 
-		spin_lock(&info->bltlock);
+		g2d_spin_lock(&info->bltlock, flags);
 		sclk = clk_get(info->dev, pdata->clkname);
 		clk_set_rate(sclk, 50*MHZ); /* 800MHz/16=50MHz */
-		spin_unlock(&info->bltlock);
-
+		g2d_spin_unlock(&info->bltlock, flags);
 		fimg2d_debug("%s clkrate=%lu\n", pdata->clkname, clk_get_rate(sclk));
 	}
 }
@@ -60,15 +62,15 @@ void fimg2d_clk_restore(struct fimg2d_control *info)
 	if (soc_is_exynos4212() || soc_is_exynos4412()) {
 		struct fimg2d_platdata *pdata;
 		struct clk *sclk, *pclk;
+		unsigned long flags;
 
 		pdata = to_fimg2d_plat(info->dev);
 
-		spin_lock(&info->bltlock);
+		g2d_spin_lock(&info->bltlock, flags);
 		sclk = clk_get(info->dev, pdata->clkname);
 		pclk = clk_get(NULL, "pclk_acp");
 		clk_set_rate(sclk, clk_get_rate(pclk) * 2);
-		spin_unlock(&info->bltlock);
-
+		g2d_spin_unlock(&info->bltlock, flags);
 		fimg2d_debug("%s(%lu) pclk_acp(%lu)\n", pdata->clkname,
 				clk_get_rate(sclk), clk_get_rate(pclk));
 	}

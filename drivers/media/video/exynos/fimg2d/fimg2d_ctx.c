@@ -38,6 +38,13 @@ static int fimg2d_check_params(struct fimg2d_bltcmd *cmd)
 	if (!cmd->image[IDST].addr.type)
 		return -1;
 
+	addr_type = blt->dst->addr.type;
+
+	if ((blt->src && blt->src->addr.type != addr_type) ||
+		(blt->msk && blt->msk->addr.type != addr_type) ||
+		(blt->tmp && blt->tmp->addr.type != addr_type))
+		return -1;
+
 	/* DST op makes no effect */
 	if (cmd->op < 0 || cmd->op == BLIT_OP_DST || cmd->op >= BLIT_OP_END)
 		return -1;
@@ -493,10 +500,10 @@ int fimg2d_add_command(struct fimg2d_control *info, struct fimg2d_context *ctx,
 	}
 
 	/* add command node and increase ncmd */
-	spin_lock(&info->bltlock);
+	g2d_spin_lock(&info->bltlock, flags);
 	if (atomic_read(&info->suspended)) {
 		fimg2d_debug("fimg2d suspended, do sw fallback\n");
-		spin_unlock(&info->bltlock);
+		g2d_spin_unlock(&info->bltlock, flags);
 		ret = -EFAULT;
 		goto err_user;
 	}
@@ -505,7 +512,7 @@ int fimg2d_add_command(struct fimg2d_control *info, struct fimg2d_context *ctx,
 	fimg2d_debug("ctx %p pgd %p ncmd(%d) seq_no(%u)\n",
 			cmd->ctx, (unsigned long *)cmd->ctx->mm->pgd,
 			atomic_read(&ctx->ncmd), cmd->seq_no);
-	spin_unlock(&info->bltlock);
+	g2d_spin_unlock(&info->bltlock, flags);
 
 	return 0;
 
@@ -516,39 +523,51 @@ err_user:
 
 struct fimg2d_bltcmd *fimg2d_get_command(struct fimg2d_control *info)
 {
+	unsigned long flags;
 	struct fimg2d_bltcmd *cmd;
 
+	g2d_spin_lock(&info->bltlock, flags);
 	cmd = fimg2d_get_first_command(info);
-	if (!cmd) {
-		spin_lock(&info->bltlock);
-		atomic_set(&info->active, 0);
-		spin_unlock(&info->bltlock);
-	}
+	g2d_spin_unlock(&info->bltlock, flags);
 	return cmd;
 }
 
 void fimg2d_del_command(struct fimg2d_control *info, struct fimg2d_bltcmd *cmd)
 {
+	unsigned long flags;
 	struct fimg2d_context *ctx = cmd->ctx;
 
-	spin_lock(&info->bltlock);
+	g2d_spin_lock(&info->bltlock, flags);
 	fimg2d_dequeue(&cmd->node);
 	kfree(cmd);
 	atomic_dec(&ctx->ncmd);
-	spin_unlock(&info->bltlock);
+#ifdef BLIT_WORKQUE
+	/* wake up context */
+	if (!atomic_read(&ctx->ncmd))
+		wake_up(&ctx->wait_q);
+#endif
+	g2d_spin_unlock(&info->bltlock, flags);
 }
 
 void fimg2d_add_context(struct fimg2d_control *info, struct fimg2d_context *ctx)
 {
+	unsigned long flags;
+
+	g2d_spin_lock(&info->bltlock, flags);
 	atomic_set(&ctx->ncmd, 0);
 	init_waitqueue_head(&ctx->wait_q);
 
 	atomic_inc(&info->nctx);
 	fimg2d_debug("ctx %p nctx(%d)\n", ctx, atomic_read(&info->nctx));
+	g2d_spin_unlock(&info->bltlock, flags);
 }
 
 void fimg2d_del_context(struct fimg2d_control *info, struct fimg2d_context *ctx)
 {
+	unsigned long flags;
+
+	g2d_spin_lock(&info->bltlock, flags);
 	atomic_dec(&info->nctx);
 	fimg2d_debug("ctx %p nctx(%d)\n", ctx, atomic_read(&info->nctx));
+	g2d_spin_unlock(&info->bltlock, flags);
 }
