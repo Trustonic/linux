@@ -4070,12 +4070,19 @@ MODULE_LICENSE("GPL");
 static int __init xhci_hcd_init(void)
 {
 	int retval;
-
+#ifdef CONFIG_USB_XHCI_EXYNOS
+	retval = xhci_register_exynos();
+	if (retval < 0) {
+		printk(KERN_DEBUG "Problem registering Exynos driver.");
+		return retval;
+	}
+#else
 	retval = xhci_register_pci();
 	if (retval < 0) {
 		printk(KERN_DEBUG "Problem registering PCI driver.");
 		return retval;
 	}
+#endif
 	retval = xhci_register_plat();
 	if (retval < 0) {
 		printk(KERN_DEBUG "Problem registering platform driver.");
@@ -4101,14 +4108,20 @@ static int __init xhci_hcd_init(void)
 	BUILD_BUG_ON(sizeof(struct xhci_doorbell_array) != 256*32/8);
 	return 0;
 unreg_pci:
+#ifndef CONFIG_USB_XHCI_EXYNOS
 	xhci_unregister_pci();
+#endif
 	return retval;
 }
 module_init(xhci_hcd_init);
 
 static void __exit xhci_hcd_cleanup(void)
 {
+#ifdef CONFIG_USB_XHCI_EXYNOS
+	xhci_unregister_exynos();
+#else
 	xhci_unregister_pci();
+#endif
 	xhci_unregister_plat();
 }
 module_exit(xhci_hcd_cleanup);
