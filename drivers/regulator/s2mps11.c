@@ -217,7 +217,7 @@ static int s2mps11_get_register(struct regulator_dev *rdev,
 		*reg = S2MPS11_REG_L1CTRL + (reg_id - S2MPS11_LDO1);
 		break;
 	case S2MPS11_BUCK1 ... S2MPS11_BUCK4:
-		*reg = S2MPS11_REG_B10CTRL1 + (reg_id - S2MPS11_BUCK1) * 2;
+		*reg = S2MPS11_REG_B1CTRL1 + (reg_id - S2MPS11_BUCK1) * 2;
 		break;
 	case S2MPS11_BUCK5:
 		*reg = S2MPS11_REG_B5CTRL1;
