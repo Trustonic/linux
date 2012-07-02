@@ -1115,6 +1115,9 @@ static int s3c24xx_serial_init_port(struct s3c24xx_uart_port *ourport,
 	struct uart_port *port = &ourport->port;
 	struct s3c2410_uartcfg *cfg = ourport->cfg;
 	struct resource *res;
+#ifdef CONFIG_SERIAL_SAMSUNG_DMA
+	struct exynos_uart_dma *uart_dma = &ourport->uart_dma;
+#endif
 	int ret;
 
 	dbg("s3c24xx_serial_init_port: port=%p, platdev=%p\n", port, platdev);
@@ -1177,6 +1180,14 @@ static int s3c24xx_serial_init_port(struct s3c24xx_uart_port *ourport,
 	    port->mapbase, port->membase, port->irq,
 	    ourport->rx_irq, ourport->tx_irq, port->uartclk);
 
+#ifdef CONFIG_SERIAL_SAMSUNG_DMA
+	/* set tx/rx fifo base for dma */
+	if (uart_dma->use_dma) {
+		uart_dma->tx.fifo_base = port->mapbase + S3C2410_UTXH;
+		uart_dma->rx.fifo_base = port->mapbase + S3C2410_URXH;
+	}
+#endif
+
 	/* reset the fifos (and setup the uart) */
 	s3c24xx_serial_resetport(port, cfg);
 	return 0;
@@ -1220,6 +1231,10 @@ static inline struct s3c24xx_serial_drv_data *s3c24xx_get_driver_data(
 static int s3c24xx_serial_probe(struct platform_device *pdev)
 {
 	struct s3c24xx_uart_port *ourport;
+#ifdef CONFIG_SERIAL_SAMSUNG_DMA
+	struct exynos_uart_dma *uart_dma;
+	struct resource	*dma_tx, *dma_rx;
+#endif
 	int ret;
 
 	dbg("s3c24xx_serial_probe(%p) %d\n", pdev, pdev->id);
@@ -1227,6 +1242,19 @@ static int s3c24xx_serial_probe(struct platform_device *pdev)
 	if (pdev->id >= CONFIG_SERIAL_SAMSUNG_UARTS)
 		return -EINVAL;
 
+#ifdef CONFIG_SERIAL_SAMSUNG_DMA
+	dma_tx = platform_get_resource(pdev, IORESOURCE_DMA, 0);
+	if (dma_tx == NULL) {
+		dev_err(&pdev->dev, "Unable to get UART-Tx dma resource\n");
+		return -ENXIO;
+	}
+
+	dma_rx = platform_get_resource(pdev, IORESOURCE_DMA, 1);
+	if (dma_rx == NULL) {
+		dev_err(&pdev->dev, "Unable to get UART-Rx dma resource\n");
+		return -ENXIO;
+	}
+#endif
 	ourport = &s3c24xx_serial_ports[pdev->id];
 
 	ourport->drv_data = s3c24xx_get_driver_data(pdev);
@@ -1235,6 +1263,18 @@ static int s3c24xx_serial_probe(struct platform_device *pdev)
 		return -ENODEV;
 	}
 
+#ifdef CONFIG_SERIAL_SAMSUNG_DMA
+	uart_dma = &ourport->uart_dma;
+	uart_dma->use_dma = ENABLE_UART_DMA_MODE;
+
+	if (uart_dma->use_dma) {
+		uart_dma->rx.busy = 0;
+		uart_dma->tx.req_ch = dma_tx->start;
+		uart_dma->rx.req_ch = dma_rx->start;
+		uart_dma->tx.direction = DMA_MEM_TO_DEV;
+		uart_dma->rx.direction = DMA_DEV_TO_MEM;
+	}
+#endif
 	ourport->baudclk = ERR_PTR(-EINVAL);
 	ourport->info = ourport->drv_data->info;
 	ourport->cfg = (pdev->dev.platform_data) ?
