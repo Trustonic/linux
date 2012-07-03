@@ -246,14 +246,89 @@ static const struct i2c_algorithm exynos5_i2c_algorithm = {
 	.functionality		= exynos5_i2c_func,
 };
 
+static int exynos5_i2c_set_timing(struct exynos5_i2c *i2c, int speed_mode)
+{
+	unsigned long i2c_timing_s1;
+	unsigned long i2c_timing_s2;
+	unsigned long i2c_timing_s3;
+	unsigned long i2c_timing_sla;
+	unsigned int op_clk;
+	unsigned int clkin = clk_get_rate(i2c->clk);
+	unsigned int n_clkdiv;
+	unsigned int t_start_su, t_start_hd;
+	unsigned int t_stop_su;
+	unsigned int t_data_su, t_data_hd;
+	unsigned int t_scl_l, t_scl_h;
+	unsigned int t_sr_release;
+	unsigned int t_ftl_cycle;
+	unsigned int i = 0, utemp0 = 0, utemp1 = 0, utemp2 = 0;
+
+	if (speed_mode == HSI2C_HIGH_SPD)
+		op_clk = HSI2C_HS_TX_CLOCK_3MHZ;
+	else
+		op_clk = HSI2C_FS_TX_CLOCK_400KHZ;
+
+	/* FPCLK / FI2C =
+	 * (CLK_DIV + 1) * (TSCLK_L + TSCLK_H + 2) + 8 + 2 * FLT_CYCLE
+	 * uTemp0 = (CLK_DIV + 1) * (TSCLK_L + TSCLK_H + 2)
+	 * uTemp1 = (TSCLK_L + TSCLK_H + 2)
+	 * uTemp2 = TSCLK_L + TSCLK_H
+	*/
+	t_ftl_cycle = (readl(i2c->regs + HSI2C_CONF) >> 16) & 0x7;
+	utemp0 = (clkin / op_clk) - 8 - 2 * t_ftl_cycle;
+
+	/* CLK_DIV max is 256 */
+	for (i = 0; i < 256; i++) {
+		utemp1 = utemp0 / (i + 1);
+		/* SCLK_L/H max is 256 / 2 */
+		if (utemp1 < 128) {
+			utemp2 = utemp1 - 2;
+			break;
+		}
+	}
+
+	n_clkdiv = i;
+	t_scl_l = utemp2 / 2;
+	t_scl_h = utemp2 / 2;
+	t_start_su = t_scl_l;
+	t_start_hd = t_scl_l;
+	t_stop_su = t_scl_l;
+	t_data_su = t_scl_l / 2;
+	t_data_hd = t_scl_l / 2;
+	t_sr_release = utemp2;
+
+	i2c_timing_s1 = t_start_su << 24 | t_start_hd << 16 | t_stop_su << 8;
+	i2c_timing_s2 = t_data_su << 24 | t_scl_l << 8 | t_scl_h << 0;
+	i2c_timing_s3 = n_clkdiv << 16 | t_sr_release << 0;
+	i2c_timing_sla = t_data_hd << 0;
+
+	dev_dbg(i2c->dev, "tSTART_SU: %X, tSTART_HD: %X, tSTOP_SU: %X\n",
+		t_start_su, t_start_hd, t_stop_su);
+	dev_dbg(i2c->dev, "tDATA_SU: %X, tSCL_L: %X, tSCL_H: %X\n",
+		t_data_su, t_scl_l, t_scl_h);
+	dev_dbg(i2c->dev, "nClkDiv: %X, tSR_RELEASE: %X\n",
+		n_clkdiv, t_sr_release);
+	dev_dbg(i2c->dev, "tDATA_HD: %X\n", t_data_hd);
+
+	if (speed_mode == HSI2C_HIGH_SPD) {
+		writel(i2c_timing_s1, i2c->regs + HSI2C_TIMING_HS1);
+		writel(i2c_timing_s2, i2c->regs + HSI2C_TIMING_HS2);
+		writel(i2c_timing_s3, i2c->regs + HSI2C_TIMING_HS3);
+	}
+	else {
+		writel(i2c_timing_s1, i2c->regs + HSI2C_TIMING_FS1);
+		writel(i2c_timing_s2, i2c->regs + HSI2C_TIMING_FS2);
+		writel(i2c_timing_s3, i2c->regs + HSI2C_TIMING_FS3);
+	}
+	writel(i2c_timing_sla, i2c->regs + HSI2C_TIMING_SLA);
+
+	return 0;
+}
+
 static int exynos5_i2c_init(struct exynos5_i2c *i2c)
 {
 	unsigned long usi_ctl = HSI2C_FUNC_MODE_I2C | HSI2C_MASTER;
 	unsigned long usi_trailing_ctl = HSI2C_TRAILING_COUNT;
-	unsigned long i2c_timing_fs1 = HSI2C_TIMING_FS1_VAL;
-	unsigned long i2c_timing_fs2 = HSI2C_TIMING_FS2_VAL;
-	unsigned long i2c_timing_fs3 = HSI2C_TIMING_FS3_VAL;
-	unsigned long i2c_timing_sla = HSI2C_TIMING_SLA_VAL;
 	unsigned long i2c_conf = readl(i2c->regs + HSI2C_CONF);
 	struct exynos5_platform_i2c *pdata;
 
@@ -264,11 +339,9 @@ static int exynos5_i2c_init(struct exynos5_i2c *i2c)
 
 	writel(usi_ctl, i2c->regs + HSI2C_CTL);
 	writel(usi_trailing_ctl, i2c->regs + HSI2C_TRAILIG_CTL);
-	writel(i2c_timing_fs1, i2c->regs + HSI2C_TIMING_FS1);
-	writel(i2c_timing_fs2, i2c->regs + HSI2C_TIMING_FS2);
-	writel(i2c_timing_fs3, i2c->regs + HSI2C_TIMING_FS3);
-	writel(i2c_timing_sla, i2c->regs + HSI2C_TIMING_SLA);
+	exynos5_i2c_set_timing(i2c, HSI2C_FAST_SPD);
 	if (pdata->speed_mode == HSI2C_HIGH_SPD) {
+		exynos5_i2c_set_timing(i2c, HSI2C_HIGH_SPD);
 		i2c_conf |= (1 << 29);
 		writel(i2c_conf, i2c->regs + HSI2C_CONF);
 	}

@@ -57,9 +57,7 @@
 #define HSI2C_TIMEOUT_EN			(1u << 31)
 #define HSI2C_FIFO_EMPTY			(0x1000100)
 
-#define HSI2C_TIMING_FS1_VAL	((0x7 << 24) | (0x7 << 16) | (0x7 << 8))
-#define HSI2C_TIMING_FS2_VAL	((0x7 << 24) | (0xF << 8) | (0xf << 0))
-#define HSI2C_TIMING_FS3_VAL	((0x8 << 16) | (0xF << 0))
-#define HSI2C_TIMING_SLA_VAL	(0xF << 0)
+#define HSI2C_FS_TX_CLOCK_400KHZ		400000
+#define HSI2C_HS_TX_CLOCK_3MHZ			3000000
 
 #endif /* __ASM_ARCH_REGS_HS_IIC_H */
