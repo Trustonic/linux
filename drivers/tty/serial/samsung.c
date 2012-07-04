@@ -257,6 +257,7 @@ static void callback_uart_rx_dma(void *data)
 					struct s3c24xx_uart_port, uart_dma);
 	struct uart_port *port = &ourport->port;
 	struct tty_struct *tty = port->state->port.tty;
+	unsigned int uerstat = ourport->err_occurred;
 	unsigned int received_size = 0;
 	dma_addr_t src_addr = 0;
 	dma_addr_t dst_addr = 0;
@@ -266,6 +267,26 @@ static void callback_uart_rx_dma(void *data)
 
 	dma_unmap_single(port->dev, uart_dma->rx_dst_addr,
 			received_size, DMA_FROM_DEVICE);
+
+	/* Error check after DMA transfer */
+	if (uerstat != 0) {
+		printk(KERN_ERR "UART Rx DMA Error(0x%x)!!!\n",uerstat);
+
+		if (uerstat & S3C2410_UERSTAT_BREAK) {
+			dbg("break!\n");
+			port->icount.brk += received_size;
+		}
+
+		if (uerstat & S3C2410_UERSTAT_FRAME)
+			port->icount.frame += received_size;
+		if (uerstat & S3C2410_UERSTAT_OVERRUN)
+			port->icount.overrun += received_size;
+
+		uerstat &= port->read_status_mask;
+
+		ourport->err_occurred = 0;
+
+	}
 
 	tty_insert_flip_string(tty, uart_dma->rx_buff, received_size);
 	tty_flip_buffer_push(tty);
@@ -695,6 +716,18 @@ tx_use_cpu:
 	return IRQ_HANDLED;
 }
 
+#ifdef CONFIG_SERIAL_SAMSUNG_DMA
+static irqreturn_t s3c24xx_serial_err_chars(int irq, void *id)
+{
+	struct s3c24xx_uart_port *ourport = id;
+	struct uart_port *port = &ourport->port;
+
+	ourport->err_occurred = rd_regl(port, S3C2410_UERSTAT);
+	printk(KERN_ERR "Rx DMA Error!!!(0x%x)\n", ourport->err_occurred);
+	return IRQ_HANDLED;
+}
+#endif
+
 /* interrupt handler for s3c64xx and later SoC's.*/
 static irqreturn_t s3c64xx_serial_handle_irq(int irq, void *id)
 {
@@ -713,6 +746,13 @@ static irqreturn_t s3c64xx_serial_handle_irq(int irq, void *id)
 		ret = s3c24xx_serial_tx_chars(irq, id);
 		wr_regl(port, S3C64XX_UINTP, S3C64XX_UINTM_TXD_MSK);
 	}
+
+#ifdef CONFIG_SERIAL_SAMSUNG_DMA
+	if (pend & S3C64XX_UINTM_ERR_MSK) {
+		ret = s3c24xx_serial_err_chars(irq, id);
+		wr_regl(port, S3C64XX_UINTP, S3C64XX_UINTM_ERR_MSK);
+	}
+#endif
 	spin_unlock_irqrestore(&port->lock, flags);
 	return ret;
 }
@@ -870,6 +910,7 @@ static int s3c64xx_serial_startup(struct uart_port *port)
 	struct s3c24xx_uart_port *ourport = to_ourport(port);
 #ifdef CONFIG_SERIAL_SAMSUNG_DMA
 	struct exynos_uart_dma *uart_dma = &ourport->uart_dma;
+	unsigned long uintm = 0;
 #endif
 	int ret;
 
@@ -891,6 +932,9 @@ static int s3c64xx_serial_startup(struct uart_port *port)
 
 #ifdef CONFIG_SERIAL_SAMSUNG_DMA
 	if (uart_dma->use_dma) {
+		/* initialize err_occurred */
+		ourport->err_occurred = 0;
+
 		/* Acquire DMA channels */
 		while (!acquire_dma(uart_dma))
 			msleep(10);
@@ -901,6 +945,11 @@ static int s3c64xx_serial_startup(struct uart_port *port)
 
 		/* uart_rx_dma_request */
 		uart_rx_dma_request(ourport);
+
+		/* UnMask Err interrupt */
+		uintm = rd_regl(port, S3C64XX_UINTM);
+		uintm &= ~(S3C64XX_UINTM_ERR_MSK);
+		wr_regl(port, S3C64XX_UINTM, uintm);
 
 		/* enable rx dma mode */
 		enable_rx_dma(port);
