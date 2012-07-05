@@ -332,12 +332,12 @@ static void srp_commbox_init(void)
 	/* Support Mono Decoding */
 	writel(SRP_ARM_INTR_CODE_SUPPORT_MONO, srp.commbox + SRP_ARM_INTERRUPT_CODE);
 
+#ifdef CONFIG_ARCH_EXYNOS4
 	/* Init Ibuf information */
-	if (!soc_is_exynos5250()) {
-		writel(srp.ibuf0_pa, srp.commbox + SRP_BITSTREAM_BUFF_DRAM_ADDR0);
-		writel(srp.ibuf1_pa, srp.commbox + SRP_BITSTREAM_BUFF_DRAM_ADDR1);
-		writel(srp.ibuf_size, srp.commbox + SRP_BITSTREAM_BUFF_DRAM_SIZE);
-	}
+	writel(srp.ibuf0_pa, srp.commbox + SRP_BITSTREAM_BUFF_DRAM_ADDR0);
+	writel(srp.ibuf1_pa, srp.commbox + SRP_BITSTREAM_BUFF_DRAM_ADDR1);
+	writel(srp.ibuf_size, srp.commbox + SRP_BITSTREAM_BUFF_DRAM_SIZE);
+#endif
 
 	/* Output PCM control : 16bit */
 	writel(SRP_CFGR_OUTPUT_PCM_16BIT, srp.commbox + SRP_CFGR);
@@ -728,9 +728,11 @@ static void srp_prepare_buff(struct device *dev)
 	srp.ibuf_offset = IBUF_OFFSET;
 	srp.obuf_offset = OBUF_OFFSET;
 
-	srp.ibuf0 = soc_is_exynos5250() ? srp.dmem + srp.ibuf_offset
-					: srp.iram + srp.ibuf_offset;
-
+#if defined(CONFIG_ARCH_EXYNOS4)
+	srp.ibuf0 = srp.iram + srp.ibuf_offset;
+#elif defined(CONFIG_ARCH_EXYNOS5)
+	srp.ibuf0 = srp.dmem + srp.ibuf_offset;
+#endif
 	srp.obuf0 = srp.dmem + srp.obuf_offset;
 
 	srp.ibuf1 = srp.ibuf0 + srp.ibuf_size;
