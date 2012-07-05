@@ -158,10 +158,6 @@ struct srp_info {
 	unsigned int	obuf_ready;
 	unsigned int	obuf_next;
 
-	/* For EVT0 : will be removed on EVT1 */
-	unsigned char	*pcm_obuf0;
-	unsigned char	*pcm_obuf1;
-
 	/* Temporary BUF informaion */
 	unsigned char	*wbuf;
 	unsigned long	wbuf_size;

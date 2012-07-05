@@ -254,7 +254,6 @@ static ssize_t srp_read(struct file *file, char *buffer,
 	unsigned char *mmapped_obuf0 = srp.obuf_info.addr;
 	unsigned char *mmapped_obuf1 = srp.obuf_info.addr + srp.obuf_size;
 	int ret = 0;
-	int i;
 
 	srp_debug("Entered Get Obuf in PCM function\n");
 
@@ -294,17 +293,6 @@ static ssize_t srp_read(struct file *file, char *buffer,
 		srp_debug("not prepared not yet! OBUF[%d]\n", srp.obuf_ready);
 		srp.pcm_info.size = 0;
 		return copy_to_user(argp, &srp.pcm_info, sizeof(struct srp_buf_info));
-	}
-
-	/* For EVT0 : will be removed on EVT1 */
-	if (soc_is_exynos5250()) {
-		if (srp.obuf_ready == 0) {
-			for (i = 0; i < srp.obuf_size; i += 4)
-				memcpy(&srp.obuf0[i], &srp.pcm_obuf0[i], 0x4);
-		} else {
-			for (i = 0; i < srp.obuf_size; i += 4)
-				memcpy(&srp.obuf1[i], &srp.pcm_obuf1[i], 0x4);
-		}
 	}
 
 	srp.pcm_info.addr = srp.obuf_ready ? mmapped_obuf1 : mmapped_obuf0;
@@ -609,10 +597,7 @@ static int srp_mmap(struct file *filep, struct vm_area_struct *vma)
 	vma->vm_flags |= VM_RESERVED;
 	vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
 
-	/* For EVT0 : will be removed on EVT1 */
-	mmap_addr = soc_is_exynos5250() ? srp.obuf0_pa
-					: SRP_DMEM_BASE;
-
+	mmap_addr = SRP_DMEM_BASE;
 	pfn = __phys_to_pfn(mmap_addr);
 
 	if (remap_pfn_range(vma, vma->vm_start, pfn, size, vma->vm_page_prot)) {
@@ -629,16 +614,12 @@ static void srp_check_obuf_info(void)
 	unsigned int buf1 = readl(srp.commbox + SRP_PCM_BUFF1);
 	unsigned int size = readl(srp.commbox + SRP_PCM_BUFF_SIZE);
 
-	/* For EVT0 : will be removed on EVT1 */
-	if (!soc_is_exynos5250()) {
-		if (srp.obuf0_pa != buf0)
-			srp_err("Wrong PCM BUF0[0x%x], OBUF0[0x%x]\n",
-						buf0, srp.obuf0_pa);
-		if (srp.obuf1_pa != buf1)
-			srp_err("Wrong PCM BUF1[0x%x], OBUF1[0x%x]\n",
-						buf1, srp.obuf1_pa);
-	}
-
+	if (srp.obuf0_pa != buf0)
+		srp_err("Wrong PCM BUF0[0x%x], OBUF0[0x%x]\n",
+					buf0, srp.obuf0_pa);
+	if (srp.obuf1_pa != buf1)
+		srp_err("Wrong PCM BUF1[0x%x], OBUF1[0x%x]\n",
+					buf1, srp.obuf1_pa);
 	if ((srp.obuf_size >> 2) != size)
 		srp_err("Wrong OBUF SIZE[%d]\n", size);
 }
@@ -750,16 +731,7 @@ static void srp_prepare_buff(struct device *dev)
 	srp.ibuf0 = soc_is_exynos5250() ? srp.dmem + srp.ibuf_offset
 					: srp.iram + srp.ibuf_offset;
 
-	/* For EVT0 : will be removed on EVT1 */
-	if (soc_is_exynos5250()) {
-		srp.obuf0 = dma_alloc_writecombine(dev, srp.obuf_size * 2,
-						&srp.obuf0_pa, GFP_KERNEL);
-		srp.pcm_obuf0 = srp.dmem + srp.obuf_offset;
-		srp.pcm_obuf1 = srp.pcm_obuf0 + srp.obuf_size;
-		srp.obuf_offset = 0;
-	} else {
-		srp.obuf0 = srp.dmem + srp.obuf_offset;
-	}
+	srp.obuf0 = srp.dmem + srp.obuf_offset;
 
 	srp.ibuf1 = srp.ibuf0 + srp.ibuf_size;
 	srp.obuf1 = srp.obuf0 + srp.obuf_size;
