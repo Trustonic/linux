@@ -1273,7 +1273,7 @@ static __devinit int samsung_i2s_probe(struct platform_device *pdev)
 		sec_dai->base = regs_base;
 		sec_dai->quirks = quirks;
 
-		if (soc_is_exynos5250() && srp_enabled_status())
+		if (srp_enabled_status())
 			sec_dai->idma_playback.dma_addr = srp_get_idma_addr();
 		else
 			sec_dai->idma_playback.dma_addr = i2s_cfg->idma_addr;
