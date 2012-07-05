@@ -36,14 +36,14 @@
 #define IBUF_OFFSET	((soc_is_exynos4412() || soc_is_exynos4212()) ? \
 			(0x30000) : (0x10000))
 #elif defined(CONFIG_ARCH_EXYNOS5)
-#define IBUF_OFFSET	(0x8004)
+#define IBUF_OFFSET	(0x8104)
 #endif
 
 /* OBUF Offset */
 #if defined(CONFIG_ARCH_EXYNOS4)
 #define OBUF_OFFSET	(0x4)
 #elif defined(CONFIG_ARCH_EXYNOS5)
-#define OBUF_OFFSET	(0x10004)
+#define OBUF_OFFSET	(0x10104)
 #endif
 
 /* SRP Input/Output buffer physical address */
@@ -103,14 +103,18 @@
 
 /* For SRP firmware */
 struct srp_fw_info {
-	unsigned char *vliw;		/* VLIW */
-	unsigned char *cga;		/* CGA */
-	unsigned char *data;		/* DATA */
+	const struct firmware *vliw;		/* VLIW */
+	const struct firmware *cga;		/* CGA */
+	const struct firmware *data;		/* DATA */
 
 	unsigned int mem_base;		/* Physical address of base */
 	unsigned int vliw_pa;		/* Physical address of VLIW */
 	unsigned int cga_pa;		/* Physical address of CGA */
 	unsigned int data_pa;		/* Physical address of DATA */
+	unsigned char *vliw_va;
+	unsigned char *cga_va;
+	unsigned char *data_va;
+
 	unsigned long vliw_size;	/* Size of VLIW */
 	unsigned long cga_size;		/* Size of CGA */
 	unsigned long data_size;	/* Size of DATA */

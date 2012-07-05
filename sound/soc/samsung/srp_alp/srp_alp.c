@@ -31,6 +31,7 @@
 #include <linux/irq.h>
 #include <linux/uaccess.h>
 #include <linux/cma.h>
+#include <linux/firmware.h>
 
 #include <mach/hardware.h>
 #include <mach/irqs.h>
@@ -42,6 +43,10 @@
 #include "srp_alp_fw.h"
 #include "srp_alp_ioctl.h"
 #include "srp_alp_error.h"
+
+#define VLIW_NAME	"srp_vliw.bin"
+#define CGA_NAME	"srp_cga.bin"
+#define DATA_NAME	"srp_data.bin"
 
 static struct srp_info srp;
 static DEFINE_MUTEX(srp_mutex);
@@ -364,13 +369,15 @@ static void srp_commbox_deinit(void)
 	writel(reg, srp.commbox + SRP_INTERRUPT);
 }
 
-static void srp_clr_fw_buff(void)
+static void srp_clear_data_firmware(void)
 {
-	memset(srp.fw_info.data, 0, srp.fw_info.vliw_size);
+	const u8 *org_data = srp.fw_info.data->data;
+	unsigned char *old_data = srp.fw_info.data_va;
+	size_t size = srp.fw_info.data->size;
 
-	memcpy(srp.fw_info.vliw, srp_fw_vliw, srp.fw_info.vliw_size);
-	memcpy(srp.fw_info.cga, srp_fw_cga, srp.fw_info.cga_size);
-	memcpy(srp.fw_info.data, srp_fw_data, srp.fw_info.data_size);
+	memset(old_data + size, 0, DMEM_SIZE - size);
+	memcpy(old_data + DATA_OFFSET, org_data + DATA_OFFSET,
+					  size - DATA_OFFSET);
 }
 
 static void srp_fw_download(void)
@@ -380,15 +387,15 @@ static void srp_fw_download(void)
 	unsigned int reg = 0;
 
 	/* Fill ICACHE with first 64KB area : ARM access I$ */
-	memcpy(srp.icache, srp.fw_info.vliw, srp.fw_info.vliw_size);
+	memcpy(srp.icache, srp.fw_info.vliw_va, ICACHE_SIZE);
 
 	/* Fill DMEM */
-	memcpy(srp.dmem + DATA_OFFSET, srp.fw_info.data + DATA_OFFSET,
-	       srp.fw_info.data_size - DATA_OFFSET);
+	memcpy(srp.dmem + DATA_OFFSET, srp.fw_info.data_va + DATA_OFFSET,
+	       DMEM_SIZE - DATA_OFFSET);
 
 	/* Fill CMEM : Should be write by the 1word(32bit) */
-	pval = (unsigned long *)srp.fw_info.cga;
-	for (n = 0; n < srp.fw_info.cga_size; n += 4, pval++)
+	pval = (unsigned long *)srp.fw_info.cga_va;
+	for (n = 0; n < CMEM_SIZE; n += 4, pval++)
 		writel(ENDIAN_CHK_CONV(*pval), srp.cmem + n);
 
 	reg = readl(srp.commbox + SRP_CFGR);
@@ -405,7 +412,7 @@ static void srp_set_default_fw(void)
 	/* Initialize Commbox & default parameters */
 	srp_commbox_init();
 
-	srp_clr_fw_buff();
+	srp_clear_data_firmware();
 
 	/* Download default Firmware */
 	srp_fw_download();
@@ -774,15 +781,15 @@ static int srp_prepare_fw_buff(struct device *dev)
 
 	mem_paddr = srp.fw_info.mem_base;
 	srp.fw_info.vliw_pa = mem_paddr;
-	srp.fw_info.vliw = phys_to_virt(srp.fw_info.vliw_pa);
+	srp.fw_info.vliw_va = phys_to_virt(srp.fw_info.vliw_pa);
 	mem_paddr += ICACHE_SIZE;
 
 	srp.fw_info.cga_pa = mem_paddr;
-	srp.fw_info.cga = phys_to_virt(srp.fw_info.cga_pa);
+	srp.fw_info.cga_va = phys_to_virt(srp.fw_info.cga_pa);
 	mem_paddr += CMEM_SIZE;
 
 	srp.fw_info.data_pa = mem_paddr;
-	srp.fw_info.data = phys_to_virt(srp.fw_info.data_pa);
+	srp.fw_info.data_va = phys_to_virt(srp.fw_info.data_pa);
 	mem_paddr += DMEM_SIZE;
 
 	srp.wbuf = phys_to_virt(mem_paddr);
@@ -797,23 +804,23 @@ static int srp_prepare_fw_buff(struct device *dev)
 	srp.sp_data.commbox = phys_to_virt(mem_paddr);
 	mem_paddr += COMMBOX_SIZE;
 #else
-	srp.fw_info.vliw = dma_alloc_writecombine(dev, ICACHE_SIZE,
+	srp.fw_info.vliw_va = dma_alloc_writecombine(dev, ICACHE_SIZE,
 				&srp.fw_info.vliw_pa, GFP_KERNEL);
-	if (!srp.fw_info.vliw) {
+	if (!srp.fw_info.vliw_va) {
 		srp_err("Failed to alloc for vliw\n");
 		return -ENOMEM;
 	}
 
-	srp.fw_info.cga = dma_alloc_writecombine(dev, CMEM_SIZE,
+	srp.fw_info.cga_va = dma_alloc_writecombine(dev, CMEM_SIZE,
 				&srp.fw_info.cga_pa, GFP_KERNEL);
-	if (!srp.fw_info.cga) {
+	if (!srp.fw_info.cga_va) {
 		srp_err("Failed to alloc for cga\n");
 		return -ENOMEM;
 	}
 
-	srp.fw_info.data = dma_alloc_writecombine(dev, DMEM_SIZE,
+	srp.fw_info.data_va = dma_alloc_writecombine(dev, DMEM_SIZE,
 					&srp.fw_info.data_pa, GFP_KERNEL);
-	if (!srp.fw_info.data) {
+	if (!srp.fw_info.data_va) {
 		srp_err("Failed to alloc for data\n");
 		return -ENOMEM;
 	}
@@ -843,14 +850,6 @@ static int srp_prepare_fw_buff(struct device *dev)
 	}
 #endif
 
-	srp.fw_info.vliw_size = sizeof(srp_fw_vliw);
-	srp.fw_info.cga_size = sizeof(srp_fw_cga);
-	srp.fw_info.data_size = sizeof(srp_fw_data);
-
-	srp_info("VLIW_SIZE[%lu]Bytes\n", srp.fw_info.vliw_size);
-	srp_info("CGA_SIZE[%lu]Bytes\n", srp.fw_info.cga_size);
-	srp_info("DATA_SIZE[%lu]Bytes\n", srp.fw_info.data_size);
-
 	return 0;
 }
 
@@ -859,17 +858,26 @@ static int srp_remove_fw_buff(struct device *dev)
 #if defined(CONFIG_CMA)
 	cma_free(srp.fw_info.mem_base);
 #else
-	dma_free_writecombine(dev, ICACHE_SIZE, srp.fw_info.vliw,
+	dma_free_writecombine(dev, ICACHE_SIZE, srp.fw_info.vliw_va,
 					srp.fw_info.vliw_pa);
-	dma_free_writecombine(dev, CMEM_SIZE, srp.fw_info.cga,
+	dma_free_writecombine(dev, CMEM_SIZE, srp.fw_info.cga_va,
 					srp.fw_info.cga_pa);
-	dma_free_writecombine(dev, DMEM_SIZE, srp.fw_info.data,
+	dma_free_writecombine(dev, DMEM_SIZE, srp.fw_info.data_va,
 					srp.fw_info.data_pa);
 	kfree(srp.wbuf);
 	kfree(srp.sp_data.ibuf);
 	kfree(srp.sp_data.obuf);
 	kfree(srp.sp_data.commbox);
 #endif
+	if (srp.fw_info.vliw)
+		release_firmware(srp.fw_info.vliw);
+
+	if (srp.fw_info.cga)
+		release_firmware(srp.fw_info.cga);
+
+	if (srp.fw_info.data)
+		release_firmware(srp.fw_info.data);
+
 	srp.fw_info.vliw = NULL;
 	srp.fw_info.cga = NULL;
 	srp.fw_info.data = NULL;
@@ -883,6 +891,44 @@ static int srp_remove_fw_buff(struct device *dev)
 	srp.obuf1_pa = 0;
 
 	return 0;
+}
+
+static void
+srp_firmware_request_complete(const struct firmware *vliw, void *context)
+{
+	const struct firmware *cga;
+	const struct firmware *data;
+	struct device *dev = context;
+
+	if (!vliw) {
+		srp_err("Failed to requset firmware[%s]\n", VLIW_NAME);
+		return;
+	}
+
+	if (request_firmware(&cga, CGA_NAME, dev)) {
+		srp_err("Failed to requset firmware[%s]\n", CGA_NAME);
+		return;
+	}
+
+	if (request_firmware(&data, DATA_NAME, dev)) {
+		srp_err("Failed to requset firmware[%s]\n", DATA_NAME);
+		return;
+	}
+
+	srp.fw_info.vliw = vliw;
+	srp.fw_info.cga = cga;
+	srp.fw_info.data = data;
+
+	memcpy(srp.fw_info.vliw_va, vliw->data, vliw->size);
+	memcpy(srp.fw_info.cga_va, cga->data, cga->size);
+	memcpy(srp.fw_info.data_va, data->data, data->size);
+
+	srp_info("Completed loading vliw[%d]\n", vliw->size);
+	srp_info("Completed loading cga[%d]\n", cga->size);
+	srp_info("Completed loading data[%d]\n", data->size);
+
+	release_firmware(srp.fw_info.vliw);
+	release_firmware(srp.fw_info.cga);
 }
 
 static const struct file_operations srp_fops = {
@@ -938,6 +984,8 @@ static void srp_request_pwr_mode(int mode)
 static int srp_suspend(struct platform_device *pdev, pm_message_t state)
 {
 	unsigned long deadline = jiffies + (HZ / 100);
+	unsigned char *fw_data = srp.fw_info.data_va;
+	size_t fw_size = srp.fw_info.data->size;
 
 	srp_info("Suspend\n");
 
@@ -960,7 +1008,8 @@ static int srp_suspend(struct platform_device *pdev, pm_message_t state)
 			} while (time_before(jiffies, deadline));
 
 			srp_pending_ctrl(STALL);
-			memcpy(srp.fw_info.data, srp.dmem, DMEM_SIZE);
+			memcpy(fw_data + DATA_OFFSET, srp.dmem + DATA_OFFSET,
+						      fw_size - DATA_OFFSET);
 			memcpy(srp.sp_data.commbox, srp.commbox, COMMBOX_SIZE);
 			srp.pm_suspended = true;
 		}
@@ -1088,10 +1137,24 @@ static __devinit int srp_probe(struct platform_device *pdev)
 		goto err8;
 	}
 
+	ret = request_firmware_nowait(THIS_MODULE,
+				      FW_ACTION_HOTPLUG,
+				      VLIW_NAME,
+				      &pdev->dev,
+				      GFP_KERNEL,
+				      &pdev->dev,
+				      srp_firmware_request_complete);
+	if (ret) {
+		dev_err(&pdev->dev, "could not load firmware (err=%d)\n", ret);
+		goto err9;
+	}
+
 	srp_prepare_buff(&pdev->dev);
 
 	return 0;
 
+err9:
+	misc_deregister(&srp_miscdev);
 err8:
 	free_irq(IRQ_AUDIO_SS, pdev);
 err7:
