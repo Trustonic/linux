@@ -59,6 +59,9 @@
 #define OBUF_NUM	(0x2)
 #define START_THRESHOLD	(IBUF_SIZE * 3)
 
+/* DATA_OFFSET */
+#define DATA_OFFSET	((IBUF_SIZE * IBUF_NUM) + OBUF_OFFSET)
+
 /* IDMA Buffer */
 #if defined(CONFIG_ARCH_EXYNOS4)
 #define IDMA_OFFSET	((soc_is_exynos4412() || soc_is_exynos4212()) ? \

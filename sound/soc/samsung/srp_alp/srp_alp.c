@@ -366,13 +366,11 @@ static void srp_commbox_deinit(void)
 
 static void srp_clr_fw_buff(void)
 {
-	memset(srp.fw_info.vliw, 0, ICACHE_SIZE);
-	memset(srp.fw_info.cga, 0, CMEM_SIZE);
-	memset(srp.fw_info.data, 0, DMEM_SIZE);
+	memset(srp.fw_info.data, 0, srp.fw_info.vliw_size);
 
-	memcpy(srp.fw_info.vliw, srp_fw_vliw, sizeof(srp_fw_vliw));
-	memcpy(srp.fw_info.cga, srp_fw_cga, sizeof(srp_fw_cga));
-	memcpy(srp.fw_info.data, srp_fw_data, sizeof(srp_fw_data));
+	memcpy(srp.fw_info.vliw, srp_fw_vliw, srp.fw_info.vliw_size);
+	memcpy(srp.fw_info.cga, srp_fw_cga, srp.fw_info.cga_size);
+	memcpy(srp.fw_info.data, srp_fw_data, srp.fw_info.data_size);
 }
 
 static void srp_fw_download(void)
@@ -382,14 +380,15 @@ static void srp_fw_download(void)
 	unsigned int reg = 0;
 
 	/* Fill ICACHE with first 64KB area : ARM access I$ */
-	memcpy(srp.icache, srp.fw_info.vliw, ICACHE_SIZE);
+	memcpy(srp.icache, srp.fw_info.vliw, srp.fw_info.vliw_size);
 
 	/* Fill DMEM */
-	memcpy(srp.dmem, srp.fw_info.data, DMEM_SIZE);
+	memcpy(srp.dmem + DATA_OFFSET, srp.fw_info.data + DATA_OFFSET,
+	       srp.fw_info.data_size - DATA_OFFSET);
 
 	/* Fill CMEM : Should be write by the 1word(32bit) */
 	pval = (unsigned long *)srp.fw_info.cga;
-	for (n = 0; n < CMEM_SIZE; n += 4, pval++)
+	for (n = 0; n < srp.fw_info.cga_size; n += 4, pval++)
 		writel(ENDIAN_CHK_CONV(*pval), srp.cmem + n);
 
 	reg = readl(srp.commbox + SRP_CFGR);
