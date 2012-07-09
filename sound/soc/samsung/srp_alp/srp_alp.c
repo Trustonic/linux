@@ -363,21 +363,19 @@ static void srp_commbox_init(void)
 
 static void srp_commbox_deinit(void)
 {
+	const u8 *org_data = srp.fw_info.data->data;
+	unsigned char *old_data = srp.fw_info.data_va;
+	size_t size = srp.fw_info.data->size;
 	unsigned int reg = 0;
 
 	srp_wait_for_pending();
 	srp_pending_ctrl(STALL);
+
+	/* Init data firmware */
+	memcpy(old_data, org_data, size);
+
 	srp.decoding_started = 0;
 	writel(reg, srp.commbox + SRP_INTERRUPT);
-}
-
-static void srp_clear_data_firmware(void)
-{
-	const u8 *org_data = srp.fw_info.data->data;
-	unsigned char *old_data = srp.fw_info.data_va;
-	size_t size = srp.fw_info.data->size;
-
-	memcpy(old_data, org_data, size);
 }
 
 static void srp_fw_download(void)
@@ -410,8 +408,6 @@ static void srp_set_default_fw(void)
 {
 	/* Initialize Commbox & default parameters */
 	srp_commbox_init();
-
-	srp_clear_data_firmware();
 
 	/* Download default Firmware */
 	srp_fw_download();
