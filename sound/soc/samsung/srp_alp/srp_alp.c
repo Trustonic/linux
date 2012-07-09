@@ -353,10 +353,12 @@ static void srp_commbox_init(void)
 	/* Init Read bitstream size */
 	writel(reg, srp.commbox + SRP_READ_BITSTREAM_SIZE);
 
+#ifdef CONFIG_ARCH_EXYNOS4
 	/* Configure fw address */
 	writel(srp.fw_info.vliw_pa, srp.commbox + SRP_CODE_START_ADDR);
 	writel(srp.fw_info.cga_pa, srp.commbox + SRP_CONF_START_ADDR);
 	writel(srp.fw_info.data_pa, srp.commbox + SRP_DATA_START_ADDR);
+#endif
 }
 
 static void srp_commbox_deinit(void)
@@ -375,9 +377,7 @@ static void srp_clear_data_firmware(void)
 	unsigned char *old_data = srp.fw_info.data_va;
 	size_t size = srp.fw_info.data->size;
 
-	memset(old_data + size, 0, DMEM_SIZE - size);
-	memcpy(old_data + DATA_OFFSET, org_data + DATA_OFFSET,
-					  size - DATA_OFFSET);
+	memcpy(old_data, org_data, size);
 }
 
 static void srp_fw_download(void)
@@ -387,15 +387,14 @@ static void srp_fw_download(void)
 	unsigned int reg = 0;
 
 	/* Fill ICACHE with first 64KB area : ARM access I$ */
-	memcpy(srp.icache, srp.fw_info.vliw_va, ICACHE_SIZE);
+	memcpy(srp.icache, srp.fw_info.vliw_va, srp.fw_info.vliw_size);
 
 	/* Fill DMEM */
-	memcpy(srp.dmem + DATA_OFFSET, srp.fw_info.data_va + DATA_OFFSET,
-	       DMEM_SIZE - DATA_OFFSET);
+	memcpy(srp.dmem + DATA_OFFSET, srp.fw_info.data_va, srp.fw_info.data_size);
 
 	/* Fill CMEM : Should be write by the 1word(32bit) */
 	pval = (unsigned long *)srp.fw_info.cga_va;
-	for (n = 0; n < CMEM_SIZE; n += 4, pval++)
+	for (n = 0; n < srp.fw_info.cga_size; n += 4, pval++)
 		writel(ENDIAN_CHK_CONV(*pval), srp.cmem + n);
 
 	reg = readl(srp.commbox + SRP_CFGR);
@@ -919,6 +918,10 @@ srp_firmware_request_complete(const struct firmware *vliw, void *context)
 	srp.fw_info.cga = cga;
 	srp.fw_info.data = data;
 
+	srp.fw_info.vliw_size = vliw->size;
+	srp.fw_info.cga_size = cga->size;
+	srp.fw_info.data_size = data->size;
+
 	memcpy(srp.fw_info.vliw_va, vliw->data, vliw->size);
 	memcpy(srp.fw_info.cga_va, cga->data, cga->size);
 	memcpy(srp.fw_info.data_va, data->data, data->size);
@@ -1008,8 +1011,7 @@ static int srp_suspend(struct platform_device *pdev, pm_message_t state)
 			} while (time_before(jiffies, deadline));
 
 			srp_pending_ctrl(STALL);
-			memcpy(fw_data + DATA_OFFSET, srp.dmem + DATA_OFFSET,
-						      fw_size - DATA_OFFSET);
+			memcpy(fw_data, srp.dmem + DATA_OFFSET, fw_size);
 			memcpy(srp.sp_data.commbox, srp.commbox, COMMBOX_SIZE);
 			srp.pm_suspended = true;
 		}
