@@ -654,6 +654,11 @@ static irqreturn_t srp_irq(int irqno, void *dev_id)
 			} else {
 				srp_debug("IBUF1 empty\n");
 				srp.ibuf_empty[1] = 1;
+				if (!srp.hw_reset_stat) {
+					srp_pending_ctrl(STALL);
+					srp.hw_reset_stat = true;
+					break;
+				}
 			}
 
 			srp_fill_ibuf();
@@ -928,6 +933,13 @@ srp_firmware_request_complete(const struct firmware *vliw, void *context)
 
 	release_firmware(srp.fw_info.vliw);
 	release_firmware(srp.fw_info.cga);
+
+	srp_set_default_fw();
+
+	/* SRP H/W reset */
+	srp.hw_reset_stat = false;
+	writel(0x0, srp.commbox + SRP_CONT);
+	srp_pending_ctrl(RUN);
 }
 
 static const struct file_operations srp_fops = {
