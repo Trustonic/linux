@@ -31,36 +31,8 @@
 #define OBUF_SIZE	(0x4000)
 #endif
 
-/* IBUF Offset */
-#if defined(CONFIG_ARCH_EXYNOS4)
-#define IBUF_OFFSET	((soc_is_exynos4412() || soc_is_exynos4212()) ? \
-			(0x30000) : (0x10000))
-#elif defined(CONFIG_ARCH_EXYNOS5)
-#define IBUF_OFFSET	(0x8104)
-#endif
-
-/* OBUF Offset */
-#if defined(CONFIG_ARCH_EXYNOS4)
-#define OBUF_OFFSET	(0x4)
-#elif defined(CONFIG_ARCH_EXYNOS5)
-#define OBUF_OFFSET	(0x10104)
-#endif
-
-/* SRP Input/Output buffer physical address */
-#if defined(CONFIG_ARCH_EXYNOS4)
-#define SRP_IBUF_PHY_ADDR	(SRP_IRAM_BASE + IBUF_OFFSET)
-#elif defined(CONFIG_ARCH_EXYNOS5)
-#define SRP_IBUF_PHY_ADDR	(SRP_DMEM_BASE + IBUF_OFFSET)
-#endif
-#define SRP_OBUF_PHY_ADDR      (SRP_DMEM_BASE + OBUF_OFFSET)
-
-/* IBUF/OBUF NUM */
-#define IBUF_NUM	(0x2)
-#define OBUF_NUM	(0x2)
+/* Start threshold */
 #define START_THRESHOLD	(IBUF_SIZE * 3)
-
-/* DATA_OFFSET */
-#define DATA_OFFSET	((IBUF_SIZE * IBUF_NUM) + OBUF_OFFSET)
 
 /* IDMA Buffer */
 #if defined(CONFIG_ARCH_EXYNOS4)
@@ -202,6 +174,7 @@ struct srp_info {
 	unsigned int	prepare_for_eos;
 	unsigned int	play_done;
 	unsigned int	idma_addr;
+	unsigned int	data_offset;
 
 	bool	pm_suspended;
 	bool	pm_resumed;

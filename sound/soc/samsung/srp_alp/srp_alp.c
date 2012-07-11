@@ -388,7 +388,7 @@ static void srp_fw_download(void)
 	memcpy(srp.icache, srp.fw_info.vliw_va, srp.fw_info.vliw_size);
 
 	/* Fill DMEM */
-	memcpy(srp.dmem + DATA_OFFSET, srp.fw_info.data_va, srp.fw_info.data_size);
+	memcpy(srp.dmem + srp.data_offset, srp.fw_info.data_va, srp.fw_info.data_size);
 
 	/* Fill CMEM : Should be write by the 1word(32bit) */
 	pval = (unsigned long *)srp.fw_info.cga_va;
@@ -625,6 +625,56 @@ static void srp_check_obuf_info(void)
 		srp_err("Wrong OBUF SIZE[%d]\n", size);
 }
 
+static void srp_get_buf_info(void)
+{
+	unsigned int ibuf0 = readl(srp.commbox + SRP_BITSTREAM_BUFF_DRAM_ADDR0);
+	unsigned int ibuf1 = readl(srp.commbox + SRP_BITSTREAM_BUFF_DRAM_ADDR1);
+	unsigned int obuf0 = readl(srp.commbox + SRP_PCM_BUFF0);
+	unsigned int obuf1 = readl(srp.commbox + SRP_PCM_BUFF1);
+	unsigned int ibuf_base;
+
+	/* Get I/O Buffer offset */
+	srp.ibuf_offset = ibuf0 & 0xfffff;
+	srp.obuf_offset = obuf0 & 0xfffff;
+
+	/* Get I/O Buffer address */
+	srp.ibuf0 = srp.dmem + (ibuf0 & 0xfffff);
+	srp.ibuf1 = srp.dmem + (ibuf1 & 0xfffff);
+	srp.obuf0 = srp.dmem + (obuf0 & 0xfffff);
+	srp.obuf1 = srp.dmem + (obuf1 & 0xfffff);
+
+#ifdef CONFIG_ARCH_EXYNOS4
+	ibuf_base = SRP_IRAM_BASE;
+#elif CONFIG_ARCH_EXYNOS5
+	ibuf_base = SRP_DMEM_BASE;
+#endif
+	/* Get I/O Buffer Physical address */
+	srp.ibuf0_pa = ibuf_base + (ibuf0 & 0xfffff);
+	srp.ibuf1_pa = ibuf_base + (ibuf1 & 0xfffff);
+	srp.obuf0_pa = SRP_DMEM_BASE + (obuf0 & 0xfffff);
+	srp.obuf1_pa = SRP_DMEM_BASE + (obuf1 & 0xfffff);
+
+	/* Get I/O Buffer size */
+	srp.ibuf_size = readl(srp.commbox + SRP_BITSTREAM_BUFF_DRAM_SIZE);
+	srp.obuf_size = (readl(srp.commbox + SRP_PCM_BUFF_SIZE) << 2);
+	srp.wbuf_size = srp.ibuf_size * 4;
+
+	srp.ibuf_num = 2;
+	srp.obuf_num = 2;
+	srp.data_offset = (srp.ibuf_size * 2) + srp.obuf_offset;
+
+	srp_info("[VA]IBUF0[0x%p], [PA]IBUF0[0x%x]\n",
+						srp.ibuf0, srp.ibuf0_pa);
+	srp_info("[VA]IBUF1[0x%p], [PA]IBUF1[0x%x]\n",
+						srp.ibuf1, srp.ibuf1_pa);
+	srp_info("[VA]OBUF0[0x%p], [PA]OBUF0[0x%x]\n",
+						srp.obuf0, srp.obuf0_pa);
+	srp_info("[VA]OBUF1[0x%p], [PA]OBUF1[0x%x]\n",
+						srp.obuf1, srp.obuf1_pa);
+	srp_info("IBUF SIZE [%ld]Bytes, OBUF SIZE [%ld]Bytes\n",
+						srp.ibuf_size, srp.obuf_size);
+}
+
 static irqreturn_t srp_irq(int irqno, void *dev_id)
 {
 	unsigned int irq_code = readl(srp.commbox + SRP_INTERRUPT_CODE);
@@ -656,6 +706,7 @@ static irqreturn_t srp_irq(int irqno, void *dev_id)
 				srp.ibuf_empty[1] = 1;
 				if (!srp.hw_reset_stat) {
 					srp_pending_ctrl(STALL);
+					srp_get_buf_info();
 					srp.hw_reset_stat = true;
 					break;
 				}
@@ -724,48 +775,6 @@ static irqreturn_t srp_irq(int irqno, void *dev_id)
 	srp_debug("IRQ Exited!\n");
 
 	return IRQ_HANDLED;
-}
-
-static void srp_prepare_buff(struct device *dev)
-{
-	srp.ibuf_size = IBUF_SIZE;
-	srp.obuf_size = OBUF_SIZE;
-	srp.wbuf_size = WBUF_SIZE;
-	srp.ibuf_offset = IBUF_OFFSET;
-	srp.obuf_offset = OBUF_OFFSET;
-
-#if defined(CONFIG_ARCH_EXYNOS4)
-	srp.ibuf0 = srp.iram + srp.ibuf_offset;
-#elif defined(CONFIG_ARCH_EXYNOS5)
-	srp.ibuf0 = srp.dmem + srp.ibuf_offset;
-#endif
-	srp.obuf0 = srp.dmem + srp.obuf_offset;
-
-	srp.ibuf1 = srp.ibuf0 + srp.ibuf_size;
-	srp.obuf1 = srp.obuf0 + srp.obuf_size;
-
-	if (!srp.ibuf0_pa)
-		srp.ibuf0_pa = SRP_IBUF_PHY_ADDR;
-
-	if (!srp.obuf0_pa)
-		srp.obuf0_pa = SRP_OBUF_PHY_ADDR;
-
-	srp.ibuf1_pa = srp.ibuf0_pa + srp.ibuf_size;
-	srp.obuf1_pa = srp.obuf0_pa + srp.obuf_size;
-
-	srp.ibuf_num = IBUF_NUM;
-	srp.obuf_num = OBUF_NUM;
-
-	srp_info("[VA]IBUF0[0x%p], [PA]IBUF0[0x%x]\n",
-						srp.ibuf0, srp.ibuf0_pa);
-	srp_info("[VA]IBUF1[0x%p], [PA]IBUF1[0x%x]\n",
-						srp.ibuf1, srp.ibuf1_pa);
-	srp_info("[VA]OBUF0[0x%p], [PA]OBUF0[0x%x]\n",
-						srp.obuf0, srp.obuf0_pa);
-	srp_info("[VA]OBUF1[0x%p], [PA]OBUF1[0x%x]\n",
-						srp.obuf1, srp.obuf1_pa);
-	srp_info("IBUF SIZE [%ld]Bytes, OBUF SIZE [%ld]Bytes\n",
-						srp.ibuf_size, srp.obuf_size);
 }
 
 static int srp_prepare_fw_buff(struct device *dev)
@@ -1019,7 +1028,7 @@ static int srp_suspend(struct platform_device *pdev, pm_message_t state)
 			} while (time_before(jiffies, deadline));
 
 			srp_pending_ctrl(STALL);
-			memcpy(fw_data, srp.dmem + DATA_OFFSET, fw_size);
+			memcpy(fw_data, srp.dmem + srp.data_offset, fw_size);
 			memcpy(srp.sp_data.commbox, srp.commbox, COMMBOX_SIZE);
 			srp.pm_suspended = true;
 		}
@@ -1158,8 +1167,6 @@ static __devinit int srp_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "could not load firmware (err=%d)\n", ret);
 		goto err9;
 	}
-
-	srp_prepare_buff(&pdev->dev);
 
 	return 0;
 
