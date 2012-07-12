@@ -385,14 +385,15 @@ static void srp_fw_download(void)
 	unsigned int reg = 0;
 
 	/* Fill ICACHE with first 64KB area : ARM access I$ */
-	memcpy(srp.icache, srp.fw_info.vliw_va, srp.fw_info.vliw_size);
+	memcpy(srp.icache, srp.fw_info.vliw_va, ICACHE_SIZE);
 
 	/* Fill DMEM */
-	memcpy(srp.dmem + srp.data_offset, srp.fw_info.data_va, srp.fw_info.data_size);
+	memcpy(srp.dmem + srp.data_offset, srp.fw_info.data_va,
+	       DMEM_SIZE - srp.data_offset);
 
 	/* Fill CMEM : Should be write by the 1word(32bit) */
 	pval = (unsigned long *)srp.fw_info.cga_va;
-	for (n = 0; n < srp.fw_info.cga_size; n += 4, pval++)
+	for (n = 0; n < CMEM_SIZE; n += 4, pval++)
 		writel(ENDIAN_CHK_CONV(*pval), srp.cmem + n);
 
 	reg = readl(srp.commbox + SRP_CFGR);
@@ -675,6 +676,79 @@ static void srp_get_buf_info(void)
 						srp.ibuf_size, srp.obuf_size);
 }
 
+static void srp_alloc_buf(void)
+{
+	srp.wbuf = kmalloc(srp.wbuf_size, GFP_KERNEL | GFP_DMA);
+	if (!srp.wbuf) {
+		srp_err("Failed to alloc memory for wbuf\n");
+		return;
+	}
+
+	srp.sp_data.ibuf = kmalloc(srp.ibuf_size * 2, GFP_KERNEL | GFP_DMA);
+	if (!srp.sp_data.ibuf) {
+		srp_err("Failed to alloc memory for sp_data ibuf\n");
+		goto err1;
+	}
+
+	srp.sp_data.obuf = kmalloc(srp.obuf_size * 2, GFP_KERNEL | GFP_DMA);
+	if (!srp.sp_data.obuf) {
+		srp_err("Failed to alloc memory for sp_data obuf\n");
+		goto err2;
+	}
+
+	srp.sp_data.commbox = kmalloc(COMMBOX_SIZE, GFP_KERNEL | GFP_DMA);
+	if (!srp.sp_data.commbox) {
+		srp_err("Failed to alloc memory for sp_data commbox\n");
+		goto err3;
+	}
+
+	return;
+
+err3:
+	kfree(srp.sp_data.obuf);
+err2:
+	kfree(srp.sp_data.ibuf);
+err1:
+	kfree(srp.wbuf);
+
+	return;
+}
+
+static int srp_free_buf(void)
+{
+	kfree(srp.fw_info.vliw_va);
+	kfree(srp.fw_info.cga_va);
+	kfree(srp.fw_info.data_va);
+
+	kfree(srp.wbuf);
+	kfree(srp.sp_data.ibuf);
+	kfree(srp.sp_data.obuf);
+	kfree(srp.sp_data.commbox);
+
+	if (srp.fw_info.vliw)
+		release_firmware(srp.fw_info.vliw);
+
+	if (srp.fw_info.cga)
+		release_firmware(srp.fw_info.cga);
+
+	if (srp.fw_info.data)
+		release_firmware(srp.fw_info.data);
+
+	srp.fw_info.vliw = NULL;
+	srp.fw_info.cga = NULL;
+	srp.fw_info.data = NULL;
+
+	srp.fw_info.vliw_pa = 0;
+	srp.fw_info.cga_pa = 0;
+	srp.fw_info.data_pa = 0;
+	srp.ibuf0_pa = 0;
+	srp.ibuf1_pa = 0;
+	srp.obuf0_pa = 0;
+	srp.obuf1_pa = 0;
+
+	return 0;
+}
+
 static irqreturn_t srp_irq(int irqno, void *dev_id)
 {
 	unsigned int irq_code = readl(srp.commbox + SRP_INTERRUPT_CODE);
@@ -706,8 +780,9 @@ static irqreturn_t srp_irq(int irqno, void *dev_id)
 				srp.ibuf_empty[1] = 1;
 				if (!srp.hw_reset_stat) {
 					srp_pending_ctrl(STALL);
-					srp_get_buf_info();
 					srp.hw_reset_stat = true;
+					srp_get_buf_info();
+					srp_alloc_buf();
 					break;
 				}
 			}
@@ -777,131 +852,6 @@ static irqreturn_t srp_irq(int irqno, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-static int srp_prepare_fw_buff(struct device *dev)
-{
-#if defined(CONFIG_CMA)
-	unsigned long mem_paddr;
-
-	srp.fw_info.mem_base = cma_alloc(dev, "srp", BASE_MEM_SIZE, 0);
-	if (IS_ERR_VALUE(srp.fw_info.mem_base)) {
-		srp_err("Failed to cma alloc for srp\n");
-		return -ENOMEM;
-	}
-
-	mem_paddr = srp.fw_info.mem_base;
-	srp.fw_info.vliw_pa = mem_paddr;
-	srp.fw_info.vliw_va = phys_to_virt(srp.fw_info.vliw_pa);
-	mem_paddr += ICACHE_SIZE;
-
-	srp.fw_info.cga_pa = mem_paddr;
-	srp.fw_info.cga_va = phys_to_virt(srp.fw_info.cga_pa);
-	mem_paddr += CMEM_SIZE;
-
-	srp.fw_info.data_pa = mem_paddr;
-	srp.fw_info.data_va = phys_to_virt(srp.fw_info.data_pa);
-	mem_paddr += DMEM_SIZE;
-
-	srp.wbuf = phys_to_virt(mem_paddr);
-	mem_paddr += WBUF_SIZE;
-
-	srp.sp_data.ibuf = phys_to_virt(mem_paddr);
-	mem_paddr += IBUF_SIZE * 2;
-
-	srp.sp_data.obuf = phys_to_virt(mem_paddr);
-	mem_paddr += OBUF_SIZE * 2;
-
-	srp.sp_data.commbox = phys_to_virt(mem_paddr);
-	mem_paddr += COMMBOX_SIZE;
-#else
-	srp.fw_info.vliw_va = dma_alloc_writecombine(dev, ICACHE_SIZE,
-				&srp.fw_info.vliw_pa, GFP_KERNEL);
-	if (!srp.fw_info.vliw_va) {
-		srp_err("Failed to alloc for vliw\n");
-		return -ENOMEM;
-	}
-
-	srp.fw_info.cga_va = dma_alloc_writecombine(dev, CMEM_SIZE,
-				&srp.fw_info.cga_pa, GFP_KERNEL);
-	if (!srp.fw_info.cga_va) {
-		srp_err("Failed to alloc for cga\n");
-		return -ENOMEM;
-	}
-
-	srp.fw_info.data_va = dma_alloc_writecombine(dev, DMEM_SIZE,
-					&srp.fw_info.data_pa, GFP_KERNEL);
-	if (!srp.fw_info.data_va) {
-		srp_err("Failed to alloc for data\n");
-		return -ENOMEM;
-	}
-
-	srp.wbuf = kzalloc(srp.wbuf_size, GFP_KERNEL);
-	if (!srp.wbuf) {
-		srp_err("Failed to allocation for WBUF!\n");
-		return -ENOMEM;
-	}
-
-	srp.sp_data.ibuf = kzalloc(IBUF_SIZE * 2, GFP_KERNEL);
-	if (!srp.sp_data.ibuf) {
-		srp_err("Failed to alloc ibuf for suspend/resume!\n");
-		return -ENOMEM;
-	}
-
-	srp.sp_data.obuf = kzalloc(OBUF_SIZE * 2, GFP_KERNEL);
-	if (!srp.sp_data.obuf) {
-		srp_err("Failed to alloc obuf for suspend/resume!\n");
-		return -ENOMEM;
-	}
-
-	srp.sp_data.commbox = kzalloc(COMMBOX_SIZE, GFP_KERNEL);
-	if (!srp.sp_data.commbox) {
-		srp_err("Failed to alloc commbox for suspend/resume\n");
-		return -ENOMEM;
-	}
-#endif
-
-	return 0;
-}
-
-static int srp_remove_fw_buff(struct device *dev)
-{
-#if defined(CONFIG_CMA)
-	cma_free(srp.fw_info.mem_base);
-#else
-	dma_free_writecombine(dev, ICACHE_SIZE, srp.fw_info.vliw_va,
-					srp.fw_info.vliw_pa);
-	dma_free_writecombine(dev, CMEM_SIZE, srp.fw_info.cga_va,
-					srp.fw_info.cga_pa);
-	dma_free_writecombine(dev, DMEM_SIZE, srp.fw_info.data_va,
-					srp.fw_info.data_pa);
-	kfree(srp.wbuf);
-	kfree(srp.sp_data.ibuf);
-	kfree(srp.sp_data.obuf);
-	kfree(srp.sp_data.commbox);
-#endif
-	if (srp.fw_info.vliw)
-		release_firmware(srp.fw_info.vliw);
-
-	if (srp.fw_info.cga)
-		release_firmware(srp.fw_info.cga);
-
-	if (srp.fw_info.data)
-		release_firmware(srp.fw_info.data);
-
-	srp.fw_info.vliw = NULL;
-	srp.fw_info.cga = NULL;
-	srp.fw_info.data = NULL;
-
-	srp.fw_info.vliw_pa = 0;
-	srp.fw_info.cga_pa = 0;
-	srp.fw_info.data_pa = 0;
-	srp.ibuf0_pa = 0;
-	srp.ibuf1_pa = 0;
-	srp.obuf0_pa = 0;
-	srp.obuf1_pa = 0;
-
-	return 0;
-}
-
 static void
 srp_firmware_request_complete(const struct firmware *vliw, void *context)
 {
@@ -932,6 +882,29 @@ srp_firmware_request_complete(const struct firmware *vliw, void *context)
 	srp.fw_info.cga_size = cga->size;
 	srp.fw_info.data_size = data->size;
 
+	/* Firmware Memory allocation */
+	srp.fw_info.vliw_va = kmalloc(ICACHE_SIZE, GFP_KERNEL | GFP_DMA);
+	if (!srp.fw_info.vliw_va) {
+		srp_err("Failed to alloc memory for vliw\n");
+		goto err1;
+	}
+
+	srp.fw_info.cga_va = kmalloc(CMEM_SIZE, GFP_KERNEL | GFP_DMA);
+	if (!srp.fw_info.cga_va) {
+		srp_err("Failed to alloc memory for cga\n");
+		goto err2;
+	}
+
+	srp.fw_info.data_va = kmalloc(DMEM_SIZE, GFP_KERNEL | GFP_DMA);
+	if (!srp.fw_info.data_va) {
+		srp_err("Failed to alloc memory for data\n");
+		goto err3;
+	}
+
+	srp.fw_info.vliw_pa = virt_to_phys(srp.fw_info.vliw_va);
+	srp.fw_info.cga_pa = virt_to_phys(srp.fw_info.cga_va);
+	srp.fw_info.data_pa = virt_to_phys(srp.fw_info.data_va);
+
 	memcpy(srp.fw_info.vliw_va, vliw->data, vliw->size);
 	memcpy(srp.fw_info.cga_va, cga->data, cga->size);
 	memcpy(srp.fw_info.data_va, data->data, data->size);
@@ -949,6 +922,19 @@ srp_firmware_request_complete(const struct firmware *vliw, void *context)
 	srp.hw_reset_stat = false;
 	writel(0x0, srp.commbox + SRP_CONT);
 	srp_pending_ctrl(RUN);
+
+	return;
+
+err3:
+	kfree(srp.fw_info.cga_va);
+err2:
+	kfree(srp.fw_info.vliw_va);
+err1:
+	release_firmware(srp.fw_info.vliw);
+	release_firmware(srp.fw_info.cga);
+	release_firmware(srp.fw_info.data);
+
+	return;
 }
 
 static const struct file_operations srp_fops = {
@@ -1137,23 +1123,17 @@ static __devinit int srp_probe(struct platform_device *pdev)
 	}
 	clk_enable(srp.clk);
 
-	ret = srp_prepare_fw_buff(&pdev->dev);
-	if (ret) {
-		srp_err("SRP: Can't prepare memory for srp\n");
-		goto err6;
-	}
-
 	ret = request_irq(IRQ_AUDIO_SS, srp_irq, IRQF_DISABLED, "samsung-rp", pdev);
 	if (ret < 0) {
 		srp_err("SRP: Fail to claim SRP(AUDIO_SS) irq\n");
-		goto err7;
+		goto err6;
 	}
 
 	ret = misc_register(&srp_miscdev);
 	if (ret) {
 		srp_err("SRP: Cannot register miscdev on minor=%d\n",
 			SRP_DEV_MINOR);
-		goto err8;
+		goto err7;
 	}
 
 	ret = request_firmware_nowait(THIS_MODULE,
@@ -1165,18 +1145,17 @@ static __devinit int srp_probe(struct platform_device *pdev)
 				      srp_firmware_request_complete);
 	if (ret) {
 		dev_err(&pdev->dev, "could not load firmware (err=%d)\n", ret);
-		goto err9;
+		goto err8;
 	}
 
 	return 0;
 
-err9:
-	misc_deregister(&srp_miscdev);
 err8:
-	free_irq(IRQ_AUDIO_SS, pdev);
+	misc_deregister(&srp_miscdev);
 err7:
-	srp_remove_fw_buff(&pdev->dev);
+	free_irq(IRQ_AUDIO_SS, pdev);
 err6:
+	clk_disable(srp.clk);
 	clk_put(srp.clk);
 err5:
 	iounmap(srp.iram);
@@ -1195,7 +1174,7 @@ err1:
 static __devexit int srp_remove(struct platform_device *pdev)
 {
 	free_irq(IRQ_AUDIO_SS, pdev);
-	srp_remove_fw_buff(&pdev->dev);
+	srp_free_buf();
 
 	misc_deregister(&srp_miscdev);
 

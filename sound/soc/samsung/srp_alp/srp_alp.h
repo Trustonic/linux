@@ -79,7 +79,8 @@ struct srp_fw_info {
 	const struct firmware *cga;		/* CGA */
 	const struct firmware *data;		/* DATA */
 
-	unsigned int mem_base;		/* Physical address of base */
+	unsigned char *base_va;		/* Virtual address of base */
+	unsigned int base_pa;		/* Physical address of base */
 	unsigned int vliw_pa;		/* Physical address of VLIW */
 	unsigned int cga_pa;		/* Physical address of CGA */
 	unsigned int data_pa;		/* Physical address of DATA */
