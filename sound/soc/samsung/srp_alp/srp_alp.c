@@ -345,8 +345,6 @@ static ssize_t srp_read(struct file *file, char *buffer,
 	if (srp.prepare_for_eos) {
 		srp.obuf_fill_done[srp.obuf_ready] = 0;
 		srp_debug("Elapsed Obuf[%d] after Send EOS\n", srp.obuf_ready);
-		if (srp.pm_resumed)
-			srp.pm_suspended = false;
 
 		srp_pending_ctrl(RUN);
 		srp_obuf_elapsed();
@@ -398,9 +396,6 @@ static ssize_t srp_read(struct file *file, char *buffer,
 
 	if (!srp.obuf_fill_done[srp.obuf_next] && !srp.wait_for_eos) {
 		srp_debug("Decoding start for filling OBUF[%d]\n", srp.obuf_next);
-		if (srp.pm_resumed)
-			srp.pm_suspended = false;
-
 		srp_pending_ctrl(RUN);
 	}
 
@@ -674,7 +669,6 @@ static int srp_open(struct inode *inode, struct file *file)
 	srp.dec_info.sample_rate = 0;
 
 	srp.pm_suspended = false;
-	srp.pm_resumed = false;
 
 	return 0;
 }
@@ -1055,57 +1049,65 @@ static struct miscdevice srp_miscdev = {
 };
 
 #ifdef CONFIG_PM
-static int srp_suspend(struct platform_device *pdev, pm_message_t state)
+void srp_core_suspend(void)
 {
 	unsigned char *fw_data = srp.fw_info.data_va;
 	size_t fw_size = srp.fw_info.data->size;
 
+	if (srp.pm_suspended)
+		return;
+
+	/* IBUF/OBUF Save */
+	memcpy(srp.sp_data.ibuf, srp.ibuf0, IBUF_SIZE * 2);
+	memcpy(srp.sp_data.obuf, srp.obuf0, OBUF_SIZE * 2);
+
+	/* Request Suspend mode */
+	srp_request_intr_mode(SUSPEND);
+
+	memcpy(fw_data, srp.dmem + srp.data_offset, fw_size);
+	memcpy(srp.sp_data.commbox, srp.commbox, COMMBOX_SIZE);
+	srp.pm_suspended = true;
+}
+
+static int srp_suspend(struct platform_device *pdev, pm_message_t state)
+{
 	srp_info("Suspend\n");
 
-	if (srp.is_opened) {
-		if (srp.decoding_started && !srp.pm_suspended) {
-
-			/* IBUF/OBUF Save */
-			memcpy(srp.sp_data.ibuf, srp.ibuf0, IBUF_SIZE * 2);
-			memcpy(srp.sp_data.obuf, srp.obuf0, OBUF_SIZE * 2);
-
-			/* Request Suspend mode */
-			srp_request_intr_mode(SUSPEND);
-
-			memcpy(fw_data, srp.dmem + srp.data_offset, fw_size);
-			memcpy(srp.sp_data.commbox, srp.commbox, COMMBOX_SIZE);
-			srp.pm_suspended = true;
-		}
-	}
+#ifdef CONFIG_ARCH_EXYNOS4
+	if (srp.decoding_started)
+#elif CONFIG_ARCH_EXYNOS5
+	srp_core_suspend();
+#endif
 
 	return 0;
+}
+
+void srp_core_resume(void)
+{
+	if (!srp.pm_suspended)
+		return;
+
+	srp_fw_download();
+	memcpy(srp.commbox, srp.sp_data.commbox, COMMBOX_SIZE);
+	memcpy(srp.ibuf0, srp.sp_data.ibuf, IBUF_SIZE * 2);
+	memcpy(srp.obuf0, srp.sp_data.obuf, OBUF_SIZE * 2);
+
+	/* RESET */
+	writel(0x0, srp.commbox + SRP_CONT);
+	srp_request_intr_mode(RESUME);
+
+	srp.pm_suspended = false;
 }
 
 static int srp_resume(struct platform_device *pdev)
 {
 	srp_info("Resume\n");
 
-	if (srp.is_opened) {
-		if (!srp.decoding_started) {
-			srp_set_default_fw();
-			srp_flush_ibuf();
-			srp_flush_obuf();
-			srp_reset();
-		} else if (srp.decoding_started && srp.pm_suspended) {
-			srp_fw_download();
-
-			memcpy(srp.commbox, srp.sp_data.commbox, COMMBOX_SIZE);
-			memcpy(srp.ibuf0, srp.sp_data.ibuf, IBUF_SIZE * 2);
-			memcpy(srp.obuf0, srp.sp_data.obuf, OBUF_SIZE * 2);
-
-			/* RESET */
-			writel(0x0, srp.commbox + SRP_CONT);
-			srp_request_intr_mode(RESUME);
-
-			srp.pm_resumed = true;
-		}
-	}
-
+#ifdef CONFIG_ARCH_EXYNOS4
+	if(srp.decoding_started)
+#elif CONFIG_ARCH_EXYNOS5
+	srp_core_resume();
+#endif
 	return 0;
 }
 
