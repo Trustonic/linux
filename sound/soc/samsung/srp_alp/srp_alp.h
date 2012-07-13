@@ -45,7 +45,7 @@
 #endif
 
 /* Commbox & Etc information */
-#define COMMBOX_SIZE	(0x200)
+#define COMMBOX_SIZE	(0x308)
 
 /* Reserved memory on DRAM */
 #define BASE_MEM_SIZE	(CONFIG_AUDIO_SAMSUNG_MEMSIZE_SRP << 10)
@@ -191,7 +191,8 @@ enum {
 /* Request Suspend/Resume */
 enum {
 	SUSPEND = 0,
-	RESUME = 1,
+	RESUME,
+	SW_RESET,
 };
 
 #endif /* __SRP_ALP_H */

@@ -101,6 +101,81 @@ static void srp_pending_ctrl(int ctrl)
 			readl(srp.commbox + SRP_PENDING) ? "STALL" : "RUN");
 }
 
+static void srp_request_intr_mode(int mode)
+{
+	unsigned long deadline;
+	u32 pwr_mode = readl(srp.commbox + SRP_POWER_MODE);
+	u32 intr_en = readl(srp.commbox + SRP_INTREN);
+	u32 intr_msk = readl(srp.commbox + SRP_INTRMASK);
+	u32 intr_src = readl(srp.commbox + SRP_INTRSRC);
+	u32 intr_irq;
+	u32 check_mode = 0x0;
+
+	pwr_mode &= ~SRP_POWER_MODE_MASK;
+	intr_en &= ~SRP_INTR_DI;
+	intr_msk |= (SRP_ARM_INTR_MASK | SRP_DMA_INTR_MASK | SRP_TMR_INTR_MASK);
+	intr_src &= ~(SRP_INTRSRC_MASK);
+
+	switch (mode) {
+	case SUSPEND:
+		srp_info("Request Suspend to SRP\n");
+		pwr_mode &= ~SRP_POWER_MODE_TRIGGER;
+		check_mode = SRP_SUSPEND_CHECKED;
+		break;
+	case RESUME:
+		srp_info("Request Resume to SRP\n");
+		pwr_mode |= SRP_POWER_MODE_TRIGGER;
+		check_mode = 0x0;
+		break;
+	case SW_RESET:
+		srp_info("Request Reset to SRP\n");
+		pwr_mode |= SRP_SW_RESET_TRIGGER;
+		check_mode = SRP_SW_RESET_DONE;
+		break;
+	default:
+		srp_err("Not support request mode to srp\n");
+		break;
+	}
+
+	intr_en |= SRP_INTR_EN;
+	intr_msk &= ~SRP_ARM_INTR_MASK;
+	intr_src |= SRP_ARM_INTR_SRC;
+
+#ifdef CONFIG_ARCH_EXYNOS5
+	intr_irq = readl(srp.commbox + SRP_INTRIRQ);
+	intr_irq &= ~(SRP_INTRIRQ_MASK);
+	intr_irq |= SRP_INTRIRQ_CONF;
+	writel(intr_irq, srp.commbox + SRP_INTRIRQ);
+#endif
+	writel(pwr_mode, srp.commbox + SRP_POWER_MODE);
+	writel(intr_en, srp.commbox + SRP_INTREN);
+	writel(intr_msk, srp.commbox + SRP_INTRMASK);
+	writel(intr_src, srp.commbox + SRP_INTRSRC);
+
+	srp_debug("PWR_MODE[0x%x], INTREN[0x%x], INTRMSK[0x%x], INTRSRC[0x%x]\n",
+						readl(srp.commbox + SRP_POWER_MODE),
+						readl(srp.commbox + SRP_INTREN),
+						readl(srp.commbox + SRP_INTRMASK),
+						readl(srp.commbox + SRP_INTRSRC));
+	if (check_mode) {
+		deadline = jiffies + (HZ / 100);
+		srp_pending_ctrl(RUN);
+		do {
+			/* Waiting for completed suspend mode */
+			if ((readl(srp.commbox + SRP_POWER_MODE) & check_mode))
+				srp_info("Success! requested power[%s] mode!\n",
+					mode == SUSPEND ? "SUSPEND" : "SW_RESET");
+				break;
+		} while (time_before(jiffies, deadline));
+		srp_pending_ctrl(STALL);
+
+		/* Clear Suspend mode */
+		pwr_mode = readl(srp.commbox + SRP_POWER_MODE);
+		pwr_mode &= ~check_mode;
+		writel(pwr_mode, srp.commbox + SRP_POWER_MODE);
+	}
+}
+
 static void srp_check_stream_info(void)
 {
 	if (!srp.dec_info.channels) {
@@ -136,8 +211,13 @@ static void srp_reset(void)
 
 	srp_debug("Reset\n");
 
-	/* RESET */
+#ifdef CONFIG_ARCH_EXYNOS4
+	/* HW Reset */
 	writel(reg, srp.commbox + SRP_CONT);
+#elif CONFIG_ARCH_EXYNOS5
+	/* SW Reset */
+	srp_request_intr_mode(SW_RESET);
+#endif
 	writel(reg, srp.commbox + SRP_INTERRUPT);
 
 	/* Store Total Count */
@@ -329,7 +409,12 @@ static ssize_t srp_read(struct file *file, char *buffer,
 
 static void srp_commbox_init(void)
 {
-	unsigned int reg = 0;
+	u32 pwr_mode = readl(srp.commbox + SRP_POWER_MODE);
+	u32 intr_en = readl(srp.commbox + SRP_INTREN);
+	u32 intr_msk = readl(srp.commbox + SRP_INTRMASK);
+	u32 intr_src = readl(srp.commbox + SRP_INTRSRC);
+	u32 intr_irq;
+	u32 reg = 0x0;
 
 	writel(reg, srp.commbox + SRP_FRAME_INDEX);
 	writel(reg, srp.commbox + SRP_INTERRUPT);
@@ -359,6 +444,22 @@ static void srp_commbox_init(void)
 	writel(srp.fw_info.cga_pa, srp.commbox + SRP_CONF_START_ADDR);
 	writel(srp.fw_info.data_pa, srp.commbox + SRP_DATA_START_ADDR);
 #endif
+
+#ifdef CONFIG_ARCH_EXYNOS5
+	intr_irq = readl(srp.commbox + SRP_INTRIRQ);
+	intr_irq &= ~(SRP_INTRIRQ_MASK);
+	writel(intr_irq, srp.commbox + SRP_INTRIRQ);
+#endif
+	/* Initialize Suspended mode */
+	pwr_mode &= ~SRP_POWER_MODE_MASK;
+	intr_en &= ~SRP_INTR_EN;
+	intr_msk |= SRP_INTR_MASK;
+	intr_src &= ~SRP_INTRSRC_MASK;
+
+	writel(pwr_mode, srp.commbox + SRP_POWER_MODE);
+	writel(intr_en, srp.commbox + SRP_INTREN);
+	writel(intr_msk, srp.commbox + SRP_INTRMASK);
+	writel(intr_src, srp.commbox + SRP_INTRSRC);
 }
 
 static void srp_commbox_deinit(void)
@@ -954,42 +1055,8 @@ static struct miscdevice srp_miscdev = {
 };
 
 #ifdef CONFIG_PM
-static void srp_request_pwr_mode(int mode)
-{
-	unsigned int pwr_mode = readl(srp.commbox + SRP_POWER_MODE);
-	unsigned int intr_en = readl(srp.commbox + SRP_INTREN);
-	unsigned int intr_msk = readl(srp.commbox + SRP_INTRMASK);
-	unsigned int intr_src = readl(srp.commbox + SRP_INTRSRC);
-
-	pwr_mode &= ~SRP_POWER_MODE_MASK;
-	intr_en &= ~SRP_INTR_DI;
-	intr_msk |= (SRP_ARM_INTR_MASK | SRP_DMA_INTR_MASK | SRP_TMR_INTR_MASK);
-	intr_src &= ~(SRP_INTRSRC_MASK);
-
-	if (!mode)
-		pwr_mode &= ~SRP_POWER_MODE_TRIGGER;
-	else
-		pwr_mode |= SRP_POWER_MODE_TRIGGER;
-
-	intr_en |= SRP_INTR_EN;
-	intr_msk &= ~SRP_ARM_INTR_MASK;
-	intr_src |= SRP_ARM_INTR_SRC;
-
-	writel(pwr_mode, srp.commbox + SRP_POWER_MODE);
-	writel(intr_en, srp.commbox + SRP_INTREN);
-	writel(intr_msk, srp.commbox + SRP_INTRMASK);
-	writel(intr_src, srp.commbox + SRP_INTRSRC);
-
-	srp_debug("PWR_MODE[0x%x], INTREN[0x%x], INTRMSK[0x%x], INTRSRC[0x%x]\n",
-						readl(srp.commbox + SRP_POWER_MODE),
-						readl(srp.commbox + SRP_INTREN),
-						readl(srp.commbox + SRP_INTRMASK),
-						readl(srp.commbox + SRP_INTRSRC));
-}
-
 static int srp_suspend(struct platform_device *pdev, pm_message_t state)
 {
-	unsigned long deadline = jiffies + (HZ / 100);
 	unsigned char *fw_data = srp.fw_info.data_va;
 	size_t fw_size = srp.fw_info.data->size;
 
@@ -1003,17 +1070,8 @@ static int srp_suspend(struct platform_device *pdev, pm_message_t state)
 			memcpy(srp.sp_data.obuf, srp.obuf0, OBUF_SIZE * 2);
 
 			/* Request Suspend mode */
-			srp_request_pwr_mode(SUSPEND);
-			srp_pending_ctrl(RUN);
+			srp_request_intr_mode(SUSPEND);
 
-			do {
-				/* Waiting for completed suspended mode */
-				if ((readl(srp.commbox + SRP_POWER_MODE)
-						& SRP_SUSPENED_CHECKED))
-					break;
-			} while (time_before(jiffies, deadline));
-
-			srp_pending_ctrl(STALL);
 			memcpy(fw_data, srp.dmem + srp.data_offset, fw_size);
 			memcpy(srp.sp_data.commbox, srp.commbox, COMMBOX_SIZE);
 			srp.pm_suspended = true;
@@ -1042,7 +1100,7 @@ static int srp_resume(struct platform_device *pdev)
 
 			/* RESET */
 			writel(0x0, srp.commbox + SRP_CONT);
-			srp_request_pwr_mode(RESUME);
+			srp_request_intr_mode(RESUME);
 
 			srp.pm_resumed = true;
 		}
