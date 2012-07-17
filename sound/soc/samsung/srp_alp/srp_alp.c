@@ -252,6 +252,151 @@ static void srp_reset(void)
 	srp.pcm_size = 0;
 }
 
+static void srp_commbox_init(void)
+{
+	u32 pwr_mode = readl(srp.commbox + SRP_POWER_MODE);
+	u32 intr_en = readl(srp.commbox + SRP_INTREN);
+	u32 intr_msk = readl(srp.commbox + SRP_INTRMASK);
+	u32 intr_src = readl(srp.commbox + SRP_INTRSRC);
+	u32 intr_irq;
+	u32 reg = 0x0;
+
+	writel(reg, srp.commbox + SRP_FRAME_INDEX);
+	writel(reg, srp.commbox + SRP_INTERRUPT);
+
+	/* Support Mono Decoding */
+	writel(SRP_ARM_INTR_CODE_SUPPORT_MONO, srp.commbox + SRP_ARM_INTERRUPT_CODE);
+
+#ifdef CONFIG_ARCH_EXYNOS4
+	/* Init Ibuf information */
+	writel(srp.ibuf0_pa, srp.commbox + SRP_BITSTREAM_BUFF_DRAM_ADDR0);
+	writel(srp.ibuf1_pa, srp.commbox + SRP_BITSTREAM_BUFF_DRAM_ADDR1);
+	writel(srp.ibuf_size, srp.commbox + SRP_BITSTREAM_BUFF_DRAM_SIZE);
+#endif
+
+	/* Output PCM control : 16bit */
+	writel(SRP_CFGR_OUTPUT_PCM_16BIT, srp.commbox + SRP_CFGR);
+
+	/* Bit stream size : Max */
+	writel(BITSTREAM_SIZE_MAX, srp.commbox + SRP_BITSTREAM_SIZE);
+
+	/* Init Read bitstream size */
+	writel(reg, srp.commbox + SRP_READ_BITSTREAM_SIZE);
+
+#ifdef CONFIG_ARCH_EXYNOS4
+	/* Configure fw address */
+	writel(srp.fw_info.vliw_pa, srp.commbox + SRP_CODE_START_ADDR);
+	writel(srp.fw_info.cga_pa, srp.commbox + SRP_CONF_START_ADDR);
+	writel(srp.fw_info.data_pa, srp.commbox + SRP_DATA_START_ADDR);
+#endif
+
+#ifdef CONFIG_ARCH_EXYNOS5
+	intr_irq = readl(srp.commbox + SRP_INTRIRQ);
+	intr_irq &= ~(SRP_INTRIRQ_MASK);
+	writel(intr_irq, srp.commbox + SRP_INTRIRQ);
+#endif
+	/* Initialize Suspended mode */
+	pwr_mode &= ~SRP_POWER_MODE_MASK;
+	intr_en &= ~SRP_INTR_EN;
+	intr_msk |= SRP_INTR_MASK;
+	intr_src &= ~SRP_INTRSRC_MASK;
+
+	writel(pwr_mode, srp.commbox + SRP_POWER_MODE);
+	writel(intr_en, srp.commbox + SRP_INTREN);
+	writel(intr_msk, srp.commbox + SRP_INTRMASK);
+	writel(intr_src, srp.commbox + SRP_INTRSRC);
+}
+
+static void srp_commbox_deinit(void)
+{
+	const u8 *org_data = srp.fw_info.data->data;
+	unsigned char *old_data = srp.fw_info.data_va;
+	size_t size = srp.fw_info.data->size;
+	unsigned int reg = 0;
+
+	srp_wait_for_pending();
+	srp_pending_ctrl(STALL);
+
+	/* Init data firmware */
+	memcpy(old_data, org_data, size);
+
+	srp.decoding_started = 0;
+	writel(reg, srp.commbox + SRP_INTERRUPT);
+}
+
+static void srp_fw_download(void)
+{
+	unsigned long n;
+	unsigned long *pval;
+	unsigned int reg = 0;
+
+	/* Fill ICACHE with first 64KB area : ARM access I$ */
+	memcpy(srp.icache, srp.fw_info.vliw_va, ICACHE_SIZE);
+
+	/* Fill DMEM */
+	memcpy(srp.dmem + srp.data_offset, srp.fw_info.data_va,
+	       DMEM_SIZE - srp.data_offset);
+
+	/* Fill CMEM : Should be write by the 1word(32bit) */
+	pval = (unsigned long *)srp.fw_info.cga_va;
+	for (n = 0; n < CMEM_SIZE; n += 4, pval++)
+		writel(ENDIAN_CHK_CONV(*pval), srp.cmem + n);
+
+	reg = readl(srp.commbox + SRP_CFGR);
+	reg |= (SRP_CFGR_BOOT_INST_INT_CC |	/* Fetchs instruction from I$ */
+		SRP_CFGR_USE_ICACHE_MEM	|	/* SRP can access I$ */
+		SRP_CFGR_USE_I2S_INTR	|
+		SRP_CFGR_FLOW_CTRL_OFF);
+
+	writel(reg, srp.commbox + SRP_CFGR);
+}
+
+static void srp_set_default_fw(void)
+{
+	/* Initialize Commbox & default parameters */
+	srp_commbox_init();
+
+	/* Download default Firmware */
+	srp_fw_download();
+}
+
+void srp_core_suspend(void)
+{
+	unsigned char *fw_data = srp.fw_info.data_va;
+	size_t fw_size = srp.fw_info.data->size;
+
+	if (srp.pm_suspended)
+		return;
+
+	/* IBUF/OBUF Save */
+	memcpy(srp.sp_data.ibuf, srp.ibuf0, IBUF_SIZE * 2);
+	memcpy(srp.sp_data.obuf, srp.obuf0, OBUF_SIZE * 2);
+
+	/* Request Suspend mode */
+	srp_request_intr_mode(SUSPEND);
+
+	memcpy(fw_data, srp.dmem + srp.data_offset, fw_size);
+	memcpy(srp.sp_data.commbox, srp.commbox, COMMBOX_SIZE);
+	srp.pm_suspended = true;
+}
+
+void srp_core_resume(void)
+{
+	if (!srp.pm_suspended)
+		return;
+
+	srp_fw_download();
+	memcpy(srp.commbox, srp.sp_data.commbox, COMMBOX_SIZE);
+	memcpy(srp.ibuf0, srp.sp_data.ibuf, IBUF_SIZE * 2);
+	memcpy(srp.obuf0, srp.sp_data.obuf, OBUF_SIZE * 2);
+
+	/* RESET */
+	writel(0x0, srp.commbox + SRP_CONT);
+	srp_request_intr_mode(RESUME);
+
+	srp.pm_suspended = false;
+}
+
 static void srp_fill_ibuf(void)
 {
 	unsigned long fill_size = 0;
@@ -406,114 +551,6 @@ static ssize_t srp_read(struct file *file, char *buffer,
 	}
 
 	return ret;
-}
-
-static void srp_commbox_init(void)
-{
-	u32 pwr_mode = readl(srp.commbox + SRP_POWER_MODE);
-	u32 intr_en = readl(srp.commbox + SRP_INTREN);
-	u32 intr_msk = readl(srp.commbox + SRP_INTRMASK);
-	u32 intr_src = readl(srp.commbox + SRP_INTRSRC);
-	u32 intr_irq;
-	u32 reg = 0x0;
-
-	writel(reg, srp.commbox + SRP_FRAME_INDEX);
-	writel(reg, srp.commbox + SRP_INTERRUPT);
-
-	/* Support Mono Decoding */
-	writel(SRP_ARM_INTR_CODE_SUPPORT_MONO, srp.commbox + SRP_ARM_INTERRUPT_CODE);
-
-#ifdef CONFIG_ARCH_EXYNOS4
-	/* Init Ibuf information */
-	writel(srp.ibuf0_pa, srp.commbox + SRP_BITSTREAM_BUFF_DRAM_ADDR0);
-	writel(srp.ibuf1_pa, srp.commbox + SRP_BITSTREAM_BUFF_DRAM_ADDR1);
-	writel(srp.ibuf_size, srp.commbox + SRP_BITSTREAM_BUFF_DRAM_SIZE);
-#endif
-
-	/* Output PCM control : 16bit */
-	writel(SRP_CFGR_OUTPUT_PCM_16BIT, srp.commbox + SRP_CFGR);
-
-	/* Bit stream size : Max */
-	writel(BITSTREAM_SIZE_MAX, srp.commbox + SRP_BITSTREAM_SIZE);
-
-	/* Init Read bitstream size */
-	writel(reg, srp.commbox + SRP_READ_BITSTREAM_SIZE);
-
-#ifdef CONFIG_ARCH_EXYNOS4
-	/* Configure fw address */
-	writel(srp.fw_info.vliw_pa, srp.commbox + SRP_CODE_START_ADDR);
-	writel(srp.fw_info.cga_pa, srp.commbox + SRP_CONF_START_ADDR);
-	writel(srp.fw_info.data_pa, srp.commbox + SRP_DATA_START_ADDR);
-#endif
-
-#ifdef CONFIG_ARCH_EXYNOS5
-	intr_irq = readl(srp.commbox + SRP_INTRIRQ);
-	intr_irq &= ~(SRP_INTRIRQ_MASK);
-	writel(intr_irq, srp.commbox + SRP_INTRIRQ);
-#endif
-	/* Initialize Suspended mode */
-	pwr_mode &= ~SRP_POWER_MODE_MASK;
-	intr_en &= ~SRP_INTR_EN;
-	intr_msk |= SRP_INTR_MASK;
-	intr_src &= ~SRP_INTRSRC_MASK;
-
-	writel(pwr_mode, srp.commbox + SRP_POWER_MODE);
-	writel(intr_en, srp.commbox + SRP_INTREN);
-	writel(intr_msk, srp.commbox + SRP_INTRMASK);
-	writel(intr_src, srp.commbox + SRP_INTRSRC);
-}
-
-static void srp_commbox_deinit(void)
-{
-	const u8 *org_data = srp.fw_info.data->data;
-	unsigned char *old_data = srp.fw_info.data_va;
-	size_t size = srp.fw_info.data->size;
-	unsigned int reg = 0;
-
-	srp_wait_for_pending();
-	srp_pending_ctrl(STALL);
-
-	/* Init data firmware */
-	memcpy(old_data, org_data, size);
-
-	srp.decoding_started = 0;
-	writel(reg, srp.commbox + SRP_INTERRUPT);
-}
-
-static void srp_fw_download(void)
-{
-	unsigned long n;
-	unsigned long *pval;
-	unsigned int reg = 0;
-
-	/* Fill ICACHE with first 64KB area : ARM access I$ */
-	memcpy(srp.icache, srp.fw_info.vliw_va, ICACHE_SIZE);
-
-	/* Fill DMEM */
-	memcpy(srp.dmem + srp.data_offset, srp.fw_info.data_va,
-	       DMEM_SIZE - srp.data_offset);
-
-	/* Fill CMEM : Should be write by the 1word(32bit) */
-	pval = (unsigned long *)srp.fw_info.cga_va;
-	for (n = 0; n < CMEM_SIZE; n += 4, pval++)
-		writel(ENDIAN_CHK_CONV(*pval), srp.cmem + n);
-
-	reg = readl(srp.commbox + SRP_CFGR);
-	reg |= (SRP_CFGR_BOOT_INST_INT_CC |	/* Fetchs instruction from I$ */
-		SRP_CFGR_USE_ICACHE_MEM	|	/* SRP can access I$ */
-		SRP_CFGR_USE_I2S_INTR	|
-		SRP_CFGR_FLOW_CTRL_OFF);
-
-	writel(reg, srp.commbox + SRP_CFGR);
-}
-
-static void srp_set_default_fw(void)
-{
-	/* Initialize Commbox & default parameters */
-	srp_commbox_init();
-
-	/* Download default Firmware */
-	srp_fw_download();
 }
 
 static void srp_set_stream_size(void)
@@ -1055,26 +1092,6 @@ static struct miscdevice srp_miscdev = {
 };
 
 #ifdef CONFIG_PM
-void srp_core_suspend(void)
-{
-	unsigned char *fw_data = srp.fw_info.data_va;
-	size_t fw_size = srp.fw_info.data->size;
-
-	if (srp.pm_suspended)
-		return;
-
-	/* IBUF/OBUF Save */
-	memcpy(srp.sp_data.ibuf, srp.ibuf0, IBUF_SIZE * 2);
-	memcpy(srp.sp_data.obuf, srp.obuf0, OBUF_SIZE * 2);
-
-	/* Request Suspend mode */
-	srp_request_intr_mode(SUSPEND);
-
-	memcpy(fw_data, srp.dmem + srp.data_offset, fw_size);
-	memcpy(srp.sp_data.commbox, srp.commbox, COMMBOX_SIZE);
-	srp.pm_suspended = true;
-}
-
 static int srp_suspend(struct platform_device *pdev, pm_message_t state)
 {
 	srp_info("Suspend\n");
@@ -1086,23 +1103,6 @@ static int srp_suspend(struct platform_device *pdev, pm_message_t state)
 #endif
 
 	return 0;
-}
-
-void srp_core_resume(void)
-{
-	if (!srp.pm_suspended)
-		return;
-
-	srp_fw_download();
-	memcpy(srp.commbox, srp.sp_data.commbox, COMMBOX_SIZE);
-	memcpy(srp.ibuf0, srp.sp_data.ibuf, IBUF_SIZE * 2);
-	memcpy(srp.obuf0, srp.sp_data.obuf, OBUF_SIZE * 2);
-
-	/* RESET */
-	writel(0x0, srp.commbox + SRP_CONT);
-	srp_request_intr_mode(RESUME);
-
-	srp.pm_suspended = false;
 }
 
 static int srp_resume(struct platform_device *pdev)
