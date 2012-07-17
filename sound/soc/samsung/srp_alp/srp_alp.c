@@ -169,10 +169,11 @@ static void srp_request_intr_mode(int mode)
 		srp_pending_ctrl(RUN);
 		do {
 			/* Waiting for completed suspend mode */
-			if ((readl(srp.commbox + SRP_POWER_MODE) & check_mode))
+			if ((readl(srp.commbox + SRP_POWER_MODE) & check_mode)) {
 				srp_info("Success! requested power[%s] mode!\n",
 					mode == SUSPEND ? "SUSPEND" : "SW_RESET");
 				break;
+			}
 		} while (time_before(jiffies, deadline));
 		srp_pending_ctrl(STALL);
 
