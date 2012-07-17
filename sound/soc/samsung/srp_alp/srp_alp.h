@@ -180,6 +180,7 @@ struct srp_info {
 	bool	pm_suspended;
 	bool	pm_resumed;
 	bool	hw_reset_stat;
+	bool	is_loaded;
 
 	/* Parameter to control Runtime PM */
 	void	*pm_info;

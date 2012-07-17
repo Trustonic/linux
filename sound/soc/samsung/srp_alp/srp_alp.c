@@ -51,6 +51,7 @@
 
 static struct srp_info srp;
 static DEFINE_MUTEX(srp_mutex);
+static DECLARE_WAIT_QUEUE_HEAD(reset_wq);
 static DECLARE_WAIT_QUEUE_HEAD(read_wq);
 static DECLARE_WAIT_QUEUE_HEAD(decinfo_wq);
 
@@ -358,6 +359,23 @@ static void srp_set_default_fw(void)
 
 	/* Download default Firmware */
 	srp_fw_download();
+}
+
+void srp_core_reset(void)
+{
+	if (srp.is_loaded) {
+		srp_commbox_init();
+		srp_fw_download();
+
+		/* RESET */
+		writel(0x0, srp.commbox + SRP_CONT);
+		srp_pending_ctrl(RUN);
+
+		if (!wait_event_interruptible_timeout(reset_wq,
+				srp.hw_reset_stat, HZ / 20)) {
+			srp_err("Not ready to sw reset.\n");
+		}
+	}
 }
 
 void srp_core_suspend(void)
@@ -893,6 +911,7 @@ static irqreturn_t srp_irq(int irqno, void *dev_id)
 	unsigned int irq_code_req;
 	unsigned int wakeup_read = 0;
 	unsigned int wakeup_decinfo = 0;
+	unsigned int hw_reset = 0;
 
 	srp_debug("IRQ: Code [0x%x], Pending [%s], CFGR [0x%x]", irq_code,
 			readl(srp.commbox + SRP_PENDING) ? "STALL" : "RUN",
@@ -918,9 +937,11 @@ static irqreturn_t srp_irq(int irqno, void *dev_id)
 				srp.ibuf_empty[1] = 1;
 				if (!srp.hw_reset_stat) {
 					srp_pending_ctrl(STALL);
-					srp.hw_reset_stat = true;
-					srp_get_buf_info();
-					srp_alloc_buf();
+					hw_reset = 1;
+					if (!srp.wbuf) {
+						srp_get_buf_info();
+						srp_alloc_buf();
+					}
 					break;
 				}
 			}
@@ -983,6 +1004,13 @@ static irqreturn_t srp_irq(int irqno, void *dev_id)
 	if (wakeup_decinfo) {
 		if (waitqueue_active(&decinfo_wq))
 			wake_up_interruptible(&decinfo_wq);
+	}
+
+	if (hw_reset) {
+		srp_info("Complete h/w reset.\n");
+		srp.hw_reset_stat = true;
+		if (waitqueue_active(&reset_wq))
+			wake_up_interruptible(&reset_wq);
 	}
 
 	srp_debug("IRQ Exited!\n");
