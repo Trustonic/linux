@@ -181,6 +181,7 @@ struct srp_info {
 	bool	pm_resumed;
 	bool	hw_reset_stat;
 	bool	is_loaded;
+	bool	initialized;
 
 	/* Parameter to control Runtime PM */
 	void	*pm_info;
@@ -199,5 +200,7 @@ enum {
 	SW_RESET,
 };
 
+extern void srp_core_reset(void);
+extern void srp_core_suspend(void);
 extern void srp_prepare_pm(void *info);
 #endif /* __SRP_ALP_H */

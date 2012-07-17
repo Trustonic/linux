@@ -55,6 +55,9 @@ static DECLARE_WAIT_QUEUE_HEAD(reset_wq);
 static DECLARE_WAIT_QUEUE_HEAD(read_wq);
 static DECLARE_WAIT_QUEUE_HEAD(decinfo_wq);
 
+extern void i2s_enable(struct snd_soc_dai *dai);
+extern void i2s_disable(struct snd_soc_dai *dai);
+
 void srp_prepare_pm(void *info)
 {
 	srp.pm_info = info;
@@ -381,22 +384,26 @@ void srp_core_reset(void)
 
 void srp_core_suspend(void)
 {
-	unsigned char *fw_data = srp.fw_info.data_va;
-	size_t fw_size = srp.fw_info.data->size;
+	unsigned char *data;
+	size_t size;
 
-	if (srp.pm_suspended)
-		return;
+	if (srp.is_loaded && !srp.pm_suspended) {
+		data = srp.fw_info.data_va;
+		size = DMEM_SIZE - srp.data_offset;
 
-	/* IBUF/OBUF Save */
-	memcpy(srp.sp_data.ibuf, srp.ibuf0, IBUF_SIZE * 2);
-	memcpy(srp.sp_data.obuf, srp.obuf0, OBUF_SIZE * 2);
+		/* IBUF/OBUF Save */
+		memcpy(srp.sp_data.ibuf, srp.ibuf0, IBUF_SIZE * 2);
+		memcpy(srp.sp_data.obuf, srp.obuf0, OBUF_SIZE * 2);
 
-	/* Request Suspend mode */
-	srp_request_intr_mode(SUSPEND);
+		/* Request Suspend mode */
+		srp_request_intr_mode(SUSPEND);
 
-	memcpy(fw_data, srp.dmem + srp.data_offset, fw_size);
-	memcpy(srp.sp_data.commbox, srp.commbox, COMMBOX_SIZE);
-	srp.pm_suspended = true;
+		memcpy(data, srp.dmem + srp.data_offset, size);
+		memcpy(srp.sp_data.commbox, srp.commbox, COMMBOX_SIZE);
+		srp.pm_suspended = true;
+	}
+
+	srp.hw_reset_stat = false;
 }
 
 void srp_core_resume(void)
@@ -410,7 +417,6 @@ void srp_core_resume(void)
 	memcpy(srp.obuf0, srp.sp_data.obuf, OBUF_SIZE * 2);
 
 	/* RESET */
-	writel(0x0, srp.commbox + SRP_CONT);
 	srp_request_intr_mode(RESUME);
 
 	srp.pm_suspended = false;
@@ -458,6 +464,24 @@ static ssize_t srp_write(struct file *file, const char *buffer,
 	ssize_t ret = 0;
 
 	srp_debug("Write(%d bytes)\n", size);
+
+	i2s_enable(srp.pm_info);
+	ret = wait_event_interruptible_timeout(reset_wq,
+			    srp.hw_reset_stat, HZ / 20);
+	if (!ret) {
+		srp_err("Not ready to resume srp core.\n");
+		return -EFAULT;
+	}
+
+	srp_core_resume();
+
+	if (srp.initialized) {
+		srp.initialized = false;
+		srp_flush_ibuf();
+		srp_flush_obuf();
+		srp_set_default_fw();
+		srp_reset();
+	}
 
 	if (srp.obuf_fill_done[srp.obuf_ready]
 		&& srp.obuf_copy_done[srp.obuf_ready]) {
@@ -513,6 +537,16 @@ static ssize_t srp_read(struct file *file, char *buffer,
 	srp_debug("Entered Get Obuf in PCM function\n");
 
 	if (srp.prepare_for_eos) {
+		i2s_enable(srp.pm_info);
+		ret = wait_event_interruptible_timeout(reset_wq,
+			    srp.hw_reset_stat, HZ / 20);
+		if (!ret) {
+			srp_err("Not ready to resume srp core.\n");
+			return -EFAULT;
+		}
+
+		srp_core_resume();
+
 		srp.obuf_fill_done[srp.obuf_ready] = 0;
 		srp_debug("Elapsed Obuf[%d] after Send EOS\n", srp.obuf_ready);
 
@@ -595,14 +629,12 @@ static long srp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	switch (cmd) {
 	case SRP_INIT:
 		srp_debug("SRP_INIT\n");
-		srp_flush_ibuf();
-		srp_flush_obuf();
-		srp_set_default_fw();
-		srp_reset();
+		srp.initialized = true;
 		break;
 
 	case SRP_DEINIT:
 		srp_debug("SRP DEINIT\n");
+		i2s_enable(srp.pm_info);
 		srp_commbox_deinit();
 		break;
 
@@ -730,7 +762,7 @@ static int srp_open(struct inode *inode, struct file *file)
 	srp.dec_info.channels = 0;
 	srp.dec_info.sample_rate = 0;
 
-	srp.pm_suspended = false;
+	srp.initialized = false;
 
 	return 0;
 }
@@ -1082,13 +1114,10 @@ srp_firmware_request_complete(const struct firmware *vliw, void *context)
 
 	release_firmware(srp.fw_info.vliw);
 	release_firmware(srp.fw_info.cga);
+	srp.is_loaded = true;
 
-	srp_set_default_fw();
-
-	/* SRP H/W reset */
-	srp.hw_reset_stat = false;
-	writel(0x0, srp.commbox + SRP_CONT);
-	srp_pending_ctrl(RUN);
+	i2s_enable(srp.pm_info);
+	i2s_disable(srp.pm_info);
 
 	return;
 
