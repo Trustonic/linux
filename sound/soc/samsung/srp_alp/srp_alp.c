@@ -32,6 +32,7 @@
 #include <linux/uaccess.h>
 #include <linux/cma.h>
 #include <linux/firmware.h>
+#include <sound/soc.h>
 
 #include <mach/hardware.h>
 #include <mach/irqs.h>
@@ -52,6 +53,11 @@ static struct srp_info srp;
 static DEFINE_MUTEX(srp_mutex);
 static DECLARE_WAIT_QUEUE_HEAD(read_wq);
 static DECLARE_WAIT_QUEUE_HEAD(decinfo_wq);
+
+void srp_prepare_pm(void *info)
+{
+	srp.pm_info = info;
+}
 
 unsigned int srp_get_idma_addr(void)
 {
