@@ -1181,25 +1181,17 @@ static __devinit int srp_probe(struct platform_device *pdev)
 		goto err4;
 	}
 
-	srp.clk = clk_get(&pdev->dev, "srpclk");
-	if (IS_ERR(srp.clk)) {
-		dev_err(&pdev->dev, "failed to get srp clock\n");
-		ret = PTR_ERR(srp.clk);
-		goto err5;
-	}
-	clk_enable(srp.clk);
-
 	ret = request_irq(IRQ_AUDIO_SS, srp_irq, IRQF_DISABLED, "samsung-rp", pdev);
 	if (ret < 0) {
 		srp_err("SRP: Fail to claim SRP(AUDIO_SS) irq\n");
-		goto err6;
+		goto err5;
 	}
 
 	ret = misc_register(&srp_miscdev);
 	if (ret) {
 		srp_err("SRP: Cannot register miscdev on minor=%d\n",
 			SRP_DEV_MINOR);
-		goto err7;
+		goto err6;
 	}
 
 	ret = request_firmware_nowait(THIS_MODULE,
@@ -1211,18 +1203,15 @@ static __devinit int srp_probe(struct platform_device *pdev)
 				      srp_firmware_request_complete);
 	if (ret) {
 		dev_err(&pdev->dev, "could not load firmware (err=%d)\n", ret);
-		goto err8;
+		goto err7;
 	}
 
 	return 0;
 
-err8:
-	misc_deregister(&srp_miscdev);
 err7:
-	free_irq(IRQ_AUDIO_SS, pdev);
+	misc_deregister(&srp_miscdev);
 err6:
-	clk_disable(srp.clk);
-	clk_put(srp.clk);
+	free_irq(IRQ_AUDIO_SS, pdev);
 err5:
 	iounmap(srp.iram);
 err4:
