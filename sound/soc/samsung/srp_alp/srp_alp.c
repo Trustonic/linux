@@ -41,7 +41,6 @@
 
 #include "srp_alp.h"
 #include "srp_alp_reg.h"
-#include "srp_alp_fw.h"
 #include "srp_alp_ioctl.h"
 #include "srp_alp_error.h"
 
