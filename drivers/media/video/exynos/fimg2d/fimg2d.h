@@ -22,9 +22,13 @@
 #include <linux/platform_device.h>
 #include <linux/atomic.h>
 #include <linux/mutex.h>
+#include <plat/fimg2d.h>
 
-#define FIMG2D_MINOR			(240)
-#define to_fimg2d_plat(d)		(to_platform_device(d)->dev.platform_data)
+#define FIMG2D_MINOR		(240)
+#define to_fimg2d_plat(d)	(to_platform_device(d)->dev.platform_data)
+#define ip_is_g2d_5a()		(fimg2d_ip_version_is() == IP_VER_G2D_5A)
+#define ip_is_g2d_5g()		(fimg2d_ip_version_is() == IP_VER_G2D_5G)
+#define ip_is_g2d_4p()		(fimg2d_ip_version_is() == IP_VER_G2D_4P)
 
 #ifdef CONFIG_VIDEO_FIMG2D_DEBUG
 #define fimg2d_debug(fmt, arg...)	printk(KERN_INFO "[%s] " fmt, __func__, ## arg)
@@ -505,6 +509,7 @@ struct fimg2d_control {
 };
 
 int fimg2d_register_ops(struct fimg2d_control *info);
+int fimg2d_ip_version_is(void);
 
 #ifdef BLIT_WORKQUE
 #define g2d_lock(x)		do {} while (0)

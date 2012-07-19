@@ -42,7 +42,7 @@ void fimg2d_clk_off(struct fimg2d_control *info)
 
 void fimg2d_clk_save(struct fimg2d_control *info)
 {
-	if (soc_is_exynos4212() || soc_is_exynos4412()) {
+	if (ip_is_g2d_4p()) {
 		struct fimg2d_platdata *pdata;
 		struct clk *sclk;
 		unsigned long flags;
@@ -59,7 +59,7 @@ void fimg2d_clk_save(struct fimg2d_control *info)
 
 void fimg2d_clk_restore(struct fimg2d_control *info)
 {
-	if (soc_is_exynos4212() || soc_is_exynos4412()) {
+	if (ip_is_g2d_4p()) {
 		struct fimg2d_platdata *pdata;
 		struct clk *sclk, *pclk;
 		unsigned long flags;
@@ -83,7 +83,7 @@ void fimg2d_clk_dump(struct fimg2d_control *info)
 
 	pdata = to_fimg2d_plat(info->dev);
 
-	if (soc_is_exynos4212() || soc_is_exynos4412()) {
+	if (ip_is_g2d_4p()) {
 		sclk = clk_get(info->dev, pdata->clkname);
 		pclk = clk_get(NULL, "pclk_acp");
 
@@ -108,7 +108,7 @@ int fimg2d_clk_setup(struct fimg2d_control *info)
 	sclk = parent = NULL;
 	pdata = to_fimg2d_plat(info->dev);
 
-	if (soc_is_exynos4212() || soc_is_exynos4412()) {
+	if (ip_is_g2d_4p()) {
 		/* clock for setting parent and rate */
 		parent = clk_get(info->dev, pdata->parent_clkname);
 		if (IS_ERR(parent)) {
@@ -163,7 +163,7 @@ err_clk1:
 void fimg2d_clk_release(struct fimg2d_control *info)
 {
 	clk_put(info->clock);
-	if (soc_is_exynos4212() || soc_is_exynos4412()) {
+	if (ip_is_g2d_4p()) {
 		struct fimg2d_platdata *pdata;
 		pdata = to_fimg2d_plat(info->dev);
 		clk_put(clk_get(info->dev, pdata->clkname));

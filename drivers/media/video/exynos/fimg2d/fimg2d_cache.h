@@ -46,7 +46,7 @@ enum pt_status {
 
 static inline bool is_inner_flushall(size_t size)
 {
-	if (soc_is_exynos5250())
+	if (ip_is_g2d_5g())
 		return (size >= SZ_1M * 25) ? true : false;
 	else
 		return (size >= L1_CACHE_SIZE) ? true : false;
@@ -59,7 +59,7 @@ static inline bool is_outer_flushall(size_t size)
 
 static inline bool is_inner_flushrange(size_t hole)
 {
-	if (!soc_is_exynos5250())
+	if (ip_is_g2d_5g())
 		return true;
 	else {
 		if (hole < LINE_FLUSH_THRESHOLD)

@@ -532,6 +532,13 @@ static void __exit fimg2d_unregister(void)
 	platform_driver_unregister(&fimg2d_driver);
 }
 
+int fimg2d_ip_version_is(void)
+{
+	struct fimg2d_platdata *pdata = to_fimg2d_plat(ctrl->dev);
+
+	return pdata->ip_ver;
+}
+
 module_init(fimg2d_register);
 module_exit(fimg2d_unregister);
 
