@@ -184,18 +184,31 @@ static int exynos5_i2c_xfer_msg(struct exynos5_i2c *i2c,
 	writel(i2c_auto_conf, i2c->regs + HSI2C_AUTO_CONFING);
 	writel(usi_int_en, i2c->regs + HSI2C_INT_ENABLE);
 
-	timeout = wait_for_completion_timeout(&i2c->msg_complete,
-		EXYNOS5_I2C_TIMEOUT);
-
-	if (timeout == 0) {
-		dev_dbg(i2c->dev, "timeout\n");
-		return -EAGAIN;
+	if (msgs->flags & I2C_M_RD) {
+		timeout = wait_for_completion_timeout(&i2c->msg_complete,
+			EXYNOS5_I2C_TIMEOUT);
+		if (timeout == 0) {
+			exynos5_i2c_stop(i2c);
+			dev_warn(i2c->dev, "timeout\n");
+			return -EAGAIN;
+		}
+	} else {
+		ret = -EAGAIN;
+		timeout = jiffies + EXYNOS5_I2C_TIMEOUT;
+		while (time_before(jiffies, timeout)) {
+			usi_fifo_stat = readl(i2c->regs + HSI2C_FIFO_STATUS);
+			trans_status = readl(i2c->regs + HSI2C_TRANS_STATUS);
+			if((usi_fifo_stat == HSI2C_FIFO_EMPTY) &&
+				(trans_status == 0)) {
+				ret = 0;
+				break;
+			}
+		}
+		if (ret == -EAGAIN) {
+			dev_warn(i2c->dev, "timeout\n");
+			return ret;
+		}
 	}
-
-	do {
-		usi_fifo_stat = readl(i2c->regs + HSI2C_FIFO_STATUS);
-		trans_status = readl(i2c->regs + HSI2C_TRANS_STATUS);
-	} while (!((usi_fifo_stat == HSI2C_FIFO_EMPTY) && (trans_status == 0)));
 
 	return ret;
 }
