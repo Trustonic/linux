@@ -403,7 +403,9 @@ void srp_core_suspend(void)
 		srp.pm_suspended = true;
 	}
 
+#ifdef CONFIG_SND_ALP_PM_RUNTIME
 	srp.hw_reset_stat = false;
+#endif
 }
 
 void srp_core_resume(void)
@@ -416,7 +418,10 @@ void srp_core_resume(void)
 	memcpy(srp.ibuf0, srp.sp_data.ibuf, IBUF_SIZE * 2);
 	memcpy(srp.obuf0, srp.sp_data.obuf, OBUF_SIZE * 2);
 
+#ifndef CONFIG_SND_ALP_PM_RUNTIME
 	/* RESET */
+	writel(0x0, srp.commbox + SRP_CONT);
+#endif
 	srp_request_intr_mode(RESUME);
 
 	srp.pm_suspended = false;
@@ -466,6 +471,7 @@ static ssize_t srp_write(struct file *file, const char *buffer,
 	srp_debug("Write(%d bytes)\n", size);
 
 	i2s_enable(srp.pm_info);
+#ifdef CONFIG_SND_ALP_PM_RUNTIME
 	ret = wait_event_interruptible_timeout(reset_wq,
 			    srp.hw_reset_stat, HZ / 20);
 	if (!ret) {
@@ -474,6 +480,7 @@ static ssize_t srp_write(struct file *file, const char *buffer,
 	}
 
 	srp_core_resume();
+#endif
 
 	if (srp.initialized) {
 		srp.initialized = false;
@@ -538,6 +545,7 @@ static ssize_t srp_read(struct file *file, char *buffer,
 
 	if (srp.prepare_for_eos) {
 		i2s_enable(srp.pm_info);
+#ifdef CONFIG_SND_ALP_PM_RUNTIME
 		ret = wait_event_interruptible_timeout(reset_wq,
 			    srp.hw_reset_stat, HZ / 20);
 		if (!ret) {
@@ -546,6 +554,7 @@ static ssize_t srp_read(struct file *file, char *buffer,
 		}
 
 		srp_core_resume();
+#endif
 
 		srp.obuf_fill_done[srp.obuf_ready] = 0;
 		srp_debug("Elapsed Obuf[%d] after Send EOS\n", srp.obuf_ready);
@@ -1117,6 +1126,9 @@ srp_firmware_request_complete(const struct firmware *vliw, void *context)
 	srp.is_loaded = true;
 
 	i2s_enable(srp.pm_info);
+#ifndef CONFIG_SND_ALP_PM_RUNTIME
+	srp_core_reset();
+#endif
 	i2s_disable(srp.pm_info);
 
 	return;
