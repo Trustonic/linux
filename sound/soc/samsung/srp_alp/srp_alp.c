@@ -1166,11 +1166,15 @@ static int srp_suspend(struct platform_device *pdev, pm_message_t state)
 {
 	srp_info("Suspend\n");
 
+	i2s_enable(srp.pm_info);
+
 #ifdef CONFIG_ARCH_EXYNOS4
 	if (srp.decoding_started)
 #elif CONFIG_ARCH_EXYNOS5
 	srp_core_suspend();
 #endif
+
+	i2s_disable(srp.pm_info);
 
 	return 0;
 }
@@ -1179,11 +1183,16 @@ static int srp_resume(struct platform_device *pdev)
 {
 	srp_info("Resume\n");
 
+	i2s_enable(srp.pm_info);
+
 #ifdef CONFIG_ARCH_EXYNOS4
 	if(srp.decoding_started)
 #elif CONFIG_ARCH_EXYNOS5
 	srp_core_resume();
 #endif
+
+	i2s_disable(srp.pm_info);
+
 	return 0;
 }
 
