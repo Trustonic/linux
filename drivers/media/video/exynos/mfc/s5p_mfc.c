@@ -713,8 +713,6 @@ static irqreturn_t s5p_mfc_irq(int irq, void *priv)
 
 			ctx->dpb_count = s5p_mfc_get_dpb_count();
 			dec->internal_dpb = 0;
-			if (dev->fw.date >= 0x120206)
-				dec->mv_count = s5p_mfc_get_mv_count();
 			if (ctx->img_width == 0 || ctx->img_height == 0)
 				ctx->state = MFCINST_ERROR;
 			else
