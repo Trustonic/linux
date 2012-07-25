@@ -315,6 +315,7 @@ static void srp_commbox_deinit(void)
 {
 	unsigned int reg = 0;
 
+	i2s_enable(srp.pm_info);
 	srp_wait_for_pending();
 	srp_pending_ctrl(STALL);
 
@@ -643,7 +644,6 @@ static long srp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	case SRP_DEINIT:
 		srp_debug("SRP DEINIT\n");
-		i2s_enable(srp.pm_info);
 		srp_commbox_deinit();
 		break;
 
