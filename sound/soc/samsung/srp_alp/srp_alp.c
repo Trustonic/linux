@@ -60,6 +60,7 @@ extern void i2s_disable(struct snd_soc_dai *dai);
 void srp_prepare_pm(void *info)
 {
 	srp.pm_info = info;
+	srp.initialized = false;
 }
 
 unsigned int srp_get_idma_addr(void)
@@ -645,6 +646,7 @@ static long srp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case SRP_DEINIT:
 		srp_debug("SRP DEINIT\n");
 		srp_commbox_deinit();
+		srp.initialized = false;
 		break;
 
 	case SRP_GET_MMAP_SIZE:
@@ -659,10 +661,7 @@ static long srp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case SRP_FLUSH:
 		srp_debug("SRP_FLUSH\n");
 		srp_commbox_deinit();
-		srp_set_default_fw();
-		srp_flush_ibuf();
-		srp_flush_obuf();
-		srp_reset();
+		srp.initialized = true;
 		break;
 
 	case SRP_GET_IBUF_INFO:
@@ -770,8 +769,6 @@ static int srp_open(struct inode *inode, struct file *file)
 
 	srp.dec_info.channels = 0;
 	srp.dec_info.sample_rate = 0;
-
-	srp.initialized = false;
 
 	return 0;
 }
