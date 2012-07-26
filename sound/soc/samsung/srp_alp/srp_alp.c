@@ -488,16 +488,17 @@ static ssize_t srp_write(struct file *file, const char *buffer,
 
 	i2s_enable(srp.pm_info);
 #ifdef CONFIG_SND_PM_RUNTIME
-	ret = wait_event_interruptible_timeout(reset_wq,
-			    srp.hw_reset_stat, HZ / 20);
-	if (!ret) {
-		srp_err("Not ready to resume srp core.\n");
-		return -EFAULT;
+	if (srp.pm_suspended) {
+		ret = wait_event_interruptible_timeout(reset_wq,
+				    srp.hw_reset_stat, HZ / 20);
+		if (!ret) {
+			srp_err("Not ready to resume srp core.\n");
+			return -EFAULT;
+		}
+
+		srp_core_resume();
 	}
-
-	srp_core_resume();
 #endif
-
 	if (srp.initialized) {
 		srp.initialized = false;
 		srp_flush_ibuf();
