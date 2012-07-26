@@ -369,19 +369,19 @@ static void srp_set_default_fw(void)
 
 void srp_core_reset(void)
 {
-	if (srp.is_loaded) {
-		srp_commbox_init();
-		srp_fw_download();
+	if (!srp.is_loaded)
+		return;
 
-		/* RESET */
-		writel(0x0, srp.commbox + SRP_CONT);
-		srp_pending_ctrl(RUN);
+	srp_commbox_init();
+	srp_fw_download();
 
-		if (!wait_event_interruptible_timeout(reset_wq,
-				srp.hw_reset_stat, HZ / 20)) {
-			srp_err("Not ready to sw reset.\n");
-		}
-	}
+	/* RESET */
+	writel(0x0, srp.commbox + SRP_CONT);
+	srp_pending_ctrl(RUN);
+
+	if (!wait_event_interruptible_timeout(reset_wq,
+			srp.hw_reset_stat, HZ / 20))
+		srp_err("Not ready to sw reset.\n");
 }
 
 void srp_core_suspend(void)
@@ -389,29 +389,44 @@ void srp_core_suspend(void)
 	unsigned char *data;
 	size_t size;
 
-	if (srp.is_loaded && !srp.pm_suspended) {
-		data = srp.fw_info.data_va;
-		size = DMEM_SIZE - srp.data_offset;
+	if (!srp.is_loaded)
+		return;
 
-		/* IBUF/OBUF Save */
-		memcpy(srp.sp_data.ibuf, srp.ibuf0, IBUF_SIZE * 2);
-		memcpy(srp.sp_data.obuf, srp.obuf0, OBUF_SIZE * 2);
+#ifdef CONFIG_ARCH_EXYNOS4
+	if (!srp.decoding_started)
+		return;
+#endif
+#ifdef CONFIG_SND_PM_RUNTIME
+	if (srp.pm_suspended)
+		goto exit_func;
+#endif
 
-		/* Request Suspend mode */
-		srp_request_intr_mode(SUSPEND);
+	data = srp.fw_info.data_va;
+	size = DMEM_SIZE - srp.data_offset;
 
-		memcpy(data, srp.dmem + srp.data_offset, size);
-		memcpy(srp.sp_data.commbox, srp.commbox, COMMBOX_SIZE);
-		srp.pm_suspended = true;
-	}
+	/* IBUF/OBUF Save */
+	memcpy(srp.sp_data.ibuf, srp.ibuf0, IBUF_SIZE * 2);
+	memcpy(srp.sp_data.obuf, srp.obuf0, OBUF_SIZE * 2);
+
+	/* Request Suspend mode */
+	srp_request_intr_mode(SUSPEND);
+
+	memcpy(data, srp.dmem + srp.data_offset, size);
+	memcpy(srp.sp_data.commbox, srp.commbox, COMMBOX_SIZE);
+	srp.pm_suspended = true;
 
 #ifdef CONFIG_SND_PM_RUNTIME
+exit_func:
 	srp.hw_reset_stat = false;
 #endif
 }
 
 void srp_core_resume(void)
 {
+#ifdef CONFIG_ARCH_EXYNOS4
+	if (!srp.decoding_started)
+		return;
+#endif
 	if (!srp.pm_suspended)
 		return;
 
@@ -425,7 +440,6 @@ void srp_core_resume(void)
 	writel(0x0, srp.commbox + SRP_CONT);
 #endif
 	srp_request_intr_mode(RESUME);
-
 	srp.pm_suspended = false;
 }
 
@@ -1163,21 +1177,19 @@ static int srp_suspend(struct platform_device *pdev, pm_message_t state)
 {
 	srp_info("Suspend\n");
 
+#ifdef CONFIG_SND_PM_RUNTIME
 	if (srp.pm_suspended) {
 		srp_info("Already suspended!\n");
-		goto exit_func;
+		return 0;
 	}
+#endif
 
-#ifndef CONFIG_SND_PM_RUNTIME
 	i2s_enable(srp.pm_info);
-#ifdef CONFIG_ARCH_EXYNOS4
-	if (srp.decoding_started)
-#endif
-	srp_core_suspend();
-	i2s_disable(srp.pm_info);
-#endif
 
-exit_func:
+	srp_core_suspend();
+
+	i2s_disable(srp.pm_info);
+
 	return 0;
 }
 
@@ -1185,14 +1197,19 @@ static int srp_resume(struct platform_device *pdev)
 {
 	srp_info("Resume\n");
 
-#ifndef CONFIG_SND_PM_RUNTIME
+#ifdef CONFIG_SND_PM_RUNTIME
+	if (srp.pm_suspended) {
+		srp_info("No need to resume in here\n");
+		return 0;
+	}
+#endif
+
 	i2s_enable(srp.pm_info);
-#ifdef CONFIG_ARCH_EXYNOS4
-	if(srp.decoding_started)
-#endif
+
 	srp_core_resume();
+
 	i2s_disable(srp.pm_info);
-#endif
+
 	return 0;
 }
 
