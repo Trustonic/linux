@@ -167,7 +167,6 @@ struct srp_info {
 	/* SRP status information */
 	unsigned int	decoding_started;
 	unsigned int	is_opened;
-	unsigned int	is_running;
 	unsigned int	is_pending;
 	unsigned int	block_mode;
 	unsigned int	stop_after_eos;
@@ -178,7 +177,6 @@ struct srp_info {
 	unsigned int	data_offset;
 
 	bool	pm_suspended;
-	bool	pm_resumed;
 	bool	hw_reset_stat;
 	bool	is_loaded;
 	bool	initialized;
