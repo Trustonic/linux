@@ -236,8 +236,10 @@ static int exynos5_i2c_xfer(struct i2c_adapter *adap,
 			if (ret == -EAGAIN)
 				break;
 		}
-		if (i == num)
+		if (i == num) {
+			clk_disable(i2c->clk);
 			return num;
+		}
 
 		dev_dbg(i2c->dev, "retrying transfer (%d)\n", retry);
 
