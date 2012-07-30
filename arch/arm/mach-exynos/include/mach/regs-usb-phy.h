@@ -13,6 +13,9 @@
 
 #define EXYNOS4_HSOTG_PHYREG(x)		((x) + S3C_VA_USB_HSPHY)
 
+#include "regs-usb-phy-4210.h"
+#include "regs-usb-phy-4212.h"
+
 #define EXYNOS4_PHYPWR			EXYNOS4_HSOTG_PHYREG(0x00)
 #define PHY1_HSIC_NORMAL_MASK		(0xf << 9)
 #define PHY1_HSIC1_SLEEP		(1 << 12)
