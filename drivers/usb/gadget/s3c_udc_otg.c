@@ -1182,13 +1182,12 @@ static int s3c_udc_probe(struct platform_device *pdev)
 	dev->phy = usb_get_transceiver();
 	udc_reinit(dev);
 
-	dev->clk = clk_get(&pdev->dev, "usbotg");
+	dev->clk = clk_get(&pdev->dev, "otg");
 	if (IS_ERR(dev->clk)) {
 		dev_err(&pdev->dev, "Failed to get clock\n");
 		retval = -ENXIO;
-		goto err_irq;
+		goto err_regs;
 	}
-	clk_enable(dev->clk);
 
 	dev->usb_ctrl = dma_alloc_coherent(&pdev->dev,
 			sizeof(struct usb_ctrlrequest)*BACK2BACK_SIZE,
@@ -1201,6 +1200,7 @@ static int s3c_udc_probe(struct platform_device *pdev)
 		goto err_clk;
 	}
 
+	clk_enable(dev->clk);
 	/* Mask any interrupt left unmasked by the bootloader */
 	__raw_writel(0, dev->regs + S3C_UDC_OTG_GINTMSK);
 
@@ -1217,7 +1217,8 @@ static int s3c_udc_probe(struct platform_device *pdev)
 		DEBUG(KERN_ERR "%s: can't get irq %i, err %d\n", driver_name,
 		      dev->irq, retval);
 		retval = -EBUSY;
-		goto err_regs;
+		clk_disable(dev->clk);
+		goto err_add_device;
 	}
 	dev->irq = irq;
 
@@ -1227,7 +1228,7 @@ static int s3c_udc_probe(struct platform_device *pdev)
 	retval = device_register(&dev->gadget.dev);
 	if (retval) {
 		dev_err(&pdev->dev, "failed to register gadget device\n");
-		goto err_add_device;
+		goto err_irq;
 	}
 
 	retval = usb_add_gadget_udc(&pdev->dev, &dev->gadget);
@@ -1245,14 +1246,14 @@ static int s3c_udc_probe(struct platform_device *pdev)
 
 err_add_udc:
 	device_unregister(&dev->gadget.dev);
+err_irq:
+	free_irq(dev->irq, dev);
 err_add_device:
 	dma_free_coherent(&pdev->dev,
 			sizeof(struct usb_ctrlrequest)*BACK2BACK_SIZE,
 			dev->usb_ctrl, dev->usb_ctrl_dma);
 err_clk:
 	clk_put(dev->clk);
-err_irq:
-	free_irq(dev->irq, dev);
 err_regs:
 	iounmap(dev->regs);
 err_regs_res:
