@@ -279,9 +279,9 @@ static int exynos5_i2c_set_timing(struct exynos5_i2c *i2c, int speed_mode)
 	unsigned int i = 0, utemp0 = 0, utemp1 = 0, utemp2 = 0;
 
 	if (speed_mode == HSI2C_HIGH_SPD)
-		op_clk = HSI2C_HS_TX_CLOCK_3MHZ;
+		op_clk = HSI2C_HS_BPS;
 	else
-		op_clk = HSI2C_FS_TX_CLOCK_400KHZ;
+		op_clk = HSI2C_FS_BPS;
 
 	/* FPCLK / FI2C =
 	 * (CLK_DIV + 1) * (TSCLK_L + TSCLK_H + 2) + 8 + 2 * FLT_CYCLE
