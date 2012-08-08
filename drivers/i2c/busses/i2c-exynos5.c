@@ -119,7 +119,7 @@ static irqreturn_t exynos5_i2c_irq(int irqno, void *dev_id)
 }
 
 static int exynos5_i2c_xfer_msg(struct exynos5_i2c *i2c,
-			      struct i2c_msg *msgs, int num)
+			      struct i2c_msg *msgs, int num, int stop)
 {
 	unsigned long timeout;
 	unsigned long trans_status;
@@ -164,6 +164,12 @@ static int exynos5_i2c_xfer_msg(struct exynos5_i2c *i2c,
 
 		usi_int_en |= HSI2C_INT_TX_ALMOSTEMPTY_EN;
 	}
+
+	if (stop == 1)
+		i2c_auto_conf |= HSI2C_STOP_AFTER_TRANS;
+	else
+		i2c_auto_conf &= ~HSI2C_STOP_AFTER_TRANS;
+
 
 	i2c_addr = readl(i2c->regs + HSI2C_ADDR);
 	i2c_addr &= ~(0x3ff << 10);
@@ -219,6 +225,7 @@ static int exynos5_i2c_xfer(struct i2c_adapter *adap,
 	struct exynos5_i2c *i2c = (struct exynos5_i2c *)adap->algo_data;
 	int retry, i;
 	int ret;
+	int stop = 0;
 	struct i2c_msg *msgs_ptr = msgs;
 
 	if (i2c->suspended) {
@@ -230,7 +237,9 @@ static int exynos5_i2c_xfer(struct i2c_adapter *adap,
 
 	for (retry = 0; retry < adap->retries; retry++) {
 		for (i = 0; i < num; i++) {
-			ret = exynos5_i2c_xfer_msg(i2c, msgs_ptr, 1);
+			if (i == num - 1)
+				stop = 1;
+			ret = exynos5_i2c_xfer_msg(i2c, msgs_ptr, 1, stop);
 			msgs_ptr++;
 
 			if (ret == -EAGAIN)
