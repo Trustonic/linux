@@ -319,7 +319,7 @@ static struct platform_device m5mols_fixed_voltage = {
 };
 #endif
 
-#if defined CONFIG_VIDEO_EXYNOS5_FIMC_IS
+#if defined CONFIG_VIDEO_EXYNOS5_FIMC_IS2
 static struct exynos5_platform_fimc_is exynos5_fimc_is_data;
 
 #if defined CONFIG_VIDEO_S5K4E5
@@ -457,7 +457,7 @@ static struct exynos5_fimc_is_sensor_info s5k4e5 = {
 			.act = GPIO_PULL_NONE,
 		},
 		.reset_myself = {
-			.pin = EXYNOS5_GPX1(0),
+			.pin = EXYNOS5_GPX1(2),
 			.name = "GPX1",
 			.value = 0,
 			.act = GPIO_RESET,
@@ -602,7 +602,7 @@ static struct exynos5_fimc_is_sensor_info s5k6a3 = {
 			.act = GPIO_PULL_NONE,
 		},
 		.reset_myself = {
-			.pin = EXYNOS5_GPX1(2),
+			.pin = EXYNOS5_GPX1(0),
 			.name = "GPX1",
 			.value = 0,
 			.act = GPIO_RESET,
@@ -1529,7 +1529,7 @@ static struct platform_device *smdk5250_devices[] __initdata = {
 	&exynos_device_md1,
 	&exynos_device_md2,
 #endif
-#ifdef CONFIG_VIDEO_EXYNOS5_FIMC_IS
+#ifdef CONFIG_VIDEO_EXYNOS5_FIMC_IS2
 	&exynos5_device_fimc_is,
 #endif
 #ifdef CONFIG_VIDEO_EXYNOS_GSCALER
@@ -1857,7 +1857,7 @@ static void __init exynos_sysmmu_init(void)
 	platform_set_sysmmu(&SYSMMU_PLATDEV(2d).dev,
 						&s5p_device_fimg2d.dev);
 #endif
-#ifdef CONFIG_VIDEO_EXYNOS5_FIMC_IS
+#ifdef CONFIG_VIDEO_EXYNOS5_FIMC_IS2
 	platform_set_sysmmu(&SYSMMU_PLATDEV(isp).dev,
 						&exynos5_device_fimc_is.dev);
 #endif
@@ -1982,7 +1982,7 @@ static void __init smdk5250_machine_init(void)
 			&exynos_device_flite1.dev);
 	dev_set_name(&exynos_device_flite1.dev, "exynos-fimc-lite.1");
 #endif
-#ifdef CONFIG_VIDEO_EXYNOS5_FIMC_IS
+#ifdef CONFIG_VIDEO_EXYNOS5_FIMC_IS2
 	dev_set_name(&exynos5_device_fimc_is.dev, "s5p-mipi-csis.0");
 	clk_add_alias("gscl_wrap0", FIMC_IS_MODULE_NAME,
 			"gscl_wrap0", &exynos5_device_fimc_is.dev);
