@@ -944,6 +944,25 @@ static struct dw_mci_board exynos_dwmci0_pdata __initdata = {
 };
 
 #ifdef CONFIG_FB_S3C
+
+static void smdk5250_fimd_gpio_setup_24bpp(void)
+{
+	u32 reg;
+
+        /* basic fimd init */
+        exynos5_fimd1_gpio_setup_24bpp();
+
+        /* Reference clcok selection for DPTX_PHY: pad_osc_clk_24M */
+        reg = __raw_readl(S3C_VA_SYS + 0x04d4);
+        reg = (reg & ~(0x1 << 0)) | (0x0 << 0);
+        __raw_writel(reg, S3C_VA_SYS + 0x04d4);
+
+        /* DPTX_PHY: XXTI */
+        reg = __raw_readl(S3C_VA_SYS + 0x04d8);
+        reg = (reg & ~(0x1 << 3)) | (0x0 << 3);
+        __raw_writel(reg, S3C_VA_SYS + 0x04d8);
+}
+
 #if defined(CONFIG_LCD_MIPI_S6E8AB0)
 static void mipi_lcd_set_power(struct plat_lcd_data *pd,
 				unsigned int power)
@@ -1301,7 +1320,7 @@ static struct s3c_fb_platdata smdk5250_lcd1_pdata __initdata = {
 #elif defined(CONFIG_S5P_DP)
 	.vidcon1	= 0,
 #endif
-	.setup_gpio	= exynos5_fimd1_gpio_setup_24bpp,
+	.setup_gpio	= smdk5250_fimd_gpio_setup_24bpp,
 	.backlight_off	= s5p_dp_backlight_off,
 	.lcd_off	= s5p_lcd_off,
 };
