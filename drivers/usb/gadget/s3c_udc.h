@@ -120,6 +120,8 @@ struct s3c_request {
 	struct list_head queue;
 	unsigned char mapped;
 	unsigned written_bytes;
+	void *bounce_buf;
+	bool not_aligned;
 };
 
 struct s3c_udc {

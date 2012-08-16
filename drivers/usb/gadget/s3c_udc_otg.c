@@ -411,6 +411,7 @@ static void done(struct s3c_ep *ep, struct s3c_request *req, int status)
 				DMA_TO_DEVICE : DMA_FROM_DEVICE);
 		req->req.dma = DMA_ADDR_INVALID;
 		req->mapped = 0;
+		aligned_unmap_buf(req, ep_is_in(ep));
 	}
 
 	if (status && status != -ESHUTDOWN) {

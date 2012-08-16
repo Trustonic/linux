@@ -86,6 +86,42 @@ static inline void s3c_udc_pre_setup(struct s3c_udc *dev, bool need_nak)
 	__raw_writel(ep_ctrl, dev->regs + S3C_UDC_OTG_DOEPCTL(EP0_CON));
 }
 
+static int aligned_map_buf(struct s3c_request *req, int in)
+{
+	if ((u32)req->req.buf & 3) {
+		DEBUG("Buffer is not aligned %x\n", req->req.buf);
+		req->not_aligned = true;
+
+		/* Allocate bounce buffer */
+		req->bounce_buf = req->req.buf;
+		req->req.buf = kmalloc(req->req.length, GFP_ATOMIC);
+		if (!req->req.buf) {
+			DEBUG("%s: cannot allocate bounce buffer\n",
+			__func__);
+			req->req.buf = req->bounce_buf;
+			return -ENOMEM;
+		}
+		if (in)
+			memcpy(req->req.buf, req->bounce_buf, req->req.length);
+	}
+
+	return 0;
+}
+
+static int aligned_unmap_buf(struct s3c_request *req, int in)
+{
+	if (req->not_aligned) {
+		if (!in)
+			memcpy(req->bounce_buf,
+				req->req.buf, req->req.actual);
+		kfree(req->req.buf);
+		req->req.buf = req->bounce_buf;
+		req->not_aligned = false;
+	}
+
+	return 0;
+}
+
 static int setdma_rx(struct s3c_ep *ep, struct s3c_request *req)
 {
 	u32 *buf, ctrl;
@@ -94,6 +130,7 @@ static int setdma_rx(struct s3c_ep *ep, struct s3c_request *req)
 	struct s3c_udc *udc = ep->dev;
 	struct device *dev = &udc->dev->dev;
 
+	aligned_map_buf(req, ep_is_in(ep));
 	buf = req->req.buf + req->req.actual;
 	prefetchw(buf);
 
@@ -136,6 +173,7 @@ static int setdma_tx(struct s3c_ep *ep, struct s3c_request *req)
 	struct s3c_udc *udc = ep->dev;
 	struct device *dev = &udc->dev->dev;
 
+	aligned_map_buf(req, ep_is_in(ep));
 	buf = req->req.buf + req->req.actual;
 	prefetch(buf);
 	length = req->req.length - req->req.actual;
