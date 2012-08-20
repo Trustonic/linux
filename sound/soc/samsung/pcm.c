@@ -127,6 +127,7 @@ struct s3c_pcm_info {
 
 	struct clk	*pclk;
 	struct clk	*cclk;
+	struct clk	*mout_epll;
 
 	struct s3c_dma_params	*dma_playback;
 	struct s3c_dma_params	*dma_capture;
@@ -307,6 +308,9 @@ static int s3c_pcm_hw_params(struct snd_pcm_substream *substream,
 		clk = pcm->pclk;
 	else
 		clk = pcm->cclk;
+
+	if (clk_get_rate(clk) != pcm->sclk_per_fs*params_rate(params))
+		clk_set_rate(clk, pcm->sclk_per_fs*params_rate(params));
 
 	/* Set the SCLK divider */
 	sclk_div = clk_get_rate(clk) / pcm->sclk_per_fs /
@@ -537,12 +541,21 @@ static __devinit int s3c_pcm_dev_probe(struct platform_device *pdev)
 	/* Default is 128fs */
 	pcm->sclk_per_fs = 128;
 
-	pcm->cclk = clk_get(&pdev->dev, "audio-bus");
+	pcm->cclk = clk_get(&pdev->dev, "sclk_audio");
 	if (IS_ERR(pcm->cclk)) {
-		dev_err(&pdev->dev, "failed to get audio-bus\n");
+		dev_err(&pdev->dev, "failed to get sclk_audio\n");
 		ret = PTR_ERR(pcm->cclk);
+		goto err0;
+	}
+
+	pcm->mout_epll = clk_get(&pdev->dev, "mout_epll");
+	if (IS_ERR(pcm->mout_epll)) {
+		dev_err(&pdev->dev, "failed to get mout_epll\n");
+		ret = PTR_ERR(pcm->mout_epll);
 		goto err1;
 	}
+
+	clk_set_parent(pcm->cclk, pcm->mout_epll);
 	clk_enable(pcm->cclk);
 
 	/* record our pcm structure for later use in the callbacks */
@@ -599,9 +612,12 @@ err4:
 err3:
 	release_mem_region(mem_res->start, resource_size(mem_res));
 err2:
+	clk_disable(pcm->mout_epll);
+	clk_put(pcm->mout_epll);
+err1:
 	clk_disable(pcm->cclk);
 	clk_put(pcm->cclk);
-err1:
+err0:
 	return ret;
 }
 
