@@ -182,6 +182,28 @@ static void __init smdk5250_gpio_power_init(void)
 	gpio_free(EXYNOS5_GPX0(0));
 }
 
+static void exynos5_smdk5250_touch_init(void)
+{
+#ifdef CONFIG_TOUCHSCREEN_COASIA
+	int gpio;
+
+	if (get_smdk5250_rev() == SMDK5250_REV_0_0)
+		gpio = EXYNOS5_GPX2(4);
+	else
+		gpio = EXYNOS5_GPX2(1);
+
+	if (gpio_request(gpio, "GPX2")) {
+		pr_err("%s : TS_RST request port error\n", __func__);
+	} else {
+		s3c_gpio_cfgpin(gpio, S3C_GPIO_OUTPUT);
+		gpio_direction_output(gpio, 0);
+		usleep_range(20000, 21000);
+		gpio_direction_output(gpio, 1);
+		gpio_free(gpio);
+	}
+#endif
+}
+
 #ifdef CONFIG_EXYNOS_MEDIA_DEVICE
 struct platform_device exynos_device_md0 = {
 	.name = "exynos-mdev",
@@ -751,7 +773,6 @@ static struct i2c_board_info i2c_devs2[] __initdata = {
 static struct i2c_board_info i2c_devs3[] __initdata = {
 	{
 		I2C_BOARD_INFO("pixcir_ts", 0x5C),
-		.irq		= IRQ_EINT(21),
 	},
 };
 
@@ -1200,60 +1221,116 @@ static void s5p_dp_backlight_off(void);
 
 static void s5p_lcd_on(void)
 {
+	if (get_smdk5250_rev() == SMDK5250_REV_0_0) {
 #ifndef CONFIG_BACKLIGHT_PWM
-	/* LCD_PWM_IN_2.8V: LCD_B_PWM, GPB2_0 */
-	gpio_request(EXYNOS5_GPB2(0), "GPB2");
+		/* LCD_PWM_IN_2.8V: LCD_B_PWM, GPB2_0 */
+		gpio_request(EXYNOS5_GPB2(0), "GPB2");
 #endif
-	/* LCD_APS_EN_2.8V: GPD0_6 */
-	gpio_request(EXYNOS5_GPD0(6), "GPD0");
+		/* LCD_APS_EN_2.8V: GPD0_6 */
+		gpio_request(EXYNOS5_GPD0(6), "GPD0");
 
-	/* LCD_EN: GPD0_5 */
-	gpio_request(EXYNOS5_GPD0(5), "GPD0");
+		/* LCD_EN: GPD0_5 */
+		gpio_request(EXYNOS5_GPD0(5), "GPD0");
 
-	/* LCD_EN: GPD0_5 */
-	gpio_direction_output(EXYNOS5_GPD0(5), 1);
-	mdelay(20);
+		/* LCD_EN: GPD0_5 */
+		gpio_direction_output(EXYNOS5_GPD0(5), 1);
+		mdelay(20);
 
-	/* LCD_APS_EN_2.8V: GPD0_6 */
-	gpio_direction_output(EXYNOS5_GPD0(6), 1);
-	mdelay(20);
+		/* LCD_APS_EN_2.8V: GPD0_6 */
+		gpio_direction_output(EXYNOS5_GPD0(6), 1);
+		mdelay(20);
 #ifndef CONFIG_BACKLIGHT_PWM
-	/* LCD_PWM_IN_2.8V: LCD_B_PWM, GPB2_0 */
-	gpio_direction_output(EXYNOS5_GPB2(0), 1);
+		/* LCD_PWM_IN_2.8V: LCD_B_PWM, GPB2_0 */
+		gpio_direction_output(EXYNOS5_GPB2(0), 1);
 
-	gpio_free(EXYNOS5_GPB2(0));
+		gpio_free(EXYNOS5_GPB2(0));
 #endif
-	gpio_free(EXYNOS5_GPD0(6));
-	gpio_free(EXYNOS5_GPD0(5));
+		gpio_free(EXYNOS5_GPD0(6));
+		gpio_free(EXYNOS5_GPD0(5));
+	} else {
+#ifndef CONFIG_BACKLIGHT_PWM
+		/* LCD_PWM_IN_2.8V: LCD_B_PWM, GPB2_0 */
+		gpio_request(EXYNOS5_GPB2(0), "GPB2");
+#endif
+		/* LCD_APS_EN_2.8V: GPH1_2 */
+		gpio_request(EXYNOS5_GPH1(2), "GPH1");
+
+		/* LCD_EN: GPH1_1 */
+		gpio_request(EXYNOS5_GPH1(1), "GPH1");
+
+		/* LCD_EN: GPH1_1 */
+		gpio_direction_output(EXYNOS5_GPH1(1), 1);
+		mdelay(20);
+
+		/* LCD_APS_EN_2.8V: GPH1_2 */
+		gpio_direction_output(EXYNOS5_GPH1(2), 1);
+		mdelay(20);
+#ifndef CONFIG_BACKLIGHT_PWM
+		/* LCD_PWM_IN_2.8V: LCD_B_PWM, GPB2_0 */
+		gpio_direction_output(EXYNOS5_GPB2(0), 1);
+
+		gpio_free(EXYNOS5_GPB2(0));
+#endif
+		gpio_free(EXYNOS5_GPH1(2));
+		gpio_free(EXYNOS5_GPH1(1));
+	}
 }
 
 static void s5p_lcd_off(void)
 {
+	if (get_smdk5250_rev() == SMDK5250_REV_0_0) {
 #ifndef CONFIG_BACKLIGHT_PWM
-	/* LCD_PWM_IN_2.8V: LCD_B_PWM, GPB2_0 */
-	gpio_request(EXYNOS5_GPB2(0), "GPB2");
+		/* LCD_PWM_IN_2.8V: LCD_B_PWM, GPB2_0 */
+		gpio_request(EXYNOS5_GPB2(0), "GPB2");
 #endif
-	/* LCD_APS_EN_2.8V: GPD0_6 */
-	gpio_request(EXYNOS5_GPD0(6), "GPD0");
+		/* LCD_APS_EN_2.8V: GPD0_6 */
+		gpio_request(EXYNOS5_GPD0(6), "GPD0");
 
-	/* LCD_EN: GPD0_5 */
-	gpio_request(EXYNOS5_GPD0(5), "GPD0");
+		/* LCD_EN: GPD0_5 */
+		gpio_request(EXYNOS5_GPD0(5), "GPD0");
 
-	/* LCD_EN: GPD0_5 */
-	gpio_direction_output(EXYNOS5_GPD0(5), 0);
-	mdelay(20);
+		/* LCD_EN: GPD0_5 */
+		gpio_direction_output(EXYNOS5_GPD0(5), 0);
+		mdelay(20);
 
-	/* LCD_APS_EN_2.8V: GPD0_6 */
-	gpio_direction_output(EXYNOS5_GPD0(6), 0);
-	mdelay(20);
+		/* LCD_APS_EN_2.8V: GPD0_6 */
+		gpio_direction_output(EXYNOS5_GPD0(6), 0);
+		mdelay(20);
 #ifndef CONFIG_BACKLIGHT_PWM
-	/* LCD_PWM_IN_2.8V: LCD_B_PWM, GPB2_0 */
-	gpio_direction_output(EXYNOS5_GPB2(0), 0);
+		/* LCD_PWM_IN_2.8V: LCD_B_PWM, GPB2_0 */
+		gpio_direction_output(EXYNOS5_GPB2(0), 0);
 
-	gpio_free(EXYNOS5_GPB2(0));
+		gpio_free(EXYNOS5_GPB2(0));
 #endif
-	gpio_free(EXYNOS5_GPD0(6));
-	gpio_free(EXYNOS5_GPD0(5));
+		gpio_free(EXYNOS5_GPD0(6));
+		gpio_free(EXYNOS5_GPD0(5));
+	} else {
+#ifndef CONFIG_BACKLIGHT_PWM
+		/* LCD_PWM_IN_2.8V: LCD_B_PWM, GPB2_0 */
+		gpio_request(EXYNOS5_GPB2(0), "GPB2");
+#endif
+		/* LCD_APS_EN_2.8V: GPH1_2 */
+		gpio_request(EXYNOS5_GPH1(2), "GPH1");
+
+		/* LCD_EN: GPH1_1 */
+		gpio_request(EXYNOS5_GPH1(1), "GPH1");
+
+		/* LCD_EN: GPH1_1 */
+		gpio_direction_output(EXYNOS5_GPH1(1), 0);
+		mdelay(20);
+
+		/* LCD_APS_EN_2.8V: GPH1_2 */
+		gpio_direction_output(EXYNOS5_GPH1(2), 0);
+		mdelay(20);
+#ifndef CONFIG_BACKLIGHT_PWM
+		/* LCD_PWM_IN_2.8V: LCD_B_PWM, GPB2_0 */
+		gpio_direction_output(EXYNOS5_GPB2(0), 0);
+
+		gpio_free(EXYNOS5_GPB2(0));
+#endif
+		gpio_free(EXYNOS5_GPH1(2));
+		gpio_free(EXYNOS5_GPH1(1));
+	}
 }
 
 static void dp_lcd_set_power(struct plat_lcd_data *pd,
@@ -1929,6 +2006,10 @@ static void __init smdk5250_machine_init(void)
 	i2c_register_board_info(2, i2c_devs2, ARRAY_SIZE(i2c_devs2));
 
 	s3c_i2c3_set_platdata(&i2c_data3);
+	if (get_smdk5250_rev() == SMDK5250_REV_0_0)
+		i2c_devs3[0].irq = IRQ_EINT(21);
+	else
+		i2c_devs3[0].irq = IRQ_EINT(18);
 	i2c_register_board_info(3, i2c_devs3, ARRAY_SIZE(i2c_devs3));
 
 	s3c_i2c4_set_platdata(NULL);
@@ -1941,6 +2022,8 @@ static void __init smdk5250_machine_init(void)
 	exynos_sysmmu_init();
 	exynos_ion_set_platdata();
 	smdk5250_dwmci_init();
+
+	exynos5_smdk5250_touch_init();
 
 #ifdef CONFIG_VIDEO_EXYNOS_MFC
 	s5p_mfc_set_platdata(&smdk5250_mfc_pd);
