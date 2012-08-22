@@ -61,6 +61,7 @@ obj-$(CONFIG_MACH_EXYNOS5_DT)		+= mach-exynos5-dt.o
 
 obj-$(CONFIG_MACH_SMDK5250)		+= mach-smdk5250.o
 obj-$(CONFIG_MACH_SMDK5250)		+= board-smdk5250-usb.o
+obj-$(CONFIG_MACH_SMDK5250)		+= board-smdk5250-power.o
 
 # Manta board files
 obj-$(CONFIG_MACH_MANTA)		+= board-manta.o

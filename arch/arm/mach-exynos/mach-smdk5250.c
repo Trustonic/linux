@@ -763,13 +763,6 @@ static struct wm8994_pdata wm8994_platform_data = {
 	.ldo[1] = { 0, &wm8994_ldo2_data },
 };
 
-static struct i2c_board_info i2c_devs0[] __initdata = {
-	{
-		I2C_BOARD_INFO("s5m87xx", 0xCC >> 1),
-		.irq		= IRQ_EINT(26),
-	},
-};
-
 static struct i2c_board_info i2c_devs1[] __initdata = {
 	{
 		I2C_BOARD_INFO("wm8994", 0x1a),
@@ -2012,8 +2005,6 @@ static void __init smdk5250_machine_init(void)
 #endif
 
 	s3c_i2c0_set_platdata(NULL);
-	i2c_register_board_info(0, i2c_devs0, ARRAY_SIZE(i2c_devs0));
-
 	s3c_i2c1_set_platdata(NULL);
 	i2c_register_board_info(1, i2c_devs1, ARRAY_SIZE(i2c_devs1));
 
@@ -2062,6 +2053,7 @@ static void __init smdk5250_machine_init(void)
 	smdk5250_gpio_power_init();
 
 	exynos5_smdk5250_usb_init();
+	exynos5_smdk5250_power_init();
 
 	platform_add_devices(smdk5250_devices, ARRAY_SIZE(smdk5250_devices));
 

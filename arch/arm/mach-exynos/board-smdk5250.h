@@ -40,5 +40,6 @@ static inline int get_smdk5250_regulator(void)
 }
 
 void exynos5_smdk5250_usb_init(void);
+void exynos5_smdk5250_power_init(void);
 
 #endif
