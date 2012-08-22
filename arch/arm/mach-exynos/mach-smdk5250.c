@@ -1889,7 +1889,7 @@ static struct s3c64xx_spi_csinfo spi1_csi[] = {
 
 static struct spi_board_info spi1_board_info[] __initdata = {
 	{
-		.modalias		= "spidev",
+		.modalias		= "fimc_is_spi",
 		.platform_data		= NULL,
 		.max_speed_hz		= 10 * 1000 * 1000,
 		.bus_num		= 1,
