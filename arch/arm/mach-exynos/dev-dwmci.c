@@ -27,6 +27,22 @@
 #include <mach/map.h>
 
 #define DWMCI_CLKSEL	0x09c
+#define DWMCI_DDR200_RDDQS_EN		0x110
+#define DWMCI_DDR200_ASYNC_FIFO_CTRL	0x114
+#define DWMCI_DDR200_DLINE_CTRL		0x118
+/* DDR200 RDDQS Enable*/
+#define DWMCI_TXDT_CRC_TIMER_FASTLIMIT(x)	(((x) & 0xFF) << 16)
+#define DWMCI_TXDT_CRC_TIMER_INITVAL(x)		(((x) & 0xFF) << 8)
+#define DWMCI_BUSY_CHK_CLK_STOP_EN		BIT(2)
+#define DWMCI_RXDATA_START_BIT_SEL		BIT(1)
+#define DWMCI_RDDQS_EN				BIT(0)
+
+/* DDR200 Async FIFO Control */
+#define DWMCI_ASYNC_FIFO_RESET		BIT(0)
+
+/* DDR200 DLINE Control */
+#define DWMCI_FIFO_CLK_DELAY_CTRL(x)	(((x) & 0x3) << 16)
+#define DWMCI_RD_DQS_DELAY_CTRL(x)	((x) & 0x3FF)
 
 static int exynos_dwmci_get_ocr(u32 slot_id)
 {
@@ -48,9 +64,27 @@ static int exynos_dwmci_init(u32 slot_id, irq_handler_t handler, void *data)
 static void exynos_dwmci_set_io_timing(void *data, unsigned char timing)
 {
 	struct dw_mci *host = (struct dw_mci *)data;
-	u32 clksel;
+	u32 clksel, regs;
 
-	if (timing == MMC_TIMING_MMC_HS200 ||
+	if (timing == MMC_TIMING_MMC_HS200_DDR) {
+		if (host->bus_hz != 400 * 1000 * 1000) {
+			host->bus_hz = 400 * 1000 * 1000;
+			clk_set_rate(host->cclk, 800 * 1000 * 1000);
+		}
+		__raw_writel(host->pdata->ddr200_timing,
+				host->regs + DWMCI_CLKSEL);
+
+		regs = __raw_readl(host->regs + DWMCI_DDR200_RDDQS_EN);
+		regs |= DWMCI_TXDT_CRC_TIMER_FASTLIMIT(0x12) |
+			DWMCI_TXDT_CRC_TIMER_INITVAL(0x15) |
+			DWMCI_RDDQS_EN;
+		__raw_writel(regs, host->regs + DWMCI_DDR200_RDDQS_EN);
+
+		regs = __raw_readl(host->regs + DWMCI_DDR200_DLINE_CTRL);
+		regs |= DWMCI_FIFO_CLK_DELAY_CTRL(0x2) |
+			DWMCI_RD_DQS_DELAY_CTRL(90);
+		__raw_writel(regs, host->regs + DWMCI_DDR200_DLINE_CTRL);
+	} else if (timing == MMC_TIMING_MMC_HS200 ||
 			timing == MMC_TIMING_UHS_SDR104) {
 		if (host->bus_hz != 200 * 1000 * 1000) {
 			host->bus_hz = 200 * 1000 * 1000;
