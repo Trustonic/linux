@@ -1058,7 +1058,8 @@ static void dw_mci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 	regs = mci_readl(slot->host, UHS_REG);
 
 	/* DDR mode set */
-	if (ios->timing == MMC_TIMING_UHS_DDR50)
+	if (ios->timing == MMC_TIMING_UHS_DDR50 ||
+	    ios->timing == MMC_TIMING_MMC_HS200_DDR)
 		regs |= (0x1 << slot->id) << 16;
 	else
 		regs &= ~(0x1 << slot->id) << 16;
@@ -1069,10 +1070,13 @@ static void dw_mci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 				 MMC_CAP_UHS_DDR50))
 		regs |= (0x1 << slot->id);
 
+	mci_writel(slot->host, UHS_REG, regs);
+
+	if (ios->timing == MMC_TIMING_MMC_HS200_DDR)
+		mci_writel(slot->host, CDTHRCTL, 512 << 16 | 1);
+
 	if (slot->host->pdata->set_io_timing)
 		slot->host->pdata->set_io_timing(slot->host, ios->timing);
-
-	mci_writel(slot->host, UHS_REG, regs);
 
 	if (ios->clock) {
 		/*

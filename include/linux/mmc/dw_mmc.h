@@ -268,6 +268,7 @@ struct dw_mci_board {
 	/* Phase Shift Value */
 	unsigned int sdr_timing;
 	unsigned int ddr_timing;
+	unsigned int ddr200_timing;
 	u8 clk_drv;
 	u8 clk_smpl;
 	bool tuned;
