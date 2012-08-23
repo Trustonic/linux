@@ -382,6 +382,12 @@ static struct exynos5_fimc_is_sensor_info s5k4e5 = {
 	.mipi_lanes = 2,
 	.mipi_settle = 12,
 	.mipi_align = 24,
+	.sensor_power = {
+		.cam_core = "5m_core_1.5v",
+		.cam_io_myself = "cam_io_1.8v",
+		.cam_io_peer = "vt_cam_1.8v",
+		.cam_af = "cam_af_2.8v",
+	},
 	.sensor_gpio = {
 		.cfg[0] = {
 			.pin = EXYNOS5_GPE0(0),
@@ -527,6 +533,11 @@ static struct exynos5_fimc_is_sensor_info s5k6a3 = {
 	.mipi_lanes = 1,
 	.mipi_settle = 12,
 	.mipi_align = 24,
+	.sensor_power = {
+		.cam_core = "5m_core_1.5v",
+		.cam_io_myself = "vt_cam_1.8v",
+		.cam_io_peer = "cam_io_1.8v",
+	},
 	.sensor_gpio = {
 		.cfg[0] = {
 			.pin = EXYNOS5_GPE0(0),
