@@ -1407,7 +1407,7 @@ static struct s3c_fb_platdata smdk5250_lcd1_pdata __initdata = {
 	.win[3]		= &smdk5250_fb_win2,
 	.win[4]		= &smdk5250_fb_win2,
 #endif
-	.default_win	= 2,
+	.default_win	= 0,
 	.vidcon0	= VIDCON0_VIDOUT_RGB | VIDCON0_PNRMODE_RGB,
 #if defined(CONFIG_LCD_MIPI_S6E8AB0)
 	.vidcon1	= VIDCON1_INV_VCLK,
