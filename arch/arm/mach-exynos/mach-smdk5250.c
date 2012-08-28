@@ -1820,10 +1820,7 @@ static void __init exynos_reserve_mem(void)
 #ifdef CONFIG_EXYNOS_C2C
 		"samsung-c2c=c2c_shdmem;"
 #endif
-		"s3cfb.0=fimd;exynos5-fb.1=fimd;"
 		"samsung-rp=srp;"
-		"exynos-gsc.0=gsc0;exynos-gsc.1=gsc1;exynos-gsc.2=gsc2;exynos-gsc.3=gsc3;"
-		"exynos-fimc-lite.0=flite0;exynos-fimc-lite.1=flite1;"
 #ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
 		"ion-exynos/mfc_sh=drm_mfc_sh;"
 		"ion-exynos/msgbox_sh=drm_msgbox_sh;"
@@ -1843,9 +1840,7 @@ static void __init exynos_reserve_mem(void)
 		"ion-exynos=ion;"
 		"exynos-rot=rot;"
 		"s5p-mfc-v6/f=fw;"
-		"s5p-mfc-v6/a=b1;"
-		"s5p-mixer=tv;"
-		"exynos5-fimc-is=fimc_is;";
+		"s5p-mfc-v6/a=b1;";
 
 	exynos_cma_region_reserve(regions, regions_secure, 0, map);
 }
