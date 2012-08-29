@@ -11,11 +11,14 @@
 #ifndef __ASM_ARCH_HS_IIC_H
 #define __ASM_ARCH_HS_IIC_H __FILE__
 
+#define HSI2C_POLLING 0
+#define HSI2C_INTERRUPT 1
 #define HSI2C_FAST_SPD 0
 #define HSI2C_HIGH_SPD 1
 
 struct exynos5_platform_i2c {
 	int bus_number;
+	int operation_mode;
 	int speed_mode;
 	unsigned int fast_speed;
 	unsigned int high_speed;
