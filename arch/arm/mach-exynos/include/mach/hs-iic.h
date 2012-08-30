@@ -17,6 +17,8 @@
 struct exynos5_platform_i2c {
 	int bus_number;
 	int speed_mode;
+	unsigned int fast_speed;
+	unsigned int high_speed;
 	void (*cfg_gpio)(struct platform_device *dev);
 };
 
