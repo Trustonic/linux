@@ -57,7 +57,4 @@
 #define HSI2C_TIMEOUT_EN			(1u << 31)
 #define HSI2C_FIFO_EMPTY			(0x1000100)
 
-#define HSI2C_FS_BPS				400000
-#define HSI2C_HS_BPS				2500000
-
 #endif /* __ASM_ARCH_REGS_HS_IIC_H */
