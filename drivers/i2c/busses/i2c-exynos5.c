@@ -205,8 +205,6 @@ static int exynos5_i2c_xfer_msg(struct exynos5_i2c *i2c,
 
 	i2c_auto_conf &= ~(0xffff);
 	i2c_auto_conf |= i2c->msg->len;
-	if (operation_mode != HSI2C_POLLING)
-		i2c_auto_conf |= HSI2C_STOP_AFTER_TRANS;
 	writel(i2c_auto_conf, i2c->regs + HSI2C_AUTO_CONFING);
 
 	i2c_auto_conf = readl(i2c->regs + HSI2C_AUTO_CONFING);
@@ -215,6 +213,7 @@ static int exynos5_i2c_xfer_msg(struct exynos5_i2c *i2c,
 	if (operation_mode != HSI2C_POLLING)
 		writel(usi_int_en, i2c->regs + HSI2C_INT_ENABLE);
 
+	ret = -EAGAIN;
 	if (msgs->flags & I2C_M_RD) {
 		if (operation_mode == HSI2C_POLLING) {
 			timeout = jiffies + EXYNOS5_I2C_TIMEOUT;
@@ -227,28 +226,32 @@ static int exynos5_i2c_xfer_msg(struct exynos5_i2c *i2c,
 						= byte;
 				}
 
-				if (i2c->msg_byte_ptr >= i2c->msg->len)
+				if (i2c->msg_byte_ptr >= i2c->msg->len) {
+					ret = 0;
 					break;
+				}
 			}
-			if (i2c->msg_byte_ptr < i2c->msg->len) {
+
+			if (ret == -EAGAIN) {
 				exynos5_i2c_reset(i2c);
 				dev_warn(i2c->dev, "rx timeout\n");
-				return -EAGAIN;
+				return ret;
 			}
 		} else {
-			timeout = wait_for_completion_timeout(&i2c->msg_complete,
-				EXYNOS5_I2C_TIMEOUT);
+			timeout = wait_for_completion_interruptible_timeout
+				(&i2c->msg_complete, EXYNOS5_I2C_TIMEOUT);
+
 			if (timeout == 0) {
-				exynos5_i2c_stop(i2c);
 				exynos5_i2c_reset(i2c);
 				dev_warn(i2c->dev, "rx timeout\n");
-				return -EAGAIN;
+				return ret;
 			}
+
+			ret = 0;
 		}
 	} else {
-		ret = -EAGAIN;
-		timeout = jiffies + EXYNOS5_I2C_TIMEOUT;
 		if (operation_mode == HSI2C_POLLING) {
+			timeout = jiffies + EXYNOS5_I2C_TIMEOUT;
 			while (time_before(jiffies, timeout) &&
 				(i2c->msg_byte_ptr < i2c->msg->len)) {
 				if ((readl(i2c->regs + HSI2C_FIFO_STATUS)
@@ -259,13 +262,24 @@ static int exynos5_i2c_xfer_msg(struct exynos5_i2c *i2c,
 						i2c->regs + HSI2C_TX_DATA);
 				}
 			}
+		} else {
+			timeout = wait_for_completion_interruptible_timeout
+				(&i2c->msg_complete, EXYNOS5_I2C_TIMEOUT);
+
+			if (timeout == 0) {
+				exynos5_i2c_reset(i2c);
+				dev_warn(i2c->dev, "tx timeout\n");
+				return ret;
+			}
+
+			timeout = jiffies + timeout;
 		}
 		while (time_before(jiffies, timeout)) {
 			usi_fifo_stat = readl(i2c->regs + HSI2C_FIFO_STATUS);
 			trans_status = readl(i2c->regs + HSI2C_TRANS_STATUS);
 			if((usi_fifo_stat == HSI2C_FIFO_EMPTY) &&
 				((trans_status == 0) ||
-				((operation_mode == HSI2C_POLLING) &&
+				((stop == 0) &&
 				(trans_status == 0x20000)))) {
 				ret = 0;
 				break;
