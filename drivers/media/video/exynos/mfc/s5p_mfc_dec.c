@@ -1742,12 +1742,9 @@ static int vidioc_s_ctrl(struct file *file, void *priv,
 	struct s5p_mfc_dec *dec = ctx->dec_priv;
 	struct s5p_mfc_ctx_ctrl *ctx_ctrl;
 	int ret = 0;
-	int stream_on;
 	int found = 0;
 
 	mfc_debug_enter();
-
-	stream_on = ctx->vq_src.streaming || ctx->vq_dst.streaming;
 
 	ret = check_ctrl_val(ctx, ctrl);
 	if (ret)
@@ -1755,49 +1752,25 @@ static int vidioc_s_ctrl(struct file *file, void *priv,
 
 	switch (ctrl->id) {
 	case V4L2_CID_MPEG_VIDEO_DECODER_MPEG4_DEBLOCK_FILTER:
-		if (stream_on)
-			return -EBUSY;
 		dec->loop_filter_mpeg4 = ctrl->value;
 		break;
 	case V4L2_CID_MPEG_MFC51_VIDEO_DECODER_H264_DISPLAY_DELAY:
-		if (stream_on)
-			return -EBUSY;
 		dec->display_delay = ctrl->value;
 		break;
 	case V4L2_CID_MPEG_VIDEO_DECODER_SLICE_INTERFACE:
-		if (stream_on)
-			return -EBUSY;
 		dec->slice_enable = ctrl->value;
 		break;
 	case V4L2_CID_MPEG_MFC51_VIDEO_PACKED_PB:
-		if (stream_on)
-			return -EBUSY;
-		if (ctx->codec_mode != S5P_FIMV_CODEC_MPEG4_DEC &&
-			ctx->codec_mode != S5P_FIMV_CODEC_FIMV1_DEC &&
-			ctx->codec_mode != S5P_FIMV_CODEC_FIMV2_DEC &&
-			ctx->codec_mode != S5P_FIMV_CODEC_FIMV3_DEC &&
-			ctx->codec_mode != S5P_FIMV_CODEC_FIMV4_DEC)
-			return -EINVAL;
 		dec->is_packedpb = ctrl->value;
 		break;
 	case V4L2_CID_MPEG_MFC51_VIDEO_CRC_ENABLE:
-		if (ctrl->value == 1 || ctrl->value == 0)
-			dec->crc_enable = ctrl->value;
-		else
-			dec->crc_enable = 0;
+		dec->crc_enable = ctrl->value;
 		break;
 	case V4L2_CID_CACHEABLE:
-		/*if (stream_on)
-			return -EBUSY; */
 		ctx->cacheable |= ctrl->value;
 		break;
 	case V4L2_CID_MPEG_VIDEO_H264_SEI_FRAME_PACKING:
-		/*if (stream_on)
-			return -EBUSY; */
-		if (ctrl->value == 0 || ctrl->value == 1)
-			dec->sei_parse = ctrl->value;
-		else
-			dec->sei_parse = 0;
+		dec->sei_parse = ctrl->value;
 		break;
 	case V4L2_CID_MPEG_VIDEO_DECODER_IMMEDIATE_DISPLAY:
 		dec->immediate_display = ctrl->value;
