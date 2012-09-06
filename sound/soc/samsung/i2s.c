@@ -59,6 +59,16 @@ struct i2s_dai {
 	/* SRP clock */
 	struct clk *srpclk;
 #endif
+	/* Audss's source clock */
+	struct clk *mout_audss;
+	/* Audss's i2s source clock */
+	struct clk *mout_i2s;
+	/* SRP clock's divider */
+	struct clk *dout_srp;
+	/* Bus clock's divider */
+	struct clk *dout_bus;
+	/* i2s clock's divider */
+	struct clk *dout_i2s;
 	/* Clock for generating I2S signals */
 	struct clk *op_clk;
 	/* Array of clock names for op_clk */
@@ -936,6 +946,111 @@ i2s_delay(struct snd_pcm_substream *substream, struct snd_soc_dai *dai)
 	return delay;
 }
 
+static int clk_set_heirachy(struct i2s_dai *i2s)
+{
+	struct clk *fout_epll;
+	unsigned long audss_clk_rate = 0;
+	unsigned long srp_clk_rate = 0;
+	unsigned long bus_clk_rate = 0;
+	unsigned int ret = 0;
+
+	if ((i2s->pdev->id != 0) && (i2s->pdev->id != SAMSUNG_I2S_SECOFF)) {
+		dev_err(&i2s->pdev->dev, "Not support i2s channel %d\n",
+							i2s->pdev->id);
+		return ret;
+	}
+
+	fout_epll = clk_get(&i2s->pdev->dev, "fout_epll");
+	if (IS_ERR(fout_epll)) {
+		dev_err(&i2s->pdev->dev, "failed to get fout_epll clock\n");
+		ret = PTR_ERR(fout_epll);
+		goto err0;
+	}
+
+	i2s->mout_audss = clk_get(&i2s->pdev->dev, "mout_audss");
+	if (IS_ERR(i2s->mout_audss)) {
+		dev_err(&i2s->pdev->dev, "failed to get mout_audss clock\n");
+		ret = PTR_ERR(i2s->mout_audss);
+		goto err1;
+	}
+
+	i2s->mout_i2s = clk_get(&i2s->pdev->dev, "mout_i2s");
+	if (IS_ERR(i2s->mout_i2s)) {
+		dev_err(&i2s->pdev->dev, "failed to get mout_i2s clock\n");
+		ret = PTR_ERR(i2s->mout_i2s);
+		goto err2;
+	}
+
+	i2s->dout_srp = clk_get(&i2s->pdev->dev, "dout_srp");
+	if (IS_ERR(i2s->dout_srp)) {
+		dev_err(&i2s->pdev->dev, "failed to get dout_srp div\n");
+		ret = PTR_ERR(i2s->dout_srp);
+		goto err3;
+	}
+
+	i2s->dout_bus = clk_get(&i2s->pdev->dev, "dout_bus");
+	if (IS_ERR(i2s->dout_bus)) {
+		dev_err(&i2s->pdev->dev, "failed to get dout_bus div\n");
+		ret = PTR_ERR(i2s->dout_bus);
+		goto err4;
+	}
+
+	i2s->dout_i2s = clk_get(&i2s->pdev->dev, "dout_i2s");
+	if (IS_ERR(i2s->dout_i2s)) {
+		dev_err(&i2s->pdev->dev, "failed to get dout_i2s div\n");
+		ret = PTR_ERR(i2s->dout_i2s);
+		goto err5;
+	}
+
+	ret = clk_set_parent(i2s->mout_audss, fout_epll);
+	if (ret)
+		dev_err(&i2s->pdev->dev, "failed to set parent %s of clock %s.\n",
+			fout_epll->name, i2s->mout_audss->name);
+
+	ret = clk_set_parent(i2s->mout_i2s, i2s->mout_audss);
+	if (ret)
+		dev_err(&i2s->pdev->dev, "failed to set parent %s of clock %s.\n",
+			 i2s->mout_audss->name, i2s->mout_i2s->name);
+
+	audss_clk_rate = clk_get_rate(i2s->mout_audss);
+	switch (audss_clk_rate) {
+	case 96000000:
+		srp_clk_rate = audss_clk_rate;
+		bus_clk_rate = srp_clk_rate >> 1;
+		break;
+	case 200000000:
+		srp_clk_rate = audss_clk_rate >> 1;
+		bus_clk_rate = srp_clk_rate >> 1;
+		break;
+	default:
+		dev_err(&i2s->pdev->dev, "Not support clk rate %ld\n",
+						      audss_clk_rate);
+		ret = -EINVAL;
+		goto err6;
+	}
+
+	/* The epll rate is currently 200Mhz */
+	clk_set_rate(i2s->dout_srp, srp_clk_rate);
+	clk_set_rate(i2s->dout_bus, bus_clk_rate);
+
+	return ret;
+
+err6:
+	clk_put(i2s->dout_i2s);
+err5:
+	clk_put(i2s->dout_bus);
+err4:
+	clk_put(i2s->dout_srp);
+err3:
+	clk_put(i2s->mout_i2s);
+err2:
+	clk_put(i2s->mout_audss);
+err1:
+	clk_put(fout_epll);
+err0:
+	return ret;
+}
+
 #ifdef CONFIG_PM
 static int i2s_suspend(struct snd_soc_dai *dai)
 {
@@ -959,7 +1074,6 @@ static int i2s_resume(struct snd_soc_dai *dai)
 
 static int samsung_i2s_dai_probe(struct snd_soc_dai *dai)
 {
-	struct clk *fout_epll, *mout_audss;
 	struct i2s_dai *i2s = to_info(dai);
 	struct i2s_dai *other = i2s->pri_dai ? : i2s->sec_dai;
 	int ret;
@@ -1003,30 +1117,12 @@ static int samsung_i2s_dai_probe(struct snd_soc_dai *dai)
 		goto err4;
 	}
 #endif
-
-probe_exit:
-	mout_audss = clk_get(&i2s->pdev->dev, "mout_audss");
-	if (IS_ERR(mout_audss)) {
-		dev_err(&i2s->pdev->dev, "failed to get mout_audss clock\n");
-		ret = PTR_ERR(mout_audss);
+	/* Set clock hierarchy for audio subsystem */
+	ret = clk_set_heirachy(i2s);
+	if (ret) {
+		dev_err(&i2s->pdev->dev, "failed to set clock hierachy.\n");
 		goto err5;
 	}
-
-	fout_epll = clk_get(&i2s->pdev->dev, "fout_epll");
-	if (IS_ERR(fout_epll)) {
-		dev_err(&i2s->pdev->dev, "failed to get fout_epll clock\n");
-		ret = PTR_ERR(fout_epll);
-		goto err6;
-	}
-
-	/* Set audio clock hierarchy for I2S */
-	ret = clk_set_parent(mout_audss, fout_epll);
-	if (ret) {
-		dev_err(&i2s->pdev->dev, "failed to set parent %s of clock %s.\n",
-				fout_epll->name, mout_audss->name);
-		goto err7;
-	}
-
 	if (other) {
 		other->addr = i2s->addr;
 		other->audss_base = i2s->audss_base;
@@ -1035,8 +1131,6 @@ probe_exit:
 		other->srpclk = i2s->srpclk;
 #endif
 	}
-	clk_put(fout_epll);
-	clk_put(mout_audss);
 
 	if ((i2s->quirks & QUIRK_SEC_DAI) && !is_secondary(i2s))
 		idma_reg_addr_init(i2s->addr,
@@ -1076,10 +1170,6 @@ probe_exit:
 
 	return 0;
 
-err7:
-	clk_put(fout_epll);
-err6:
-	clk_put(mout_audss);
 err5:
 #ifdef CONFIG_SND_SAMSUNG_USE_IDMA
 	clk_put(i2s->srpclk);
