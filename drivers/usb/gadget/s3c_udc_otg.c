@@ -1201,6 +1201,17 @@ static int s3c_udc_probe(struct platform_device *pdev)
 		goto err_clk;
 	}
 
+	dev->ep0_data = dma_alloc_coherent(&pdev->dev,
+			EP0_FIFO_SIZE,
+			&dev->ep0_data_dma, GFP_KERNEL);
+
+	if (!dev->ep0_data) {
+		DEBUG(KERN_ERR "%s: can't get ep0_data dma memory\n",
+			driver_name);
+		retval = -ENOMEM;
+		goto err_get_ctrl_buf;
+	}
+
 	clk_enable(dev->clk);
 	/* Mask any interrupt left unmasked by the bootloader */
 	__raw_writel(0, dev->regs + S3C_UDC_OTG_GINTMSK);
@@ -1219,7 +1230,7 @@ static int s3c_udc_probe(struct platform_device *pdev)
 		      dev->irq, retval);
 		retval = -EBUSY;
 		clk_disable(dev->clk);
-		goto err_add_device;
+		goto err_get_data_buf;
 	}
 	dev->irq = irq;
 
@@ -1235,7 +1246,7 @@ static int s3c_udc_probe(struct platform_device *pdev)
 	retval = usb_add_gadget_udc(&pdev->dev, &dev->gadget);
 	if (retval) {
 		dev_err(&pdev->dev, "failed to add gadget to udc list\n");
-		goto err_add_udc;
+		goto err_add_device;
 	}
 
 	if (dev->phy)
@@ -1245,11 +1256,15 @@ static int s3c_udc_probe(struct platform_device *pdev)
 
 	return retval;
 
-err_add_udc:
+err_add_device:
 	device_unregister(&dev->gadget.dev);
 err_irq:
 	free_irq(dev->irq, dev);
-err_add_device:
+err_get_data_buf:
+	dma_free_coherent(&pdev->dev,
+			EP0_FIFO_SIZE,
+			dev->ep0_data, dev->ep0_data_dma);
+err_get_ctrl_buf:
 	dma_free_coherent(&pdev->dev,
 			sizeof(struct usb_ctrlrequest)*BACK2BACK_SIZE,
 			dev->usb_ctrl, dev->usb_ctrl_dma);
@@ -1279,6 +1294,10 @@ static int s3c_udc_remove(struct platform_device *pdev)
 	if (dev->phy)
 		usb_put_transceiver(dev->phy);
 	clk_put(dev->clk);
+	if (dev->ep0_data)
+		dma_free_coherent(&pdev->dev,
+				EP0_FIFO_SIZE,
+				dev->ep0_data, dev->ep0_data_dma);
 	if (dev->usb_ctrl)
 		dma_free_coherent(&pdev->dev,
 				sizeof(struct usb_ctrlrequest)*BACK2BACK_SIZE,

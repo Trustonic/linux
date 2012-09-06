@@ -136,7 +136,9 @@ struct s3c_udc {
 
 	unsigned char usb_address;
 	struct usb_ctrlrequest *usb_ctrl;
+	void *ep0_data;
 	dma_addr_t usb_ctrl_dma;
+	dma_addr_t ep0_data_dma;
 
 	void __iomem *regs;
 	struct resource *regs_res;

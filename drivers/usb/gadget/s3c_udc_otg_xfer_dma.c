@@ -31,9 +31,8 @@
 static u8 clear_feature_num;
 static int clear_feature_flag;
 static int set_conf_done;
-static u16 g_status __aligned(8);
 
-static u8 test_pkt[TEST_PKT_SIZE] __aligned(8) = {
+static const u8 test_pkt[TEST_PKT_SIZE] __aligned(8) = {
 	/* JKJKJKJK x 9 */
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	/* JJKKJJKK x 8 */
@@ -258,7 +257,6 @@ static void complete_rx(struct s3c_udc *dev, u8 ep_num)
 	else
 		xfer_size = (ep_tsr & 0x7fff);
 
-	__dma_single_cpu_to_dev(req->req.buf, req->req.length, DMA_FROM_DEVICE);
 	xfer_length = req->req.length - xfer_size;
 	req->req.actual += min(xfer_length, req->req.length - req->req.actual);
 	is_short = (xfer_length < ep->ep.maxpacket);
@@ -269,14 +267,14 @@ static void complete_rx(struct s3c_udc *dev, u8 ep_num)
 			is_short, ep_tsr, xfer_size);
 
 	if (is_short || req->req.actual == xfer_length) {
+		done(ep, req, 0);
+
 		if (ep_num == EP0_CON && dev->ep0state == DATA_STATE_RECV) {
 			done(ep, req, 0);
 			DEBUG_OUT_EP("	=> Send ZLP\n");
 			dev->ep0state = WAIT_FOR_OUT_STATUS;
 			s3c_udc_ep0_zlp(dev);
 		} else {
-			done(ep, req, 0);
-
 			if (!list_empty(&ep->queue)) {
 				req = list_entry(ep->queue.next,
 					struct s3c_request, queue);
@@ -819,13 +817,13 @@ static int s3c_udc_get_status(struct s3c_udc *dev,
 
 	switch (crq->bRequestType & USB_RECIP_MASK) {
 	case USB_RECIP_INTERFACE:
-		g_status = 0;
+		((u16 *)dev->ep0_data)[0] = 0x0;
 		DEBUG_SETUP("\tGET_STATUS: USB_RECIP_INTERFACE,"
 			"g_stauts = %d\n", g_status);
 		break;
 
 	case USB_RECIP_DEVICE:
-		g_status = 0x0;
+		((u16 *)dev->ep0_data)[0] = 0x0;
 		DEBUG_SETUP("\tGET_STATUS: USB_RECIP_DEVICE,"
 			"g_stauts = %d\n", g_status);
 		break;
@@ -837,7 +835,7 @@ static int s3c_udc_get_status(struct s3c_udc *dev,
 			return 1;
 		}
 
-		g_status = dev->ep[ep_num].stopped;
+		((u16 *)dev->ep0_data)[0] = dev->ep[ep_num].stopped;
 		DEBUG_SETUP("\tGET_STATUS: USB_RECIP_ENDPOINT,"
 			"g_stauts = %d\n", g_status);
 
@@ -846,9 +844,7 @@ static int s3c_udc_get_status(struct s3c_udc *dev,
 		return 1;
 	}
 
-	__dma_single_cpu_to_dev(&g_status, 2, DMA_TO_DEVICE);
-
-	__raw_writel(virt_to_phys(&g_status),
+	__raw_writel(dev->ep0_data_dma,
 		dev->regs + S3C_UDC_OTG_DIEPDMA(EP0_CON));
 	__raw_writel((1<<19)|(2<<0),
 		dev->regs + S3C_UDC_OTG_DIEPTSIZ(EP0_CON));
@@ -1155,8 +1151,8 @@ static inline void set_test_mode(struct s3c_udc *dev)
 		printk(KERN_INFO "Test mode selector in set_feature request is"
 			"TEST PACKET\n");
 
-		__dma_single_cpu_to_dev(test_pkt, TEST_PKT_SIZE, DMA_TO_DEVICE);
-		__raw_writel(virt_to_phys(test_pkt),
+		memcpy(dev->ep0_data, test_pkt, TEST_PKT_SIZE);
+		__raw_writel(dev->ep0_data_dma,
 			dev->regs + S3C_UDC_OTG_DIEPDMA(EP0_CON));
 
 		ep_ctrl = __raw_readl(dev->regs + S3C_UDC_OTG_DIEPCTL(EP0_CON));
