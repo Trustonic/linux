@@ -210,6 +210,20 @@ udc_proc_read(char *page, char **start, off_t off, int count,
 #include "s3c_udc_otg_xfer_dma.c"
 
 /*
+ * is_nonswitch - whether or not switch driver.
+ *
+ * Return true if switch driver isn't.
+ */
+static inline bool is_nonswitch(void)
+{
+#ifdef CONFIG_USB_GADGET_SWITCH
+	return false;
+#else
+	return true;
+#endif
+}
+
+/*
  *	udc_disable - disable USB device controller
  */
 static void udc_disable(struct s3c_udc *dev)
@@ -379,7 +393,8 @@ static int s3c_udc_stop(struct usb_gadget *gadget,
 	stop_activity(dev, driver);
 	spin_unlock_irqrestore(&dev->lock, flags);
 
-	udc_disable(dev);
+	if (is_nonswitch())
+		udc_disable(dev);
 
 	printk(KERN_INFO "Unregistered gadget driver '%s'\n",
 			driver->driver.name);

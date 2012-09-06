@@ -568,6 +568,10 @@ config USB_GADGET_SUPERSPEED
 	bool
 	depends on USB_GADGET_DUALSPEED
 
+config USB_GADGET_SWITCH
+	bool
+	depends on USB_S3C_OTGD
+
 #
 # USB Gadget Drivers
 #
