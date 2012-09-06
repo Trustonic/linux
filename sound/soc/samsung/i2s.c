@@ -678,9 +678,7 @@ static void i2s_register_restore(struct i2s_dai *i2s)
 	}
 }
 
-/* We set constraints on the substream acc to the version of I2S */
-static int i2s_startup(struct snd_pcm_substream *substream,
-	  struct snd_soc_dai *dai)
+void i2s_enable(struct snd_soc_dai *dai)
 {
 	struct i2s_dai *i2s = to_info(dai);
 	struct i2s_dai *other = i2s->pri_dai ? : i2s->sec_dai;
@@ -695,7 +693,7 @@ static int i2s_startup(struct snd_pcm_substream *substream,
 
 	if (i2s->opencnt++) {
 		spin_unlock_irqrestore(&lock, flags);
-		return 0;
+		return;
 	}
 
 	i2s->mode |= DAI_OPENED;
@@ -728,12 +726,9 @@ static int i2s_startup(struct snd_pcm_substream *substream,
 			writel(CON_RSTCLR, i2s->addr + I2SCON);
 #endif
 	}
-
-	return 0;
 }
 
-static void i2s_shutdown(struct snd_pcm_substream *substream,
-	struct snd_soc_dai *dai)
+void i2s_disable(struct snd_soc_dai *dai)
 {
 	struct i2s_dai *i2s = to_info(dai);
 	struct i2s_dai *other = i2s->pri_dai ? : i2s->sec_dai;
@@ -777,6 +772,21 @@ static void i2s_shutdown(struct snd_pcm_substream *substream,
 		pm_runtime_put_sync(&pdev->dev);
 #endif
 	}
+}
+
+/* We set constraints on the substream acc to the version of I2S */
+static int i2s_startup(struct snd_pcm_substream *substream,
+	  struct snd_soc_dai *dai)
+{
+	i2s_enable(dai);
+
+	return 0;
+}
+
+static void i2s_shutdown(struct snd_pcm_substream *substream,
+	struct snd_soc_dai *dai)
+{
+	i2s_disable(dai);
 }
 
 static int config_setup(struct i2s_dai *i2s)
@@ -929,20 +939,16 @@ i2s_delay(struct snd_pcm_substream *substream, struct snd_soc_dai *dai)
 #ifdef CONFIG_PM
 static int i2s_suspend(struct snd_soc_dai *dai)
 {
-	struct i2s_dai *i2s = to_info(dai);
-
 	if (dai->active)
-		i2s_register_save(i2s);
+		i2s_disable(dai);
 
 	return 0;
 }
 
 static int i2s_resume(struct snd_soc_dai *dai)
 {
-	struct i2s_dai *i2s = to_info(dai);
-
 	if (dai->active)
-		i2s_register_restore(i2s);
+		i2s_enable(dai);
 
 	return 0;
 }
