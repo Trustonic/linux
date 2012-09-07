@@ -1193,28 +1193,17 @@ static int s3c_udc_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	dev->regs_res = request_mem_region(res->start, resource_size(res),
-					     dev_name(&pdev->dev));
-	if (!dev->regs_res) {
-		DEBUG(KERN_ERR "cannot reserve registers\n");
-		return -ENOENT;
-	}
-
-	dev->regs = ioremap(res->start, resource_size(res));
+	dev->regs = devm_request_and_ioremap(&pdev->dev, res);
 	if (!dev->regs) {
-		DEBUG(KERN_ERR "cannot map registers\n");
-		retval = -ENXIO;
-		goto err_regs_res;
+		DEBUG(KERN_ERR "cannot request_and_map registers\n");
+		return -EADDRNOTAVAIL;
 	}
-
-	dev->phy = usb_get_transceiver();
 	udc_reinit(dev);
 
 	dev->clk = clk_get(&pdev->dev, "otg");
 	if (IS_ERR(dev->clk)) {
 		dev_err(&pdev->dev, "Failed to get clock\n");
-		retval = -ENXIO;
-		goto err_regs;
+		return -ENXIO;
 	}
 
 	dev->usb_ctrl = dma_alloc_coherent(&pdev->dev,
@@ -1225,7 +1214,7 @@ static int s3c_udc_probe(struct platform_device *pdev)
 		DEBUG(KERN_ERR "%s: can't get usb_ctrl dma memory\n",
 			driver_name);
 		retval = -ENOMEM;
-		goto err_clk;
+		goto err_get_ctrl_buf;
 	}
 
 	dev->ep0_data = dma_alloc_coherent(&pdev->dev,
@@ -1236,7 +1225,7 @@ static int s3c_udc_probe(struct platform_device *pdev)
 		DEBUG(KERN_ERR "%s: can't get ep0_data dma memory\n",
 			driver_name);
 		retval = -ENOMEM;
-		goto err_get_ctrl_buf;
+		goto err_get_data_buf;
 	}
 
 	clk_enable(dev->clk);
@@ -1257,7 +1246,7 @@ static int s3c_udc_probe(struct platform_device *pdev)
 		      dev->irq, retval);
 		retval = -EBUSY;
 		clk_disable(dev->clk);
-		goto err_get_data_buf;
+		goto err_irq;
 	}
 	dev->irq = irq;
 
@@ -1267,13 +1256,13 @@ static int s3c_udc_probe(struct platform_device *pdev)
 	retval = device_register(&dev->gadget.dev);
 	if (retval) {
 		dev_err(&pdev->dev, "failed to register gadget device\n");
-		goto err_irq;
+		goto err_register_device;
 	}
 
 	retval = usb_add_gadget_udc(&pdev->dev, &dev->gadget);
 	if (retval) {
 		dev_err(&pdev->dev, "failed to add gadget to udc list\n");
-		goto err_add_device;
+		goto err_add_udc;
 	}
 
 	if (dev->phy)
@@ -1283,26 +1272,20 @@ static int s3c_udc_probe(struct platform_device *pdev)
 
 	return retval;
 
-err_add_device:
+err_add_udc:
 	device_unregister(&dev->gadget.dev);
-err_irq:
+err_register_device:
 	free_irq(dev->irq, dev);
-err_get_data_buf:
+err_irq:
 	dma_free_coherent(&pdev->dev,
 			EP0_FIFO_SIZE,
 			dev->ep0_data, dev->ep0_data_dma);
-err_get_ctrl_buf:
+err_get_data_buf:
 	dma_free_coherent(&pdev->dev,
 			sizeof(struct usb_ctrlrequest)*BACK2BACK_SIZE,
 			dev->usb_ctrl, dev->usb_ctrl_dma);
-err_clk:
+err_get_ctrl_buf:
 	clk_put(dev->clk);
-err_regs:
-	iounmap(dev->regs);
-err_regs_res:
-	if (dev->phy)
-		usb_put_transceiver(dev->phy);
-	release_mem_region(res->start, resource_size(res));
 	return retval;
 }
 
@@ -1330,9 +1313,6 @@ static int s3c_udc_remove(struct platform_device *pdev)
 				sizeof(struct usb_ctrlrequest)*BACK2BACK_SIZE,
 				dev->usb_ctrl, dev->usb_ctrl_dma);
 	free_irq(dev->irq, dev);
-	iounmap(dev->regs);
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	release_mem_region(res->start, resource_size(res));
 
 	platform_set_drvdata(pdev, 0);
 
