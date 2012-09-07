@@ -812,22 +812,17 @@ static int s3c_udc_get_status(struct s3c_udc *dev,
 {
 	u8 ep_num = crq->wIndex & 0x7F;
 	u32 ep_ctrl;
+	u16 usb_status = 0;
 
 	DEBUG_SETUP("%s: *** USB_REQ_GET_STATUS\n", __func__);
 
 	switch (crq->bRequestType & USB_RECIP_MASK) {
 	case USB_RECIP_INTERFACE:
-		((u16 *)dev->ep0_data)[0] = 0x0;
-		DEBUG_SETUP("\tGET_STATUS: USB_RECIP_INTERFACE,"
-			"g_stauts = %d\n", g_status);
+		usb_status |= dev->selfpowered << USB_DEVICE_SELF_POWERED;
 		break;
-
 	case USB_RECIP_DEVICE:
-		((u16 *)dev->ep0_data)[0] = 0x0;
-		DEBUG_SETUP("\tGET_STATUS: USB_RECIP_DEVICE,"
-			"g_stauts = %d\n", g_status);
+		/* should set to zero */
 		break;
-
 	case USB_RECIP_ENDPOINT:
 		if (crq->wLength > 2) {
 			DEBUG_SETUP("\tGET_STATUS:"
@@ -835,15 +830,16 @@ static int s3c_udc_get_status(struct s3c_udc *dev,
 			return 1;
 		}
 
-		((u16 *)dev->ep0_data)[0] = dev->ep[ep_num].stopped;
-		DEBUG_SETUP("\tGET_STATUS: USB_RECIP_ENDPOINT,"
-			"g_stauts = %d\n", g_status);
-
+		usb_status |= dev->ep[ep_num].stopped;
 		break;
 	default:
 		return 1;
 	}
 
+	DEBUG_SETUP("\tGET_STATUS: USB_RECIP type %x,"
+		"usb_stauts = %d\n", crq->bRequestType, usb_status);
+
+	((u16 *)dev->ep0_data)[0] = cpu_to_le16(usb_status);
 	__raw_writel(dev->ep0_data_dma,
 		dev->regs + S3C_UDC_OTG_DIEPDMA(EP0_CON));
 	__raw_writel((1<<19)|(2<<0),

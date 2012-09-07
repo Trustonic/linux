@@ -133,6 +133,7 @@ struct s3c_udc {
 
 	int ep0state;
 	struct s3c_ep ep[S3C_MAX_ENDPOINTS];
+	bool selfpowered;
 
 	unsigned char usb_address;
 	struct usb_ctrlrequest *usb_ctrl;

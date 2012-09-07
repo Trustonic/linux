@@ -846,6 +846,17 @@ static int s3c_udc_wakeup(struct usb_gadget *_gadget)
 	return -ENOTSUPP;
 }
 
+static int s3c_set_selfpowered(struct usb_gadget *_gadget, int is_on)
+{
+	struct s3c_udc *dev = container_of(_gadget, struct s3c_udc, gadget);
+	unsigned long   flags;
+
+	spin_lock_irqsave(&dev->lock, flags);
+	dev->selfpowered = (is_on != 0);
+	spin_unlock_irqrestore(&dev->lock, flags);
+	return 0;
+}
+
 static void s3c_udc_update_soft_flag(void)
 {
 	struct s3c_udc *dev = the_controller;
@@ -881,7 +892,7 @@ static int s3c_udc_pullup(struct usb_gadget *gadget, int is_on)
 static const struct usb_gadget_ops s3c_udc_ops = {
 	.get_frame = s3c_udc_get_frame,
 	.wakeup = s3c_udc_wakeup,
-	/* current versions must always be self-powered */
+	.set_selfpowered = s3c_set_selfpowered,
 	.pullup = s3c_udc_pullup,
 	.vbus_session = s3c_vbus_enable,
 	.vbus_draw = s3c_vbus_draw,
@@ -895,6 +906,7 @@ static void nop_release(struct device *dev)
 }
 
 static struct s3c_udc memory = {
+	.selfpowered = true,
 	.usb_address = 0,
 
 	.gadget = {
