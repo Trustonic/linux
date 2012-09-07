@@ -14,6 +14,7 @@
 #define __SND_SOC_SAMSUNG_SRP_TYPE_H
 
 #ifdef CONFIG_SND_SAMSUNG_ALP
+#include "srp_alp/srp_alp.h"
 bool srp_enabled_status(void) {return 1;}
 extern unsigned int srp_get_idma_addr(void);
 #else

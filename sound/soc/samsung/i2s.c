@@ -736,6 +736,11 @@ void i2s_enable(struct snd_soc_dai *dai)
 			writel(CON_RSTCLR, i2s->addr + I2SCON);
 #endif
 	}
+
+#if defined(CONFIG_SND_PM_RUNTIME) && defined(CONFIG_SND_SAMSUNG_ALP)
+	if (is_secondary(i2s))
+		srp_core_reset();
+#endif
 }
 
 void i2s_disable(struct snd_soc_dai *dai)
@@ -747,6 +752,11 @@ void i2s_disable(struct snd_soc_dai *dai)
 #ifdef CONFIG_SND_PM_RUNTIME
 	struct platform_device *pdev = i2s->pri_dai ?
 				       i2s->pri_dai->pdev : i2s->pdev;
+#endif
+
+#if defined(CONFIG_SND_PM_RUNTIME) && defined(CONFIG_SND_SAMSUNG_ALP)
+	if (is_secondary(i2s))
+		srp_core_suspend();
 #endif
 	spin_lock_irqsave(&lock, flags);
 
@@ -1140,6 +1150,11 @@ static int samsung_i2s_dai_probe(struct snd_soc_dai *dai)
 	clk_enable(i2s->srpclk);
 #endif
 	clk_enable(i2s->clk);
+
+#ifdef CONFIG_SND_SAMSUNG_ALP
+	if (is_secondary(i2s))
+		srp_prepare_pm((void *) dai);
+#endif
 
 	if (i2s->quirks & QUIRK_NEED_RSTCLR)
 		writel(CON_RSTCLR, i2s->addr + I2SCON);
