@@ -417,12 +417,28 @@ struct platform_device exynos5_device_spdif = {
 	},
 };
 
+static struct resource exynos4_srp_resource[] = {
+	[0] = DEFINE_RES_MEM(EXYNOS_PA_AUDSS_INTMEM, 0x39000),
+	[1] = DEFINE_RES_MEM(EXYNOS_PA_AUDSS_COMMBOX, 0x200),
+};
+
 static struct resource exynos5_srp_resource[] = {
 	[0] = DEFINE_RES_MEM(EXYNOS_PA_AUDSS_INTMEM, 0x49000),
 	[1] = DEFINE_RES_MEM(EXYNOS_PA_AUDSS_COMMBOX, 0x200),
 };
 
 static u64 exynos_srp_dmamask = DMA_BIT_MASK(32);
+
+struct platform_device exynos4_device_srp = {
+	.name = "samsung-rp",
+	.id = -1,
+	.num_resources = ARRAY_SIZE(exynos4_srp_resource),
+	.resource = exynos4_srp_resource,
+	.dev = {
+		.dma_mask = &exynos_srp_dmamask,
+		.coherent_dma_mask = DMA_BIT_MASK(32),
+	},
+};
 
 struct platform_device exynos5_device_srp = {
 	.name = "samsung-rp",
