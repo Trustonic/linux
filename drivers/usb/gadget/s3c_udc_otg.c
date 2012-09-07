@@ -1292,7 +1292,6 @@ err_get_ctrl_buf:
 static int s3c_udc_remove(struct platform_device *pdev)
 {
 	struct s3c_udc *dev = platform_get_drvdata(pdev);
-	struct resource *res;
 
 	DEBUG("%s: %p\n", __func__, pdev);
 
