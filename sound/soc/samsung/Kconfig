@@ -90,7 +90,7 @@ config SND_SOC_SAMSUNG_MANTA_WM1811
 
 menuconfig SND_SAMSUNG_USE_IDMA
 	bool "Lower power audio support"
-	depends on SND_SAMSUNG_I2S && ARCH_EXYNOS5
+	depends on SND_SAMSUNG_I2S && (ARCH_EXYNOS4 || ARCH_EXYNOS5)
 	help
 	  Say Y if you want to enable internal dma.
 
