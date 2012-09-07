@@ -88,7 +88,7 @@ static void exynos_dwmci_set_io_timing(void *data, unsigned char timing)
 static struct dw_mci_board exynos4_dwmci_pdata = {
 	.num_slots		= 1,
 	.quirks			= DW_MCI_QUIRK_BROKEN_CARD_DETECTION,
-	.bus_hz			= 80 * 1000 * 1000,
+	.bus_hz			= 100 * 1000 * 1000,
 	.max_bus_hz		= 200 * 1000 * 1000,
 	.detect_delay_ms	= 200,
 	.init			= exynos_dwmci_init,
