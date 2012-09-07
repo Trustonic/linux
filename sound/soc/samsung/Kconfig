@@ -36,7 +36,7 @@ config SND_SAMSUNG_I2S
 
 config SND_PM_RUNTIME
 	tristate "Support Runtime PM for audio subsystem"
-	depends on SND_SOC_SAMSUNG && PM_RUNTIME
+	depends on SND_SOC_SAMSUNG && PM_RUNTIME && ARCH_EXYNOS5
 	default y
 	help
 	  Say Y if you want to add support runtime pm for audio subsystem.
