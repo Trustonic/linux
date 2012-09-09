@@ -1747,7 +1747,9 @@ static void __init exynos_reserve_mem(void)
 #ifdef CONFIG_ION_EXYNOS_CONTIGHEAP_SIZE
 			.size = CONFIG_ION_EXYNOS_CONTIGHEAP_SIZE * SZ_1K,
 #endif
-			.start = 0
+			{
+				.alignment = SZ_1M
+			}
 		},
 #ifdef CONFIG_AUDIO_SAMSUNG_MEMSIZE_SRP
 		{
