@@ -1605,6 +1605,13 @@ static struct platform_pwm_backlight_data smdk5250_bl_data = {
 	.pwm_period_ns	= 30000,
 };
 
+#ifdef CONFIG_BATTERY_SAMSUNG
+static struct platform_device samsung_device_battery = {
+	.name	= "samsung-fake-battery",
+	.id	= -1,
+};
+#endif
+
 /* DEVFREQ controlling mif */
 static struct platform_device exynos_bus_mif_devfreq = {
 	.name                   = "exynos5-bus-mif",
@@ -1635,6 +1642,9 @@ static struct platform_device *smdk5250_devices[] __initdata = {
 #endif
 #ifdef CONFIG_ION_EXYNOS
 	&exynos_device_ion,
+#endif
+#ifdef CONFIG_BATTERY_SAMSUNG
+	&samsung_device_battery,
 #endif
 #ifdef CONFIG_EXYNOS_DEV_TMU
 	&exynos_device_tmu,
