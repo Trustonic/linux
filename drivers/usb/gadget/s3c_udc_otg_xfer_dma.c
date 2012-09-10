@@ -49,6 +49,23 @@ static const u8 test_pkt[TEST_PKT_SIZE] __aligned(8) = {
 
 static void s3c_udc_ep_set_stall(struct s3c_ep *ep);
 
+#if defined(CONFIG_BATTERY_SAMSUNG)
+u32 cable_connected;
+void s3c_udc_cable_connect(struct s3c_udc *dev)
+{
+        samsung_cable_check_status(1);
+        cable_connected = 1;
+}
+
+void s3c_udc_cable_disconnect(struct s3c_udc *dev)
+{
+        if (cable_connected) {
+                samsung_cable_check_status(0);
+                cable_connected = 0;
+        }
+}
+#endif
+
 static inline void s3c_udc_ep0_zlp(struct s3c_udc *dev)
 {
 	u32 ep_ctrl;
@@ -555,6 +572,9 @@ static irqreturn_t s3c_udc_irq(int irq, void *_dev)
 				dev->driver->disconnect(&dev->gadget);
 				spin_lock(&dev->lock);
 			}
+#if defined(CONFIG_BATTERY_SAMSUNG)
+                        s3c_udc_cable_disconnect(dev);
+#endif
 		}
 	}
 
@@ -1332,6 +1352,9 @@ static void s3c_ep0_setup(struct s3c_udc *dev)
 			reset_available = 1;
 			dev->req_config = 1;
 		}
+#if defined(CONFIG_BATTERY_SAMSUNG)
+                s3c_udc_cable_connect(dev);
+#endif
 		break;
 
 	case USB_REQ_GET_DESCRIPTOR:
