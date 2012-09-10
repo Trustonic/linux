@@ -48,3 +48,4 @@ obj-$(CONFIG_FUELGAUGE_MAX17047)	+= max17047_fuelgauge.o
 obj-$(CONFIG_CHARGER_BQ24191)	+= bq24191_charger.o
 obj-$(CONFIG_BATTERY_ANDROID)	+= android_battery.o
 obj-$(CONFIG_FUELGAUGE_DS2784)  += ds2784_fuelgauge.o
+obj-$(CONFIG_BATTERY_SAMSUNG)	+= samsung_fake_battery.o
