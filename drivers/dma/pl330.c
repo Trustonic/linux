@@ -3021,6 +3021,11 @@ pl330_probe(struct amba_device *adev, const struct amba_id *id)
 		num_chan = max_t(int, pi->pcfg.num_peri, pi->pcfg.num_chan);
 
 	pdmac->peripherals = kzalloc(num_chan * sizeof(*pch), GFP_KERNEL);
+	if (!pdmac->peripherals) {
+		dev_err(&adev->dev, "unable to allocate mem for channel\n");
+		ret = -ENOMEM;
+		goto probe_err4;
+	}
 
 	for (i = 0; i < num_chan; i++) {
 		pch = &pdmac->peripherals[i];
@@ -3064,7 +3069,7 @@ pl330_probe(struct amba_device *adev, const struct amba_id *id)
 	ret = dma_async_device_register(pd);
 	if (ret) {
 		dev_err(&adev->dev, "unable to register DMAC\n");
-		goto probe_err4;
+		goto probe_err5;
 	}
 
 	dev_info(&adev->dev,
@@ -3079,11 +3084,13 @@ pl330_probe(struct amba_device *adev, const struct amba_id *id)
 
 	return 0;
 
-probe_err4:
+probe_err5:
 	for (i = 0; i < num_chan; i++) {
 		pch = &pdmac->peripherals[i];
 		tasklet_kill(&pch->task);
 	}
+	kfree(pdmac->peripherals);
+probe_err4:
 	pl330_del(pi);
 probe_err3:
 	free_irq(irq, pi);
@@ -3121,6 +3128,8 @@ static int __devexit pl330_remove(struct amba_device *adev)
 		tasklet_kill(&pch->task);
 		pl330_free_chan_resources(&pch->chan);
 	}
+
+	kfree(pdmac->peripherals);
 
 	pi = &pdmac->pif;
 
