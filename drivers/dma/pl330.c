@@ -3130,6 +3130,7 @@ static int __devexit pl330_remove(struct amba_device *adev)
 	}
 
 	kfree(pdmac->peripherals);
+	dma_async_device_unregister(&pdmac->ddma);
 
 	pi = &pdmac->pif;
 
