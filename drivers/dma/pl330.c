@@ -2349,19 +2349,24 @@ static inline void handle_cyclic_desc_list(struct list_head *list)
 static inline void fill_queue(struct dma_pl330_chan *pch)
 {
 	struct dma_pl330_desc *desc;
+	struct pl330_thread *thrd = pch->pl330_chid;
 	int ret;
 
 	list_for_each_entry(desc, &pch->work_list, node) {
 
 		/* If already submitted */
-		if (desc->status == BUSY)
+		if (desc->status == BUSY) {
+			if (IS_FREE(&thrd->req[1 - thrd->lstenq]))
+				continue;
 			break;
+		}
 
 		ret = pl330_submit_req(pch->pl330_chid,
 						&desc->req);
 		if (!ret) {
 			desc->status = BUSY;
-			break;
+			if (_queue_full(pch->pl330_chid))
+				break;
 		} else if (ret == -EAGAIN) {
 			/* QFull or DMAC Dying */
 			break;
