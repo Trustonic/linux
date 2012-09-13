@@ -2465,8 +2465,6 @@ static int pl330_alloc_chan_resources(struct dma_chan *chan)
 
 #ifdef CONFIG_PM_RUNTIME
 	pm_runtime_get_sync(pdmac->pif.dev);
-#else
-	clk_enable(pdmac->clk);
 #endif
 
 	spin_lock_irqsave(&pch->lock, flags);
@@ -2554,8 +2552,6 @@ static void pl330_free_chan_resources(struct dma_chan *chan)
 
 #ifdef CONFIG_PM_RUNTIME
 	pm_runtime_put_sync(pch->dmac->pif.dev);
-#else
-	clk_disable(pch->dmac->clk);
 #endif
 }
 
@@ -3090,8 +3086,6 @@ pl330_probe(struct amba_device *adev, const struct amba_id *id)
 
 #ifdef CONFIG_PM_RUNTIME
 	pm_runtime_put_sync(&adev->dev);
-#else
-	clk_disable(pdmac->clk);
 #endif
 
 	return 0;
