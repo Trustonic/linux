@@ -289,16 +289,16 @@ static int __devinit max8649_regulator_probe(struct i2c_client *client,
 			id->name, ret);
 		goto out;
 	}
-	chip_id = ret;
+	chip_id = val;
 
-	ret = max8649_reg_read(info->i2c, MAX8649_CHIP_ID2);
+	ret = regmap_read(info->regmap, MAX8649_CHIP_ID2, &val);
 	if (ret < 0) {
 		dev_err(info->dev, "Failed to detect ID2 of %s:%d\n",
 			id->name, ret);
 		goto out;
 	}
 
-	chip_id = (chip_id << 8) | ret;
+	chip_id = (chip_id << 8) | val;
 
 	if ((id->driver_data & 0xFFF0) != (chip_id & 0xFFF0)) {
 		dev_err(info->dev, "Failed to detect the device\n"
