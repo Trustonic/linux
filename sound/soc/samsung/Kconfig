@@ -101,31 +101,8 @@ config SND_SAMSUNG_ALP
 	help
 	  Say Y if you want to support ALP audio.
 
-config SND_SAMSUNG_RUNTIME_PM
-	tristate "Runtime PM support for Audio subsystem"
-	depends on SND_SAMSUNG_I2S && MACH_SMDK5250
-	help
-	  Say Y if you want to support Runtime PM for Audio subsystem.
-
-choice
-	prompt "Samsung I2S Audio type"
-	depends on SND_SAMSUNG_I2S && (ARCH_EXYNOS4 || ARCH_S5PV210 || ARCH_EXYNOS5)
-	default SND_SAMSUNG_NORMAL
-
-config SND_SAMSUNG_NORMAL
-	bool "Normal Audio support"
-	help
-	  Say Y if you want to support normal audio.
-
-config SND_SAMSUNG_LP
-	bool "LP Audio support"
-	help
-	  Say Y if you want to support LP audio.
-
 # For support ALP audio
 source "sound/soc/samsung/srp_alp/Kconfig"
-
-endchoice
 
 config SND_SAMSUNG_I2S_MASTER
 	bool "I2S Master Mode"
