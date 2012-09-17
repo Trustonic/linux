@@ -2880,7 +2880,7 @@ static int exynos_ss_udc_suspend(struct platform_device *pdev,
 
 	if (udc->driver) {
 		call_gadget(udc, suspend);
-		if (udc->pdata->quirks & FORCE_RUN_PERIPHERAL)
+		if (udc->pdata->quirks & FORCE_PM_PERIPHERAL)
 			exynos_ss_udc_disable(udc);
 	}
 
@@ -2892,7 +2892,7 @@ static int exynos_ss_udc_resume(struct platform_device *pdev)
 	struct exynos_ss_udc *udc = platform_get_drvdata(pdev);
 
 	if (udc->driver) {
-		if (udc->pdata->quirks & FORCE_RUN_PERIPHERAL)
+		if (udc->pdata->quirks & FORCE_PM_PERIPHERAL)
 			exynos_ss_udc_enable(udc);
 
 		call_gadget(udc, resume);
