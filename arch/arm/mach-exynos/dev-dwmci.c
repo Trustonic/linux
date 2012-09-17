@@ -89,7 +89,6 @@ static struct dw_mci_board exynos4_dwmci_pdata = {
 	.num_slots		= 1,
 	.quirks			= DW_MCI_QUIRK_BROKEN_CARD_DETECTION,
 	.bus_hz			= 100 * 1000 * 1000,
-	.max_bus_hz		= 200 * 1000 * 1000,
 	.detect_delay_ms	= 200,
 	.init			= exynos_dwmci_init,
 	.get_bus_wd		= exynos_dwmci_get_bus_wd,
@@ -133,7 +132,6 @@ struct dw_mci_board exynos5_dwmci##_channel##_def_platdata = {	\
 	.quirks			=				\
 		DW_MCI_QUIRK_BROKEN_CARD_DETECTION,		\
 	.bus_hz			= 200 * 1000 * 1000,		\
-	.max_bus_hz		= 200 * 1000 * 1000,		\
 	.detect_delay_ms	= 200,				\
 	.init			= exynos_dwmci_init,		\
 	.get_bus_wd		= exynos_dwmci_get_bus_wd,	\
