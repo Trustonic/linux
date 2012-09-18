@@ -1038,8 +1038,7 @@ static void dw_mci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 static void dw_mci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 {
 	struct dw_mci_slot *slot = mmc_priv(mmc);
-	struct dw_mci_board *brd = slot->host->pdata;
-	u32 regs, width = 1;
+	u32 regs;
 
 	/* set default 1 bit mode */
 	slot->ctype = SDMMC_CTYPE_1BIT;
@@ -1047,15 +1046,12 @@ static void dw_mci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 	switch (ios->bus_width) {
 	case MMC_BUS_WIDTH_1:
 		slot->ctype = SDMMC_CTYPE_1BIT;
-		width = 1;
 		break;
 	case MMC_BUS_WIDTH_4:
 		slot->ctype = SDMMC_CTYPE_4BIT;
-		width = 4;
 		break;
 	case MMC_BUS_WIDTH_8:
 		slot->ctype = SDMMC_CTYPE_8BIT;
-		width = 8;
 		break;
 	}
 
@@ -1093,9 +1089,6 @@ static void dw_mci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 	default:
 		break;
 	}
-
-	if (brd->cfg_gpio)
-		brd->cfg_gpio(width);
 }
 
 static int dw_mci_get_ro(struct mmc_host *mmc)
@@ -2302,13 +2295,16 @@ static int __devinit dw_mci_init_slot(struct dw_mci *host, unsigned int id)
 	}
 
 	if (host->pdata->get_bus_wd) {
-		if (host->pdata->get_bus_wd(slot->id) >= 4) {
+		unsigned int bus_width = host->pdata->get_bus_wd(slot->id);
+		switch (bus_width) {
+		case 8:
+			mmc->caps |= MMC_CAP_8_BIT_DATA;
+		case 4:
 			mmc->caps |= MMC_CAP_4_BIT_DATA;
+		default:
 			if (host->pdata->cfg_gpio)
-				host->pdata->cfg_gpio(4);
-		} else {
-			if (host->pdata->cfg_gpio)
-				host->pdata->cfg_gpio(1);
+				host->pdata->cfg_gpio(bus_width);
+			break;
 		}
 	}
 
