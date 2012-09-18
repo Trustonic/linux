@@ -145,6 +145,7 @@ struct dw_mci {
 	struct dw_mci_dma_data	*dma_data;
 #endif
 	unsigned int		desc_sz;
+	unsigned int		align_size;
 	u32			cmd_status;
 	u32			data_status;
 	u32			stop_cmdr;
