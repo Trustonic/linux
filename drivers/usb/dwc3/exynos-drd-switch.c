@@ -636,6 +636,85 @@ void exynos_drd_switch_reset(struct exynos_drd *drd, int run)
 	}
 }
 
+/*
+ * id and vbus attributes allow to change DRD mode and VBus state.
+ * Can be used for debug purpose.
+ */
+
+static ssize_t
+exynos_drd_switch_show_vbus(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct exynos_drd *drd = dev_get_drvdata(dev);
+	struct usb_otg *otg = drd->core.otg;
+	struct exynos_drd_switch *drd_switch = container_of(otg,
+						struct exynos_drd_switch, otg);
+
+	return sprintf(buf, "%d\n", drd_switch->vbus_active);
+}
+
+static ssize_t
+exynos_drd_switch_store_vbus(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t n)
+{
+	struct exynos_drd *drd = dev_get_drvdata(dev);
+	struct usb_otg *otg = drd->core.otg;
+	struct exynos_drd_switch *drd_switch = container_of(otg,
+						struct exynos_drd_switch, otg);
+	int vbus_active;
+
+	sscanf(buf, "%d", &vbus_active);
+	exynos_drd_switch_handle_vbus(drd_switch, !!vbus_active);
+
+	return n;
+}
+
+static DEVICE_ATTR(vbus, S_IWUSR | S_IRUGO,
+	exynos_drd_switch_show_vbus, exynos_drd_switch_store_vbus);
+
+static ssize_t
+exynos_drd_switch_show_id(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct exynos_drd *drd = dev_get_drvdata(dev);
+	struct usb_otg *otg = drd->core.otg;
+	struct exynos_drd_switch *drd_switch = container_of(otg,
+						struct exynos_drd_switch, otg);
+
+	return sprintf(buf, "%d\n", drd_switch->id_state);
+}
+
+static ssize_t
+exynos_drd_switch_store_id(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t n)
+{
+	struct exynos_drd *drd = dev_get_drvdata(dev);
+	struct usb_otg *otg = drd->core.otg;
+	struct exynos_drd_switch *drd_switch = container_of(otg,
+						struct exynos_drd_switch, otg);
+	int state;
+	enum id_pin_state id_state;
+
+	sscanf(buf, "%d", &state);
+	id_state = exynos_drd_switch_sanitize_id(state);
+	exynos_drd_switch_handle_id(drd_switch, id_state);
+
+	return n;
+}
+
+static DEVICE_ATTR(id, S_IWUSR | S_IRUGO,
+	exynos_drd_switch_show_id, exynos_drd_switch_store_id);
+
+static struct attribute *exynos_drd_switch_attributes[] = {
+	&dev_attr_id.attr,
+	&dev_attr_vbus.attr,
+	NULL
+};
+
+static const struct attribute_group exynos_drd_switch_attr_group = {
+	.attrs = exynos_drd_switch_attributes,
+};
+
 /**
  * exynos_drd_switch_init - Initializes DRD role switch.
  *
@@ -735,10 +814,19 @@ int exynos_drd_switch_init(struct exynos_drd *drd)
 		}
 	}
 
+	ret = sysfs_create_group(&drd->dev->kobj, &exynos_drd_switch_attr_group);
+	if (ret) {
+		dev_err(drd->dev, "cannot create switch attributes\n");
+		goto err4;
+	}
+
 	dev_info(drd->dev, "DRD switch initialization finished normally\n");
 
 	return 0;
 
+err4:
+	if (drd_switch->vbus_irq >= 0)
+		free_irq(drd_switch->vbus_irq, drd_switch);
 err3:
 	if (drd_switch->id_irq >= 0)
 		free_irq(drd_switch->id_irq, drd_switch);
@@ -768,6 +856,8 @@ void exynos_drd_switch_exit(struct exynos_drd *drd)
 		drd_switch = container_of(otg,
 					struct exynos_drd_switch, otg);
 
+		sysfs_remove_group(&drd->dev->kobj,
+			&exynos_drd_switch_attr_group);
 		cancel_work_sync(&drd_switch->work);
 		if (drd_switch->id_irq >= 0)
 			free_irq(drd_switch->id_irq, drd_switch);
