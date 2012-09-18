@@ -165,9 +165,7 @@ void s5p_mfc_enc_calc_src_size(struct s5p_mfc_ctx *ctx);
 #define DEC_V65_H264_SCRATCH_SIZE(x, y)				\
 		((x * 192) + 64)
 #define DEC_V65_MPEG4_SCRATCH_SIZE(x, y)			\
-		((x) * ((y) * 64 + 144) +			\
-		(((x) * ((y) * 64 + 144)) +			\
-		 (8192 * (y)) + 49216))
+		(((x) * 144) + ((y) * 8192) + 49216 + 1048576)
 #define DEC_V65_VC1_SCRATCH_SIZE(x, y)				\
 		(2096 * ((x) + (y) + 1))
 #define DEC_V65_MPEG2_SCRATCH_SIZE(x, y)	0

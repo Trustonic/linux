@@ -1076,6 +1076,13 @@ static int s5p_mfc_set_enc_params_h264(struct s5p_mfc_ctx *ctx)
 		reg &= ~(0x1 << 6);
 	WRITEL(reg, S5P_FIMV_E_H264_OPTIONS);
 
+	/* VUI parameter enable */
+	if (FW_HAS_VUI_PARAMS(dev)) {
+		reg = READL(S5P_FIMV_E_H264_OPTIONS);
+		reg |= (0x1 << 30);
+		WRITEL(reg, S5P_FIMV_E_H264_OPTIONS);
+	}
+
 	/* hier qp enable */
 	reg = READL(S5P_FIMV_E_H264_OPTIONS);
 	reg &= ~(0x1 << 8);
