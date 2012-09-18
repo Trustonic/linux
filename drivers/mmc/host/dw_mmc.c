@@ -1410,7 +1410,7 @@ static void dw_mci_tasklet_func(unsigned long priv)
 	struct mmc_command *cmd = NULL;
 	enum dw_mci_state state;
 	enum dw_mci_state prev_state;
-	u32 status, ctrl;
+	u32 status;
 
 	spin_lock(&host->lock);
 
@@ -2136,7 +2136,6 @@ static void dw_mci_work_routine_card(struct work_struct *work)
 		struct mmc_host *mmc = slot->mmc;
 		struct mmc_request *mrq;
 		int present;
-		u32 ctrl;
 
 		present = dw_mci_get_cd(mmc);
 		while (present != slot->last_detect_state) {
