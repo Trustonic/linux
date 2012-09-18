@@ -58,6 +58,8 @@ static struct mfd_cell s5m8767_devs[] = {
 static struct mfd_cell s2mps11_devs[] = {
 	{
 		.name = "s2mps11-pmic",
+	}, {
+		.name = "s2mps11-rtc",
 	},
 };
 
@@ -90,6 +92,36 @@ int sec_reg_update(struct sec_pmic_dev *sec_pmic, u8 reg, u8 val, u8 mask)
 	return regmap_update_bits(sec_pmic->regmap, reg, mask, val);
 }
 EXPORT_SYMBOL_GPL(sec_reg_update);
+
+int sec_rtc_read(struct sec_pmic_dev *sec_pmic, u8 reg, void *dest)
+{
+	return regmap_read(sec_pmic->rtc_regmap, reg, dest);
+}
+EXPORT_SYMBOL_GPL(sec_rtc_read);
+
+int sec_rtc_bulk_read(struct sec_pmic_dev *sec_pmic, u8 reg, int count, u8 *buf)
+{
+	return regmap_bulk_read(sec_pmic->rtc_regmap, reg, buf, count);
+}
+EXPORT_SYMBOL_GPL(sec_rtc_bulk_read);
+
+int sec_rtc_write(struct sec_pmic_dev *sec_pmic, u8 reg, u8 value)
+{
+	return regmap_write(sec_pmic->rtc_regmap, reg, value);
+}
+EXPORT_SYMBOL_GPL(sec_rtc_write);
+
+int sec_rtc_bulk_write(struct sec_pmic_dev *sec_pmic, u8 reg, int count, u8 *buf)
+{
+	return regmap_raw_write(sec_pmic->rtc_regmap, reg, buf, count);
+}
+EXPORT_SYMBOL_GPL(sec_rtc_bulk_write);
+
+int sec_rtc_update(struct sec_pmic_dev *sec_pmic, u8 reg, u8 val, u8 mask)
+{
+	return regmap_update_bits(sec_pmic->rtc_regmap, reg, mask, val);
+}
+EXPORT_SYMBOL_GPL(sec_rtc_update);
 
 static struct regmap_config sec_regmap_config = {
 	.reg_bits = 8,
@@ -126,11 +158,25 @@ static int sec_pmic_probe(struct i2c_client *i2c,
 		ret = PTR_ERR(sec_pmic->regmap);
 		dev_err(&i2c->dev, "Failed to allocate register map: %d\n",
 			ret);
-		goto err;
+		goto err4;
+	}
+	mutex_init(&sec_pmic->iolock);
+	sec_pmic->rtc = i2c_new_dummy(i2c->adapter, RTC_I2C_ADDR);
+	if (IS_ERR(sec_pmic->rtc)) {
+		ret = PTR_ERR(sec_pmic->rtc);
+		dev_err(&sec_pmic->rtc,
+				"Failed to i2c device register: %d\n", ret);
+		goto err3;
 	}
 
-	sec_pmic->rtc = i2c_new_dummy(i2c->adapter, RTC_I2C_ADDR);
 	i2c_set_clientdata(sec_pmic->rtc, sec_pmic);
+	sec_pmic->rtc_regmap = regmap_init_i2c(sec_pmic->rtc, &sec_regmap_config);
+	if (IS_ERR(sec_pmic->rtc_regmap)) {
+		ret = PTR_ERR(sec_pmic->rtc_regmap);
+		dev_err(&sec_pmic->rtc->dev,
+				"Failed to allocate register map: %d\n", ret);
+		goto err2;
+	}
 
 	if (pdata && pdata->cfg_pmic_irq)
 		pdata->cfg_pmic_irq();
@@ -162,15 +208,18 @@ static int sec_pmic_probe(struct i2c_client *i2c,
 	}
 
 	if (ret < 0)
-		goto err;
+		goto err1;
 
 	return ret;
 
-err:
-	mfd_remove_devices(sec_pmic->dev);
+err1:
 	sec_irq_exit(sec_pmic);
+	regmap_exit(sec_pmic->rtc_regmap);
+err2:
 	i2c_unregister_device(sec_pmic->rtc);
+err3:
 	regmap_exit(sec_pmic->regmap);
+err4:
 	return ret;
 }
 
@@ -180,6 +229,7 @@ static int sec_pmic_remove(struct i2c_client *i2c)
 
 	mfd_remove_devices(sec_pmic->dev);
 	sec_irq_exit(sec_pmic);
+	regmap_exit(sec_pmic->rtc_regmap);
 	i2c_unregister_device(sec_pmic->rtc);
 	regmap_exit(sec_pmic->regmap);
 	return 0;
@@ -191,10 +241,45 @@ static const struct i2c_device_id sec_pmic_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, sec_pmic_id);
 
+#ifdef CONFIG_PM
+static int sec_suspend(struct device *dev)
+{
+	struct i2c_client *i2c = container_of(dev, struct i2c_client, dev);
+	struct sec_pmic_dev *sec_pmic = i2c_get_clientdata(i2c);
+
+	if (sec_pmic->wakeup)
+		enable_irq_wake(sec_pmic->irq);
+
+	disable_irq(sec_pmic->irq);
+	return 0;
+}
+
+static int sec_resume(struct device *dev)
+{
+	struct i2c_client *i2c = container_of(dev, struct i2c_client, dev);
+	struct sec_pmic_dev *sec_pmic = i2c_get_clientdata(i2c);
+
+	if (sec_pmic->wakeup)
+		disable_irq_wake(sec_pmic->irq);
+
+	enable_irq(sec_pmic->irq);
+	return 0;
+}
+#else
+#define sec_suspend	NULL
+#define sec_resume	NULL
+#endif /* CONFIG_PM */
+
+const struct dev_pm_ops sec_pmic_apm = {
+	.suspend = sec_suspend,
+	.resume = sec_resume,
+};
+
 static struct i2c_driver sec_pmic_driver = {
 	.driver = {
 		   .name = "sec-pmic",
 		   .owner = THIS_MODULE,
+		   .pm = &sec_pmic_apm,
 	},
 	.probe = sec_pmic_probe,
 	.remove = sec_pmic_remove,

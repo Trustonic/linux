@@ -346,8 +346,8 @@ static irqreturn_t sec_pmic_irq_thread(int irq, void *data)
 	for (i = 0; i < NUM_IRQ_REGS - 1; i++)
 		irq_reg[i] &= ~sec_pmic->irq_masks_cur[i];
 
-	for (i = 0; i < S5M8767_IRQ_NR; i++) {
-		if (irq_reg[s5m8767_irqs[i].reg - 1] & s5m8767_irqs[i].mask)
+	for (i = 0; i < S2MPS11_IRQ_NR; i++) {
+		if (irq_reg[s2mps11_irqs[i].reg - 1] & s2mps11_irqs[i].mask)
 			handle_nested_irq(sec_pmic->irq_base + i);
 	}
 

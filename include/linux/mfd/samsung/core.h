@@ -40,6 +40,7 @@ enum sec_device_type {
 struct sec_pmic_dev {
 	struct device *dev;
 	struct regmap *regmap;
+	struct regmap *rtc_regmap;
 	struct i2c_client *i2c;
 	struct i2c_client *rtc;
 	struct mutex iolock;
@@ -114,6 +115,15 @@ extern int sec_bulk_read(struct sec_pmic_dev *sec_pmic, u8 reg, int count, u8 *b
 extern int sec_reg_write(struct sec_pmic_dev *sec_pmic, u8 reg, u8 value);
 extern int sec_bulk_write(struct sec_pmic_dev *sec_pmic, u8 reg, int count, u8 *buf);
 extern int sec_reg_update(struct sec_pmic_dev *sec_pmic, u8 reg, u8 val, u8 mask);
+
+extern int sec_rtc_read(struct sec_pmic_dev *sec_pmic, u8 reg, void *dest);
+extern int sec_rtc_bulk_read(struct sec_pmic_dev *sec_pmic, u8 reg, int count,
+				u8 *buf);
+extern int sec_rtc_write(struct sec_pmic_dev *sec_pmic, u8 reg, u8 value);
+extern int sec_rtc_bulk_write(struct sec_pmic_dev *sec_pmic, u8 reg, int count,
+				u8 *buf);
+extern int sec_rtc_update(struct sec_pmic_dev *sec_pmic, u8 reg, u8 val,
+				u8 mask);
 
 /**
  * sec_regulator_data - regulator data
