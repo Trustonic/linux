@@ -128,6 +128,7 @@ struct s3c_pcm_info {
 
 	struct clk	*pclk;
 	struct clk	*cclk;
+	struct clk	*sclk_audio;
 	struct clk	*mout_epll;
 
 	struct s3c_dma_params	*dma_playback;
@@ -542,10 +543,17 @@ static __devinit int s3c_pcm_dev_probe(struct platform_device *pdev)
 	/* Default is 128fs */
 	pcm->sclk_per_fs = 128;
 
-	pcm->cclk = clk_get(&pdev->dev, "sclk_audio");
+	pcm->cclk = clk_get(&pdev->dev, "sclk_pcm");
 	if (IS_ERR(pcm->cclk)) {
-		dev_err(&pdev->dev, "failed to get sclk_audio\n");
+		dev_err(&pdev->dev, "failed to get sclk_pcm\n");
 		ret = PTR_ERR(pcm->cclk);
+		goto err0;
+	}
+
+	pcm->sclk_audio = clk_get(&pdev->dev, "sclk_audio");
+	if (IS_ERR(pcm->sclk_audio)) {
+		dev_err(&pdev->dev, "failed to get sclk_audio\n");
+		ret = PTR_ERR(pcm->sclk_audio);
 		goto err0;
 	}
 
@@ -556,7 +564,8 @@ static __devinit int s3c_pcm_dev_probe(struct platform_device *pdev)
 		goto err1;
 	}
 
-	clk_set_parent(pcm->cclk, pcm->mout_epll);
+	clk_set_parent(pcm->sclk_audio, pcm->mout_epll);
+	clk_set_parent(pcm->cclk, pcm->sclk_audio);
 	clk_enable(pcm->cclk);
 
 	/* record our pcm structure for later use in the callbacks */
