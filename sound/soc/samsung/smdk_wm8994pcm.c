@@ -77,7 +77,9 @@ static int smdk_wm8994_pcm_hw_params(struct snd_pcm_substream *substream,
 	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
 	unsigned long mclk_freq;
 	unsigned long epll_out_rate;
-	int rfs, ret;
+	int bfs, rfs, ret;
+
+	bfs = (params_format(params) == SNDRV_PCM_FORMAT_S24_LE) ? 48 : 32;
 
 	switch(params_rate(params)) {
 	case 8000:
@@ -122,7 +124,7 @@ static int smdk_wm8994_pcm_hw_params(struct snd_pcm_substream *substream,
 		return ret;
 
 	ret = snd_soc_dai_set_pll(codec_dai, WM8994_FLL1, WM8994_FLL_SRC_BCLK,
-					mclk_freq, mclk_freq);
+					bfs * params_rate(params), mclk_freq);
 	if (ret < 0)
 		return ret;
 
@@ -133,7 +135,7 @@ static int smdk_wm8994_pcm_hw_params(struct snd_pcm_substream *substream,
 		return ret;
 
 	/* Set SCLK_DIV for making bclk */
-	ret = snd_soc_dai_set_clkdiv(cpu_dai, S3C_PCM_SCLK_PER_FS, rfs);
+	ret = snd_soc_dai_set_clkdiv(cpu_dai, S3C_PCM_SCLK_PER_FS, bfs);
 	if (ret < 0)
 		return ret;
 
