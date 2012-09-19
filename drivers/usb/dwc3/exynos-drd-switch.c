@@ -620,8 +620,11 @@ void exynos_drd_switch_reset(struct exynos_drd *drd, int run)
 		drd_switch = container_of(otg,
 					struct exynos_drd_switch, otg);
 
-		drd_switch->id_state =
-			exynos_drd_switch_get_id_state(drd_switch);
+		if (drd->pdata->quirks & FORCE_RUN_PERIPHERAL)
+			drd_switch->id_state = B_DEV;
+		else
+			drd_switch->id_state =
+				exynos_drd_switch_get_id_state(drd_switch);
 
 		drd_switch->vbus_active =
 			exynos_drd_switch_get_bses_vld(drd_switch);

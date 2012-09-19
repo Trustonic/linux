@@ -2627,10 +2627,6 @@ static int exynos_ss_udc_start(struct usb_gadget *gadget,
 	udc->gadget.dev.dma_mask = udc->dev->dma_mask;
 	udc->gadget.speed = USB_SPEED_UNKNOWN;
 
-	/* we must now enable ep0 ready for host detection and then
-	 * set configuration. */
-	if (udc->pdata->quirks & FORCE_RUN_PERIPHERAL)
-		exynos_ss_udc_enable(udc);
 	/* report to the user, and return */
 	dev_info(udc->dev, "bound driver %s\n", driver->driver.name);
 	return 0;
@@ -2642,9 +2638,6 @@ static int exynos_ss_udc_stop(struct usb_gadget *gadget,
 	struct exynos_ss_udc *udc;
 
 	udc = container_of(gadget, struct exynos_ss_udc, gadget);
-
-	if (udc->pdata->quirks & FORCE_RUN_PERIPHERAL)
-		exynos_ss_udc_disable(udc);
 
 	udc->driver = NULL;
 
