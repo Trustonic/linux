@@ -34,8 +34,8 @@ struct platform_device exynos5_device_hs_i2c0 = {
 
 struct exynos5_platform_i2c default_hs_i2c_data __initdata = {
 	.bus_number = 0,
-	.operation_mode = 0,
-	.speed_mode = 0,
+	.operation_mode = HSI2C_INTERRUPT,
+	.speed_mode = HSI2C_FAST_SPD,
 	.fast_speed = 400000,
 	.high_speed = 2500000,
 	.cfg_gpio = NULL,
