@@ -2247,9 +2247,9 @@ static void dw_mci_notify_change(struct platform_device *dev, int state)
 
 static irqreturn_t dw_mci_detect_interrupt(int irq, void *dev_id)
 {
-	struct dw_mci_slot *slot = dev_id;
+	struct dw_mci *host = dev_id;
 
-	queue_work(slot->host->card_workqueue, &slot->host->card_work);
+	queue_work(host->card_workqueue, &host->card_work);
 
 	return IRQ_HANDLED;
 }
