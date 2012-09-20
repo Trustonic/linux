@@ -328,7 +328,7 @@ static u32 dw_mci_prep_stop(struct dw_mci *host, struct mmc_command *cmd)
 		/* stop->arg &= ~(1 << 28); */
 		stop->arg |= (cmd->arg >> 28) & 0x7;
 		stop->arg |= SDIO_CCCR_ABORT << 9;
-		stop->flags = MMC_RSP_SPI_R5 | MMC_RSP_R5 | MMC_CMD_AC;;
+		stop->flags = MMC_RSP_SPI_R5 | MMC_RSP_R5 | MMC_CMD_AC;
 	} else
 		return 0;
 
@@ -911,7 +911,6 @@ static void __dw_mci_start_request(struct dw_mci *host,
 	struct mmc_data	*data;
 	u32 cmdflags, timeout = 0;
 
-	host->prv_err = false;
 	mrq = slot->mrq;
 	host->stop_cmdr = 0;
 	host->stop_snd = false;
@@ -1010,7 +1009,6 @@ static void dw_mci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 			printk(KERN_ERR "%s: Data0: Never released\n",
 					mmc_hostname(mmc));
 			mrq->cmd->error = -ENOTRECOVERABLE;
-			host->prv_err = true;
 			mmc_request_done(mmc, mrq);
 			return;
 		}
@@ -1028,7 +1026,6 @@ static void dw_mci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 	if (!test_bit(DW_MMC_CARD_PRESENT, &slot->flags)) {
 		spin_unlock_bh(&host->lock);
 		mrq->cmd->error = -ENOMEDIUM;
-		host->prv_err = true;
 		mmc_request_done(mmc, mrq);
 		return;
 	}
@@ -1397,7 +1394,6 @@ static void dw_mci_command_complete(struct dw_mci *host, struct mmc_command *cmd
 		/* newer ip versions need a delay between retries */
 		if (host->quirks & DW_MCI_QUIRK_RETRY_DELAY)
 			mdelay(20);
-		host->prv_err = true;
 	}
 }
 
@@ -1534,7 +1530,6 @@ static void dw_mci_tasklet_func(unsigned long priv)
 				sg_miter_stop(&host->sg_miter);
 				host->sg = NULL;
 				dw_mci_wait_fifo_reset(&host->dev, host);
-				host->prv_err = true;
 			} else {
 				data->bytes_xfered = data->blocks * data->blksz;
 				data->error = 0;
@@ -2168,7 +2163,6 @@ static void dw_mci_work_routine_card(struct work_struct *work)
 						break;
 					case STATE_SENDING_CMD:
 						mrq->cmd->error = -ENOMEDIUM;
-						host->prv_err = true;
 						if (!mrq->data)
 							break;
 						/* fall through */
@@ -2191,7 +2185,6 @@ static void dw_mci_work_routine_card(struct work_struct *work)
 				} else {
 					list_del(&slot->queue_node);
 					mrq->cmd->error = -ENOMEDIUM;
-					host->prv_err = true;
 					if (mrq->data)
 						mrq->data->error = -ENOMEDIUM;
 					if (mrq->stop)
@@ -2665,9 +2658,6 @@ int __devinit dw_mci_probe(struct dw_mci *host)
 		host->data_offset = DATA_OFFSET;
 	else
 		host->data_offset = DATA_240A_OFFSET;
-
-	if (host->pdata->caps & MMC_CAP_UHS_SDR50)
-		clk_set_rate(host->cclk, 200 * 1000 * 1000);
 
 	if (host->pdata->cd_type == DW_MCI_CD_EXTERNAL)
 		host->pdata->ext_cd_init(&dw_mci_notify_change);

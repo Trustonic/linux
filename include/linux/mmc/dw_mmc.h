@@ -130,7 +130,6 @@ struct dw_mci {
 	bool			stop_snd;
 	struct clk		*hclk;
 	struct clk		*cclk;
-	bool			prv_err;
 	struct workqueue_struct	*card_workqueue;
 
 	/* DMA interface members*/
