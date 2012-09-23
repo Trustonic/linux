@@ -20,6 +20,7 @@
 #include <linux/slab.h>
 #include <linux/mm.h>
 #include <linux/dma-mapping.h>
+#include <linux/export.h>
 
 #include <asm/memory.h>
 #include <asm/cacheflush.h>
@@ -27,7 +28,6 @@
 #include <plat/devs.h>
 
 #include <mach/secmem.h>
-#include <linux/export.h>
 
 #define SECMEM_DEV_NAME	"s5p-smem"
 struct secmem_crypto_driver_ftn *crypto_driver;
