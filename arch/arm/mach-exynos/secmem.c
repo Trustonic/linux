@@ -271,10 +271,11 @@ static int __init secmem_init(void)
 	int ret;
 
 	ret = misc_register(&secmem);
-	if (ret)
+	if (ret) {
 		printk(KERN_ERR "%s: SECMEM can't register misc on minor=%d\n",
 			__func__, MISC_DYNAMIC_MINOR);
 		return ret;
+	}
 
 	crypto_driver = NULL;
 
