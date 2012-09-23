@@ -55,8 +55,10 @@ void secmem_crypto_deregister(void);
 #define SECMEM_IOC_GET_DRM_ONOFF	_IOWR('S', 3, int)
 #define SECMEM_IOC_GET_CRYPTO_LOCK	_IOR('S', 4, int)
 #define SECMEM_IOC_RELEASE_CRYPTO_LOCK	_IOR('S', 5, int)
+#define SECMEM_IOC_GET_ADDR             _IOWR('S', 6, int)
+#define SECMEM_IOC_RELEASE_ADDR         _IOWR('S', 7, int)
 #if defined(CONFIG_SOC_EXYNOS5250)
-#define SECMEM_IOC_GET_FD_PHYS_ADDR    _IOWR('S', 8, struct secfd_info)
+#define SECMEM_IOC_GET_FD_PHYS_ADDR    _IOWR('S', 8, int)
 #endif
 
 #endif /* __ASM_ARCH_SECMEM_H */
