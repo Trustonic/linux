@@ -85,7 +85,7 @@ static inline int s2mps11_rtc_set_time_reg(struct s2mps11_rtc_info *info,
 					   int alarm_enable)
 {
 	int ret;
-	u8 data;
+	unsigned int data;
 
 	ret = sec_rtc_read(info->iodev, S2MPS11_RTC_UPDATE, &data);
 	if (ret < 0)
@@ -98,7 +98,7 @@ static inline int s2mps11_rtc_set_time_reg(struct s2mps11_rtc_info *info,
 	else
 		data &= ~RTC_RUDR_MASK;
 
-	ret = sec_rtc_write(info->iodev, S2MPS11_RTC_UPDATE, data);
+	ret = sec_rtc_write(info->iodev, S2MPS11_RTC_UPDATE, (char)data);
 
 	if (ret < 0) {
 		dev_err(info->dev, "%s: fail to write update reg(%d)\n",
@@ -113,7 +113,7 @@ static inline int s2mps11_rtc_set_time_reg(struct s2mps11_rtc_info *info,
 static inline int s2mps11_rtc_read_time_reg(struct s2mps11_rtc_info *info)
 {
 	int ret;
-	u8 data;
+	unsigned int data;
 
 	ret = sec_rtc_read(info->iodev, S2MPS11_RTC_UPDATE, &data);
 	if (ret < 0)
@@ -121,7 +121,7 @@ static inline int s2mps11_rtc_read_time_reg(struct s2mps11_rtc_info *info)
 
 	data |= RTC_RUDR_MASK;
 
-	ret = sec_rtc_write(info->iodev, S2MPS11_RTC_UPDATE, data);
+	ret = sec_rtc_write(info->iodev, S2MPS11_RTC_UPDATE, (char)data);
 	if (ret < 0) {
 		dev_err(info->dev, "%s: fail to write update reg(%d)\n",
 			__func__, ret);
@@ -171,7 +171,7 @@ static int s2mps11_rtc_read_alarm(struct device *dev, struct rtc_wkalrm *alrm)
 {
 	struct s2mps11_rtc_info *info = dev_get_drvdata(dev);
 	u8 data[7];
-	u8 val;
+	unsigned int val;
 	int ret, i;
 
 	ret = sec_rtc_bulk_read(info->iodev, S2MPS11_ALARM0_SEC, 7, data);
@@ -314,7 +314,7 @@ static const struct rtc_class_ops s2mps11_rtc_ops = {
 static void s2mps11_rtc_enable_wtsr(struct s2mps11_rtc_info *info, bool enable)
 {
 	int ret;
-	u8 val, mask;
+	unsigned int val, mask;
 
 	if (enable)
 		val = WTSR_ENABLE_MASK;
@@ -337,7 +337,7 @@ static void s2mps11_rtc_enable_wtsr(struct s2mps11_rtc_info *info, bool enable)
 static void s2mps11_rtc_enable_smpl(struct s2mps11_rtc_info *info, bool enable)
 {
 	int ret;
-	u8 val, mask;
+	unsigned int val, mask;
 
 	if (enable)
 		val = SMPL_ENABLE_MASK;
@@ -363,7 +363,7 @@ static void s2mps11_rtc_enable_smpl(struct s2mps11_rtc_info *info, bool enable)
 
 static int s2mps11_rtc_init_reg(struct s2mps11_rtc_info *info)
 {
-	u8 data, tp_read;
+	unsigned int data, tp_read;
 	int ret;
 	struct rtc_time tm;
 
@@ -476,7 +476,7 @@ static void s2mps11_rtc_shutdown(struct platform_device *pdev)
 {
 	struct s2mps11_rtc_info *info = platform_get_drvdata(pdev);
 	int i;
-	u8 val = 0;
+	unsigned int val = 0;
 
 	if (info->wtsr_smpl) {
 		for (i = 0; i < 3; i++) {

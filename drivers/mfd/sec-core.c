@@ -117,7 +117,8 @@ int sec_rtc_bulk_write(struct sec_pmic_dev *sec_pmic, u8 reg, int count, u8 *buf
 }
 EXPORT_SYMBOL_GPL(sec_rtc_bulk_write);
 
-int sec_rtc_update(struct sec_pmic_dev *sec_pmic, u8 reg, u8 val, u8 mask)
+int sec_rtc_update(struct sec_pmic_dev *sec_pmic, u8 reg, unsigned int val,
+		unsigned int mask)
 {
 	return regmap_update_bits(sec_pmic->rtc_regmap, reg, mask, val);
 }
