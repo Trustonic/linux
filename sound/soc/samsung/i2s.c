@@ -711,7 +711,10 @@ void i2s_enable(struct snd_soc_dai *dai)
 #endif
 	spin_lock_irqsave(&lock, flags);
 
-	if (i2s->opencnt++) {
+	if (is_secondary(i2s) && is_opened(i2s)) {
+		spin_unlock_irqrestore(&lock, flags);
+		return;
+	} else if (!is_secondary(i2s) && i2s->opencnt++) {
 		spin_unlock_irqrestore(&lock, flags);
 		return;
 	}
@@ -770,7 +773,10 @@ void i2s_disable(struct snd_soc_dai *dai)
 #endif
 	spin_lock_irqsave(&lock, flags);
 
-	if (--i2s->opencnt) {
+	if (is_secondary(i2s) && !is_opened(i2s)) {
+		spin_unlock_irqrestore(&lock, flags);
+		return;
+	} else if (!is_secondary(i2s) && --i2s->opencnt) {
 		spin_unlock_irqrestore(&lock, flags);
 		return;
 	}
