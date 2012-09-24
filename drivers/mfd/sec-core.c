@@ -164,8 +164,7 @@ static int sec_pmic_probe(struct i2c_client *i2c,
 	sec_pmic->rtc = i2c_new_dummy(i2c->adapter, RTC_I2C_ADDR);
 	if (IS_ERR(sec_pmic->rtc)) {
 		ret = PTR_ERR(sec_pmic->rtc);
-		dev_err(&sec_pmic->rtc,
-				"Failed to i2c device register: %d\n", ret);
+		dev_err(&i2c->dev, "Address %02x unavailable\n", RTC_I2C_ADDR);
 		goto err3;
 	}
 
