@@ -386,7 +386,7 @@ static int mmc_blk_ioctl_cmd(struct block_device *bdev,
 	struct mmc_data data = {0};
 	struct mmc_request mrq = {NULL};
 	struct scatterlist sg;
-	int err;
+	int err = 0;
 
 	/*
 	 * The caller must have CAP_SYS_RAWIO, and must be calling this on the
@@ -403,7 +403,7 @@ static int mmc_blk_ioctl_cmd(struct block_device *bdev,
 	md = mmc_blk_get(bdev->bd_disk);
 	if (!md) {
 		err = -EINVAL;
-		goto cmd_done;
+		goto err_kfree;
 	}
 
 	card = md->queue.card;
@@ -502,6 +502,8 @@ cmd_rel_host:
 
 cmd_done:
 	mmc_blk_put(md);
+
+err_kfree:
 	kfree(idata->buf);
 	kfree(idata);
 	return err;
