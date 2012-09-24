@@ -961,17 +961,33 @@ err:
 	return ret;
 }
 
+
 /**
- * exynos_ss_udc_set_test_mode - set TEST_MODE feature
+ * exynos_ss_udc_set_test_mode - set UDC to specific test mode
+ * @udc: The device state.
+ * @selector: The test mode selector.
+ */
+static void exynos_ss_udc_set_test_mode(struct exynos_ss_udc *udc,
+					u8 selector)
+{
+	u32 reg;
+
+	reg = readl(udc->regs + EXYNOS_USB3_DCTL);
+	reg &= ~EXYNOS_USB3_DCTL_TstCtl_MASK;
+	reg |= EXYNOS_USB3_DCTL_TstCtl(selector);
+	writel(reg, udc->regs + EXYNOS_USB3_DCTL);
+}
+
+/**
+ * exynos_ss_udc_handle_test_mode - handle TEST_MODE feature
  * @udc: The device state.
  * @wIndex: The request wIndex field.
  */
-static int exynos_ss_udc_set_test_mode(struct exynos_ss_udc *udc,
-				       u16 wIndex)
+static int exynos_ss_udc_handle_test_mode(struct exynos_ss_udc *udc,
+					  u16 wIndex)
 {
 	u8 selector = wIndex >> 8;
 	char *mode;
-	u32 reg;
 	int ret = 0;
 
 	switch (selector) {
@@ -999,12 +1015,8 @@ static int exynos_ss_udc_set_test_mode(struct exynos_ss_udc *udc,
 	dev_info(udc->dev, "Test mode selector is %s\n", mode);
 
 	if (ret == 0) {
-		reg = readl(udc->regs + EXYNOS_USB3_DCTL) &
-				~EXYNOS_USB3_DCTL_TstCtl_MASK;
-
-		reg |= EXYNOS_USB3_DCTL_TstCtl(selector);
-
-		writel(reg, udc->regs + EXYNOS_USB3_DCTL);
+		udc->test_mode = true;
+		udc->test_selector = selector;
 	}
 
 	return ret;
@@ -1135,7 +1147,7 @@ static int exynos_ss_udc_process_set_feature(struct exynos_ss_udc *udc,
 			if (wIndex & 0xff)
 				return -EINVAL;
 
-			ret = exynos_ss_udc_set_test_mode(udc, wIndex);
+			ret = exynos_ss_udc_handle_test_mode(udc, wIndex);
 			if (ret < 0)
 				return ret;
 			break;
@@ -1697,6 +1709,9 @@ static void exynos_ss_udc_xfer_complete(struct exynos_ss_udc *udc,
 			break;
 		case EP0_STATUS_PHASE:
 			udc->ep0_state = EP0_SETUP_PHASE;
+			if (udc->test_mode)
+				exynos_ss_udc_set_test_mode(udc,
+						udc->test_selector);
 			break;
 		default:
 			dev_err(udc->dev, "%s: Erroneous EP0 state (%d)",
@@ -1909,6 +1924,7 @@ static void exynos_ss_udc_irq_usbrst(struct exynos_ss_udc *udc)
 #endif
 	/* Disable test mode */
 	__bic32(udc->regs + EXYNOS_USB3_DCTL, EXYNOS_USB3_DCTL_TstCtl_MASK);
+	udc->test_mode = false;
 
 	/* Enable PHYs */
 	if (udc->core->ops->phy20_suspend)

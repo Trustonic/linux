@@ -433,6 +433,8 @@ struct exynos_ss_udc_ep {
  * @ctrl_buff: Buffer for EP0 control requests.
  * @ctrl_buff_dma: EP0 control request buffer DMA address.
  * @ctrl_req: Request for EP0 control packets.
+ * @test_mode: True if Test Mode should be activated, false otherwise.
+ * @test_selector: Test Mode selector.
  * @gadget: Represents USB slave device.
  * @eps: The endpoints being supplied to the gadget framework
  */
@@ -464,6 +466,9 @@ struct exynos_ss_udc {
 	u8			*ctrl_buff;
 	dma_addr_t		ctrl_buff_dma;
 	struct usb_request	*ctrl_req;
+
+	bool			test_mode;
+	u8			test_selector;
 
 	struct usb_gadget	gadget;
 	struct exynos_ss_udc_ep	eps[EXYNOS_USB3_EPS];
