@@ -126,8 +126,7 @@ static void audio_buffdone(void *data)
 
 	pr_debug("Entered %s\n", __func__);
 
-	if (substream)
-		snd_pcm_period_elapsed(substream);
+	snd_pcm_period_elapsed(substream);
 
 	spin_lock(&prtd->lock);
 	if (!samsung_dma_has_circular()) {
