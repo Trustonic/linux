@@ -1543,7 +1543,8 @@ static void dw_mci_tasklet_func(unsigned long priv)
 			}
 
 			if (host->mrq->sbc && !data->error) {
-				data->stop->error = 0;
+				if (data->stop)
+					data->stop->error = 0;
 				dw_mci_request_end(host, host->mrq);
 				goto unlock;
 			}
