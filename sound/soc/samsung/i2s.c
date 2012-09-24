@@ -1023,7 +1023,7 @@ static int clk_set_heirachy(struct i2s_dai *i2s)
 		dev_err(&i2s->pdev->dev, "failed to set parent %s of clock %s.\n",
 			 i2s->mout_audss->name, i2s->mout_i2s->name);
 
-	audss_clk_rate = clk_get_rate(i2s->mout_audss);
+	audss_clk_rate = clk_get_rate(fout_epll);
 	switch (audss_clk_rate) {
 	case 96000000:
 		srp_clk_rate = audss_clk_rate;
