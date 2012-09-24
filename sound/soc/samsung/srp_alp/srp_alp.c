@@ -992,10 +992,6 @@ static irqreturn_t srp_irq(int irqno, void *dev_id)
 				if (!srp.hw_reset_stat) {
 					srp_pending_ctrl(STALL);
 					hw_reset = 1;
-					if (!srp.wbuf) {
-						srp_get_buf_info();
-						srp_alloc_buf();
-					}
 					break;
 				}
 			}
@@ -1141,6 +1137,11 @@ srp_firmware_request_complete(const struct firmware *vliw, void *context)
 #ifndef CONFIG_SND_PM_RUNTIME
 	srp_core_reset();
 #endif
+	if (!srp.wbuf) {
+		srp_get_buf_info();
+		srp_alloc_buf();
+	}
+
 	i2s_disable(srp.pm_info);
 
 	return;
