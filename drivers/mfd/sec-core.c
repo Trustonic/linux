@@ -134,7 +134,7 @@ static int sec_pmic_probe(struct i2c_client *i2c,
 {
 	struct sec_pmic_platform_data *pdata = i2c->dev.platform_data;
 	struct sec_pmic_dev *sec_pmic;
-	int ret;
+	int ret = 0;
 
 	sec_pmic = devm_kzalloc(&i2c->dev, sizeof(struct sec_pmic_dev),
 				GFP_KERNEL);
