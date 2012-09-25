@@ -1519,8 +1519,10 @@ static int s5p_ace_sha_engine(struct s5p_ace_hash_ctx *sctx,
 		struct page *page;
 		S5P_ACE_DEBUG("%s: high memory - 0x%08x\n", __func__, (u32)in);
 		page = vmalloc_to_page(in);
-		if (!page)
+		if (!page) {
 			printk(KERN_ERR "ERROR: %s: Null page\n", __func__);
+			return -ENOMEM;
+		}
 		in_phys = (u8 *)page_to_phys(page);
 		in_phys += ((u32)in & ~PAGE_MASK);
 	}
