@@ -421,17 +421,31 @@ static int s3c_adc_probe(struct platform_device *pdev)
 		adc->vdd = NULL;
 	}
 
+	regs = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!regs) {
+		dev_err(dev, "failed to find registers\n");
+		ret = -ENXIO;
+		goto err_reg;
+	}
+
+	adc->regs = ioremap(regs->start, resource_size(regs));
+	if (!adc->regs) {
+		dev_err(dev, "failed to map registers\n");
+		ret = -ENXIO;
+		goto err_reg;
+	}
+
 	adc->irq = platform_get_irq_byname(pdev, "samsung-adc");
 	if (adc->irq <= 0) {
 		dev_err(dev, "failed to get adc irq\n");
 		ret = -ENOENT;
-		goto err_reg;
+		goto err_ioremap;
 	}
 
 	ret = request_irq(adc->irq, s3c_adc_irq, 0, dev_name(dev), adc);
 	if (ret < 0) {
 		dev_err(dev, "failed to attach adc irq\n");
-		goto err_reg;
+		goto err_ioremap;
 	}
 
 	adc->clk = clk_get(dev, "adc");
@@ -441,24 +455,10 @@ static int s3c_adc_probe(struct platform_device *pdev)
 		goto err_irq;
 	}
 
-	regs = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!regs) {
-		dev_err(dev, "failed to find registers\n");
-		ret = -ENXIO;
-		goto err_clk;
-	}
-
-	adc->regs = ioremap(regs->start, resource_size(regs));
-	if (!adc->regs) {
-		dev_err(dev, "failed to map registers\n");
-		ret = -ENXIO;
-		goto err_clk;
-	}
-
 	if (adc->vdd) {
 		ret = regulator_enable(adc->vdd);
 		if (ret)
-			goto err_ioremap;
+			goto err_clk;
 	}
 
 	clk_enable(adc->clk);
@@ -486,13 +486,13 @@ static int s3c_adc_probe(struct platform_device *pdev)
 
 	return 0;
 
- err_ioremap:
-	iounmap(adc->regs);
  err_clk:
 	clk_put(adc->clk);
 
  err_irq:
 	free_irq(adc->irq, adc);
+ err_ioremap:
+	iounmap(adc->regs);
  err_reg:
 	if (adc->vdd)
 		regulator_put(adc->vdd);
@@ -504,9 +504,9 @@ static int __devexit s3c_adc_remove(struct platform_device *pdev)
 {
 	struct adc_device *adc = platform_get_drvdata(pdev);
 
-	iounmap(adc->regs);
-	free_irq(adc->irq, adc);
 	clk_disable(adc->clk);
+	free_irq(adc->irq, adc);
+	iounmap(adc->regs);
 	if (adc->vdd) {
 		regulator_disable(adc->vdd);
 		regulator_put(adc->vdd);
