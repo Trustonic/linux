@@ -282,11 +282,12 @@ config USB_S3C_OTGD
 
 config USB_EXYNOS_SS_UDC
 	tristate "EXYNOS SuperSpeed USB 3.0 Device controller"
-	depends on EXYNOS_DEV_SS_UDC
+	depends on EXYNOS5_DEV_USB3_DRD
+	select USB_EXYNOS_DRD
 	select USB_GADGET_DUALSPEED
-	select USB_GADGET_SUPERSPEED
 	help
-	  DWC SuperSpeed USB 3.0 Device controller.
+	  The Samsung Exynos SuperSpeed USB 3.0 device controller
+	  integrated into the Exynos5 series SoC..
 
 config USB_IMX
 	tristate "Freescale i.MX1 USB Peripheral Controller"
@@ -546,6 +547,17 @@ config USB_DUMMY_HCD
 # first and will be selected by default.
 
 endchoice
+
+config USB_EXYNOS_SS_UDC_SSMODE
+	bool "Use UDC SuperSpeed mode"
+	depends on USB_EXYNOS_SS_UDC
+	default y
+	select USB_GADGET_SUPERSPEED
+	help
+	  This option activates SuperSpeed mode in EXYNOS SS UDC driver.
+
+	  NOTE: this is temporarily and will be removed once both speed
+	  modes have been fully tested.
 
 # Selected by UDC drivers that support high-speed operation.
 config USB_GADGET_DUALSPEED
