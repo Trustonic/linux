@@ -19,6 +19,17 @@ struct dwc3_exynos_data {
 	int phy_type;
 	int (*phy_init)(struct platform_device *pdev, int type);
 	int (*phy_exit)(struct platform_device *pdev, int type);
+	int (*phy_crport_ctrl)(struct platform_device *pdev,
+				u32 uaddr, u32 udata);
+	int (*vbus_ctrl)(struct platform_device *pdev, int on);
+	int (*get_id_state)(struct platform_device *pdev);
+	bool (*get_bses_vld)(struct platform_device *pdev);
+	unsigned int quirks;
+#define EXYNOS_PHY20_NO_SUSPEND	(1 << 0)
+#define FORCE_RUN_PERIPHERAL	(1 << 1)
+	int id_irq;
+	int vbus_irq;
+	unsigned long irq_flags;
 };
 
 #endif /* _DWC3_EXYNOS_H_ */

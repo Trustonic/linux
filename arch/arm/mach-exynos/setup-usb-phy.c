@@ -16,7 +16,7 @@
 #include <linux/platform_device.h>
 #include <mach/regs-pmu.h>
 #include <mach/regs-usb-phy.h>
-#include <mach/regs-usb3-exynos-drd-phy.h>
+#include <mach/regs-usb3-drd-phy.h>
 #include <plat/cpu.h>
 #include <plat/usb-phy.h>
 #include <plat/udc-hs.h>
@@ -45,6 +45,41 @@ static struct exynos_usb_phy usb_phy_control = {
 };
 
 static atomic_t host_usage;
+
+static void exynos5_usb_phy_crport_handshake(struct platform_device *pdev,
+				u32 reg, void __iomem *reg_base, u32 cmd)
+{
+	u32 usec = 100;
+	u32 result;
+
+	writel(reg | cmd, reg_base + EXYNOS_USB3_PHYREG0);
+
+	do {
+		result = readl(reg_base + EXYNOS_USB3_PHYREG1);
+		if (result & EXYNOS_USB3_PHYREG1_CR_ACK)
+			break;
+
+		udelay(1);
+	} while (usec-- > 0);
+
+	if (!usec)
+		dev_err(&pdev->dev, "CRPORT handshake timeout1 (0x%08x)\n", reg);
+
+	usec = 100;
+
+	writel(reg, reg_base + EXYNOS_USB3_PHYREG0);
+
+	do {
+		result = readl(reg_base + EXYNOS_USB3_PHYREG1);
+		if (!(result & EXYNOS_USB3_PHYREG1_CR_ACK))
+			break;
+
+		udelay(1);
+	} while (usec-- > 0);
+
+	if (!usec)
+		dev_err(&pdev->dev, "CRPORT handshake timeout2 (0x%08x)\n", reg);
+}
 
 static void exynos_usb_mux_change(struct platform_device *pdev, int val)
 {
@@ -767,63 +802,172 @@ static int exynos_usb_dev_phy20_exit(struct platform_device *pdev)
 	return 0;
 }
 
+static u32 exynos_usb_phy30_set_clock(struct platform_device *pdev)
+{
+	u32 reg, refclk;
+
+	refclk = exynos_usb_phy_set_clock(pdev);
+	reg = EXYNOS_USB3_PHYCLKRST_REFCLKSEL(3) |
+		EXYNOS_USB3_PHYCLKRST_FSEL(refclk);
+
+	switch (refclk) {
+	case EXYNOS5_CLKSEL_50M:
+		reg |= (EXYNOS_USB3_PHYCLKRST_MPLL_MULTIPLIER(0x02) |
+			EXYNOS_USB3_PHYCLKRST_SSC_REF_CLK_SEL(0x00));
+		break;
+	case EXYNOS5_CLKSEL_20M:
+		reg |= (EXYNOS_USB3_PHYCLKRST_MPLL_MULTIPLIER(0x7d) |
+			EXYNOS_USB3_PHYCLKRST_SSC_REF_CLK_SEL(0x00));
+		break;
+	case EXYNOS5_CLKSEL_19200K:
+		reg |= (EXYNOS_USB3_PHYCLKRST_MPLL_MULTIPLIER(0x02) |
+			EXYNOS_USB3_PHYCLKRST_SSC_REF_CLK_SEL(0x88));
+		break;
+	case EXYNOS5_CLKSEL_24M:
+	default:
+		reg |= (EXYNOS_USB3_PHYCLKRST_MPLL_MULTIPLIER(0x68) |
+			EXYNOS_USB3_PHYCLKRST_SSC_REF_CLK_SEL(0x88));
+		break;
+	}
+
+	return reg;
+}
+
 static int exynos5_usb_phy30_init(struct platform_device *pdev)
 {
+	int phy_num = pdev->id;
+	void __iomem *reg_base;
 	u32 reg;
 
-	writel(1, EXYNOS5_USBDEV_PHY_CONTROL);
+	switch (phy_num) {
+	case 0:
+		reg_base = S5P_VA_USB3_DRD0_PHY;
+		writel(1, EXYNOS5_USBDEV_PHY_CONTROL);
+		break;
+	case 1:
+		reg_base = S5P_VA_USB3_DRD1_PHY;
+		writel(1, EXYNOS5_USBDEV1_PHY_CONTROL);
+		break;
+	default:
+		return -1;
+	}
 
 	/* Reset USB 3.0 PHY */
-	writel(0x087fffc0, EXYNOS_USB3_LINKSYSTEM);
-	writel(0x00000000, EXYNOS_USB3_PHYREG0);
-	writel(0x24d4e6e4, EXYNOS_USB3_PHYPARAM0);
-	writel(0x03fff820, EXYNOS_USB3_PHYPARAM1);
-	writel(0x00000000, EXYNOS_USB3_PHYBATCHG);
-	writel(0x00000000, EXYNOS_USB3_PHYRESUME);
-	/* REVISIT : Over-current pin is inactive on SMDK5250 */
+	writel(0x00000000, reg_base + EXYNOS_USB3_PHYREG0);
+	writel(0x24d4e6e4, reg_base + EXYNOS_USB3_PHYPARAM0);
+	writel(0x00000000, reg_base + EXYNOS_USB3_PHYRESUME);
+
+	/*
+	 * Setting Frame Length Adjustment(FLADJ) Register.
+	 * See xHCI 1.0 spec 5.2.4
+	 */
+	reg = EXYNOS_USB3_LINKSYSTEM_XHCI_VERSION_CONTROL |
+		EXYNOS_USB3_LINKSYSTEM_FLADJ(0x20);
+	writel(reg, reg_base + EXYNOS_USB3_LINKSYSTEM);
+	writel(0x03fff81C, reg_base + EXYNOS_USB3_PHYPARAM1);
+	writel(0x00000004, reg_base + EXYNOS_USB3_PHYBATCHG);
+#ifdef CONFIG_USB_EXYNOS_SWITCH
 	if (soc_is_exynos5250())
-		writel((readl(EXYNOS_USB3_LINKPORT) & ~(0x3<<4)) |
-			(0x3<<2), EXYNOS_USB3_LINKPORT);
+		writel(readl(reg_base + EXYNOS_USB3_LINKPORT) |
+			(0xf<<2), reg_base + EXYNOS_USB3_LINKPORT);
+#endif
 
+	/* PHYTEST POWERDOWN Control */
+	reg = readl(reg_base + EXYNOS_USB3_PHYTEST);
+	reg &= ~(EXYNOS_USB3_PHYTEST_POWERDOWN_SSP |
+		 EXYNOS_USB3_PHYTEST_POWERDOWN_HSP);
+	writel(reg, reg_base + EXYNOS_USB3_PHYTEST);
 	/* UTMI Power Control */
-	writel(EXYNOS_USB3_PHYUTMI_OTGDISABLE, EXYNOS_USB3_PHYUTMI);
+	writel(EXYNOS_USB3_PHYUTMI_OTGDISABLE, reg_base + EXYNOS_USB3_PHYUTMI);
 
-	/* Set 100MHz external clock */
-	reg = EXYNOS_USB3_PHYCLKRST_PORTRESET |
-		/* HS PLL uses ref_pad_clk{p,m} or ref_alt_clk_{p,m}
-		* as reference */
-		EXYNOS_USB3_PHYCLKRST_REFCLKSEL(2) |
+	reg = exynos_usb_phy30_set_clock(pdev);
+
+	reg |= (EXYNOS_USB3_PHYCLKRST_PORTRESET |
 		/* Digital power supply in normal operating mode */
 		EXYNOS_USB3_PHYCLKRST_RETENABLEN |
-		/* 0x27-100MHz, 0x2a-24MHz, 0x31-20MHz, 0x38-19.2MHz */
-		EXYNOS_USB3_PHYCLKRST_FSEL(0x27) |
-		/* 0x19-100MHz, 0x68-24MHz, 0x7d-20Mhz */
-		EXYNOS_USB3_PHYCLKRST_MPLL_MULTIPLIER(0x19) |
 		/* Enable ref clock for SS function */
 		EXYNOS_USB3_PHYCLKRST_REF_SSP_EN |
 		/* Enable spread spectrum */
-		EXYNOS_USB3_PHYCLKRST_SSC_EN;
+		EXYNOS_USB3_PHYCLKRST_SSC_EN |
+		EXYNOS_USB3_PHYCLKRST_COMMONONN);
 
-	writel(reg, EXYNOS_USB3_PHYCLKRST);
+	writel(reg, reg_base + EXYNOS_USB3_PHYCLKRST);
 
 	udelay(10);
 
 	reg &= ~(EXYNOS_USB3_PHYCLKRST_PORTRESET);
-	writel(reg, EXYNOS_USB3_PHYCLKRST);
+	writel(reg, reg_base + EXYNOS_USB3_PHYCLKRST);
 
 	return 0;
 }
 
 static int exynos5_usb_phy30_exit(struct platform_device *pdev)
 {
+	int phy_num = pdev->id;
+	void __iomem *reg_base;
 	u32 reg;
+
+	switch (phy_num) {
+	case 0:
+		reg_base = S5P_VA_USB3_DRD0_PHY;
+		writel(0, EXYNOS5_USBDEV_PHY_CONTROL);
+		break;
+	case 1:
+		reg_base = S5P_VA_USB3_DRD1_PHY;
+		writel(0, EXYNOS5_USBDEV1_PHY_CONTROL);
+		break;
+	default:
+		return -1;
+	}
 
 	reg = EXYNOS_USB3_PHYUTMI_OTGDISABLE |
 		EXYNOS_USB3_PHYUTMI_FORCESUSPEND |
 		EXYNOS_USB3_PHYUTMI_FORCESLEEP;
-	writel(reg, EXYNOS_USB3_PHYUTMI);
+	writel(reg, reg_base + EXYNOS_USB3_PHYUTMI);
 
-	writel(0, EXYNOS5_USBDEV_PHY_CONTROL);
+	reg = readl(reg_base + EXYNOS_USB3_PHYCLKRST);
+	reg &= ~(EXYNOS_USB3_PHYCLKRST_REF_SSP_EN |
+		EXYNOS_USB3_PHYCLKRST_SSC_EN |
+		EXYNOS_USB3_PHYCLKRST_COMMONONN);
+	writel(reg, reg_base + EXYNOS_USB3_PHYCLKRST);
+
+	/* Control PHYTEST to remove leakage current */
+	reg = readl(reg_base + EXYNOS_USB3_PHYTEST);
+	reg |= (EXYNOS_USB3_PHYTEST_POWERDOWN_SSP |
+		EXYNOS_USB3_PHYTEST_POWERDOWN_HSP);
+	writel(reg, reg_base + EXYNOS_USB3_PHYTEST);
+
+	return 0;
+}
+
+int exynos5_usb_phy_crport_ctrl(struct platform_device *pdev,
+				u32 addr, u32 data)
+{
+	int phy_num = pdev->id;
+	void __iomem *reg_base;
+	u32 reg;
+
+	if (phy_num == 0)
+		reg_base = S5P_VA_USB3_DRD0_PHY;
+	else if (phy_num == 1)
+		reg_base = S5P_VA_USB3_DRD1_PHY;
+	else
+		return -EINVAL;
+
+	/* los_bias setting */
+	/* Write Address */
+	reg = EXYNOS_USB3_PHYREG0_CR_DATA_IN(addr);
+	writel(reg, reg_base + EXYNOS_USB3_PHYREG0);
+	exynos5_usb_phy_crport_handshake(pdev, reg, reg_base,
+			EXYNOS_USB3_PHYREG0_CR_CAP_ADDR);
+
+	/* Write Data */
+	reg = EXYNOS_USB3_PHYREG0_CR_DATA_IN(data);
+	writel(reg, reg_base + EXYNOS_USB3_PHYREG0);
+	exynos5_usb_phy_crport_handshake(pdev, reg, reg_base,
+			EXYNOS_USB3_PHYREG0_CR_CAP_DATA);
+	exynos5_usb_phy_crport_handshake(pdev, reg, reg_base,
+			EXYNOS_USB3_PHYREG0_CR_WRITE);
 
 	return 0;
 }

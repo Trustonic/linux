@@ -9,9 +9,9 @@
  */
 
 #include <linux/platform_device.h>
+#include <linux/gpio.h>
 #include <mach/irqs.h>
 #include <mach/map.h>
-#include <mach/gpio.h>
 #include <mach/usb3-drd.h>
 #include <mach/usb-switch.h>
 #include <plat/devs.h>
@@ -33,12 +33,12 @@ void __init s5p_usbswitch_set_platdata(struct s5p_usbswitch_platdata *pd)
 	npd = s3c_set_platdata(pd, sizeof(struct s5p_usbswitch_platdata),
 			&s5p_device_usbswitch);
 
-	s5p_usbswitch_res[0].start = __gpio_to_irq(npd->gpio_host_detect);
-	s5p_usbswitch_res[0].end = __gpio_to_irq(npd->gpio_host_detect);
+	s5p_usbswitch_res[0].start = gpio_to_irq(npd->gpio_host_detect);
+	s5p_usbswitch_res[0].end = gpio_to_irq(npd->gpio_host_detect);
 	s5p_usbswitch_res[0].flags = IORESOURCE_IRQ;
 
-	s5p_usbswitch_res[1].start = __gpio_to_irq(npd->gpio_device_detect);
-	s5p_usbswitch_res[1].end = __gpio_to_irq(npd->gpio_device_detect);
+	s5p_usbswitch_res[1].start = gpio_to_irq(npd->gpio_device_detect);
+	s5p_usbswitch_res[1].end = gpio_to_irq(npd->gpio_device_detect);
 	s5p_usbswitch_res[1].flags = IORESOURCE_IRQ;
 
 #ifdef CONFIG_USB_EHCI_S5P
