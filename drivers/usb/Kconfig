@@ -53,6 +53,7 @@ config USB_ARCH_HAS_EHCI
 # some non-PCI HCDs implement xHCI
 config USB_ARCH_HAS_XHCI
 	boolean
+	default y if ARCH_EXYNOS
 	default PCI
 
 menuconfig USB_SUPPORT
@@ -124,6 +125,27 @@ config USB
 source "drivers/usb/core/Kconfig"
 
 source "drivers/usb/dwc3/Kconfig"
+
+choice
+	prompt "EXYNOS DesignWare USB3 DRD channel (temporarily)"
+	depends on (USB_DWC3 || USB_EXYNOS_SS_UDC || USB_XHCI_EXYNOS)
+	default USB_EXYNOS5_USB3_DRD_CH0
+	help
+	  This option allows to activate one of the DRD channels.
+
+	  NOTE: this is temporarily and will be removed once multiple channels
+	  operation has been fully tested.
+
+config USB_EXYNOS5_USB3_DRD_CH0
+	boolean "Channel0"
+	help
+	  Use DRD channel 0.
+
+config USB_EXYNOS5_USB3_DRD_CH1
+	boolean "Channel1"
+	help
+	  Use DRD channel 1.
+endchoice
 
 source "drivers/usb/mon/Kconfig"
 
