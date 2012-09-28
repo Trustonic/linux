@@ -1082,7 +1082,7 @@ static int vidioc_g_fmt_vid_cap_mplane(struct file *file, void *priv,
 		pix_mp->num_planes = 2;
 		/* Set pixelformat to the format in which MFC
 		   outputs the decoded frame */
-		pix_mp->pixelformat = V4L2_PIX_FMT_NV12MT;
+		pix_mp->pixelformat = ctx->dst_fmt->fourcc;
 		pix_mp->plane_fmt[0].bytesperline = ctx->buf_width;
 		pix_mp->plane_fmt[0].sizeimage =
 			ctx->buf_width * ctx->buf_height;
