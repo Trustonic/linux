@@ -549,14 +549,14 @@ static __devinit int s3c_pcm_dev_probe(struct platform_device *pdev)
 	if (IS_ERR(pcm->sclk_audio)) {
 		dev_err(&pdev->dev, "failed to get sclk_audio\n");
 		ret = PTR_ERR(pcm->sclk_audio);
-		goto err0;
+		goto err1;
 	}
 
 	pcm->mout_epll = clk_get(&pdev->dev, "mout_epll");
 	if (IS_ERR(pcm->mout_epll)) {
 		dev_err(&pdev->dev, "failed to get mout_epll\n");
 		ret = PTR_ERR(pcm->mout_epll);
-		goto err1;
+		goto err2;
 	}
 
 	clk_set_parent(pcm->sclk_audio, pcm->mout_epll);
@@ -570,28 +570,28 @@ static __devinit int s3c_pcm_dev_probe(struct platform_device *pdev)
 				resource_size(mem_res), "samsung-pcm")) {
 		dev_err(&pdev->dev, "Unable to request register region\n");
 		ret = -EBUSY;
-		goto err2;
+		goto err3;
 	}
 
 	pcm->regs = ioremap(mem_res->start, 0x100);
 	if (pcm->regs == NULL) {
 		dev_err(&pdev->dev, "cannot ioremap registers\n");
 		ret = -ENXIO;
-		goto err3;
+		goto err4;
 	}
 
 	pcm->pclk = clk_get(&pdev->dev, "pcm");
 	if (IS_ERR(pcm->pclk)) {
 		dev_err(&pdev->dev, "failed to get pcm_clock\n");
 		ret = -ENOENT;
-		goto err4;
+		goto err5;
 	}
 	clk_enable(pcm->pclk);
 
 	if (pcm_pdata && pcm_pdata->cfg_gpio && pcm_pdata->cfg_gpio(pdev)) {
 		dev_err(&pdev->dev, "Unable to configure gpio\n");
 		ret = -EINVAL;
-		goto err5;
+		goto err6;
 	}
 
 	s3c_pcm_stereo_in[pdev->id].dma_addr = mem_res->start
@@ -610,21 +610,24 @@ static __devinit int s3c_pcm_dev_probe(struct platform_device *pdev)
 	ret = snd_soc_register_dai(&pdev->dev, &s3c_pcm_dai[pdev->id]);
 	if (ret != 0) {
 		dev_err(&pdev->dev, "failed to get register DAI: %d\n", ret);
-		goto err5;
+		goto err6;
 	}
 
 	return 0;
 
-err5:
+err6:
 	clk_disable(pcm->pclk);
 	clk_put(pcm->pclk);
-err4:
+err5:
 	iounmap(pcm->regs);
-err3:
+err4:
 	release_mem_region(mem_res->start, resource_size(mem_res));
-err2:
+err3:
 	clk_disable(pcm->mout_epll);
 	clk_put(pcm->mout_epll);
+err2:
+	clk_disable(pcm->sclk_audio);
+	clk_put(pcm->sclk_audio);
 err1:
 	clk_disable(pcm->cclk);
 	clk_put(pcm->cclk);
