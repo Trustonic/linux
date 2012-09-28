@@ -220,19 +220,23 @@ static int exynos5_usb_phy20_is_on(void)
 
 static int exynos5_usb_phy30_is_on(void)
 {
-	return readl(EXYNOS5_USBDEV_PHY_CONTROL) ? 1 : 0;
+	if (soc_is_exynos5250())
+		return readl(EXYNOS5_USBDEV_PHY_CONTROL) ? 1 : 0;
+	else
+		return readl(EXYNOS5_USBDEV_PHY_CONTROL) ? 1 :
+			(readl(EXYNOS5_USBDEV1_PHY_CONTROL) ? 1 : 0);
 }
 
 static int exynos_usb_device_phy_is_on(void)
 {
-	int ret;
+	int ret = 0;
 
 	if (soc_is_exynos4210()) {
 		ret = (readl(EXYNOS4_PHYPWR) & PHY0_ANALOG_POWERDOWN) ? 0 : 1;
 	} else if (soc_is_exynos4212() || soc_is_exynos4412()) {
 		ret = exynos4_usb_phy20_is_on() ?
 			(readl(EXYNOS4_USB_CFG) ? 0 : 1) : 0;
-	} else {
+	} else if (soc_is_exynos5250()) {
 		ret = exynos5_usb_phy20_is_on() ?
 			(readl(EXYNOS5_USB_CFG) ? 0 : 1) : 0;
 	}
