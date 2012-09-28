@@ -530,11 +530,6 @@ static __devinit int s3c_pcm_dev_probe(struct platform_device *pdev)
 		return -ENXIO;
 	}
 
-	if (pcm_pdata && pcm_pdata->cfg_gpio && pcm_pdata->cfg_gpio(pdev)) {
-		dev_err(&pdev->dev, "Unable to configure gpio\n");
-		return -EINVAL;
-	}
-
 	pcm = &s3c_pcm[pdev->id];
 	pcm->dev = &pdev->dev;
 
@@ -592,6 +587,12 @@ static __devinit int s3c_pcm_dev_probe(struct platform_device *pdev)
 		goto err4;
 	}
 	clk_enable(pcm->pclk);
+
+	if (pcm_pdata && pcm_pdata->cfg_gpio && pcm_pdata->cfg_gpio(pdev)) {
+		dev_err(&pdev->dev, "Unable to configure gpio\n");
+		ret = -EINVAL;
+		goto err5;
+	}
 
 	s3c_pcm_stereo_in[pdev->id].dma_addr = mem_res->start
 							+ S3C_PCM_RXFIFO;
