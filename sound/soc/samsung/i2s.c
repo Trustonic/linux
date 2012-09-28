@@ -1102,12 +1102,14 @@ static int samsung_i2s_dai_probe(struct snd_soc_dai *dai)
 {
 	struct i2s_dai *i2s = to_info(dai);
 	struct i2s_dai *other = i2s->pri_dai ? : i2s->sec_dai;
+	struct platform_device *pdev = i2s->pri_dai ?
+				       i2s->pri_dai->pdev : i2s->pdev;
+#ifndef CONFIG_SND_PM_RUNTIME
+	struct s3c_audio_pdata *i2s_pdata = pdev->dev.platform_data;
+#endif
 	int ret;
 
 #ifdef CONFIG_SND_PM_RUNTIME
-	struct platform_device *pdev = i2s->pri_dai ?
-				       i2s->pri_dai->pdev : i2s->pdev;
-
 	pm_runtime_get_sync(&pdev->dev);
 #endif
 
@@ -1151,7 +1153,10 @@ probe_exit:
 	ret = clk_set_heirachy(i2s);
 	if (ret) {
 		dev_err(&i2s->pdev->dev, "failed to set clock hierachy.\n");
-		goto err5;
+		if (is_secondary(i2s))
+			goto err5;
+		else
+			goto err1;
 	}
 	if (other) {
 		other->addr = i2s->addr;
@@ -1176,6 +1181,16 @@ probe_exit:
 		srp_prepare_pm((void *) dai);
 #endif
 
+#ifndef CONFIG_SND_PM_RUNTIME
+	if (i2s_pdata->cfg_gpio && i2s_pdata->cfg_gpio(pdev)) {
+		dev_err(&pdev->dev, "Unable to configure gpio\n");
+		ret = -EINVAL;
+		if (is_secondary(i2s))
+			goto err5;
+		else
+			goto err1;
+	}
+#endif
 	if (i2s->quirks & QUIRK_NEED_RSTCLR)
 		writel(CON_RSTCLR, i2s->addr + I2SCON);
 
@@ -1413,13 +1428,6 @@ static __devinit int samsung_i2s_probe(struct platform_device *pdev)
 		pri_dai->sec_dai = sec_dai;
 	}
 
-#ifndef CONFIG_SND_PM_RUNTIME
-	if (i2s_pdata->cfg_gpio && i2s_pdata->cfg_gpio(pdev)) {
-		dev_err(&pdev->dev, "Unable to configure gpio\n");
-		ret = -EINVAL;
-		goto err;
-	}
-#endif
 	snd_soc_register_dai(&pri_dai->pdev->dev, &pri_dai->i2s_dai_drv);
 
 	pm_runtime_enable(&pdev->dev);
