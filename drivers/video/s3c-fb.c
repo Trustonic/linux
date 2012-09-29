@@ -2721,6 +2721,10 @@ static int s3c_fb_sd_pad_set_fmt(struct v4l2_subdev *sd, struct v4l2_subdev_fh *
 	struct s3c_fb_win *win = v4l2_subdev_to_s3c_fb_win(sd);
 	struct s3c_fb *sfb = win->parent;
 
+	/* Check the alignment of width */
+	if (format->format.width % 2)
+		format->format.width -= 1;
+
 	/* (width, height) : (xres, yres) */
 	win->fbinfo->var.xres = format->format.width;
 	win->fbinfo->var.yres = format->format.height;
