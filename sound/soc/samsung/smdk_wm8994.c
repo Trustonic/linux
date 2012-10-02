@@ -143,7 +143,7 @@ static struct snd_soc_dai_link smdk_dai[] = {
 		.stream_name = "Sec_Dai",
 		.cpu_dai_name = "samsung-i2s.4",
 		.codec_dai_name = "wm8994-aif1",
-#ifdef CONFIG_SND_SAMSUNG_ALP
+#ifdef CONFIG_SND_SAMSUNG_USE_IDMA
 		.platform_name = "samsung-idma",
 #else
 		.platform_name = "samsung-audio",
