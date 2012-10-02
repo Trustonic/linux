@@ -152,82 +152,34 @@ static bool on_list(struct exynos_ss_udc_ep *udc_ep,
 /**
  * exynos_ss_udc_map_dma - map the DMA memory being used for the request
  * @udc: The device state.
+ * @udc_req: The request being processed.
  * @udc_ep: The endpoint the request is on.
- * @req: The request being processed.
  *
  * We've been asked to queue a request, so ensure that the memory buffer
- * is correctly setup for DMA. If we've been passed an extant DMA address
- * then ensure the buffer has been synced to memory. If our buffer has no
- * DMA memory, then we map the memory and mark our request to allow us to
- * cleanup on completion.
+ * is correctly setup for DMA.
  */
 static int exynos_ss_udc_map_dma(struct exynos_ss_udc *udc,
-				 struct exynos_ss_udc_ep *udc_ep,
-				 struct usb_request *req)
+				 struct exynos_ss_udc_req *udc_req,
+				 struct exynos_ss_udc_ep *udc_ep)
 {
-	enum dma_data_direction dir;
-	struct exynos_ss_udc_req *udc_req = our_req(req);
-
-	dir = udc_ep->dir_in ? DMA_TO_DEVICE : DMA_FROM_DEVICE;
-
-	/* if the length is zero, ignore the DMA data */
-	if (udc_req->req.length == 0)
-		return 0;
-
-	if (req->dma == DMA_ADDR_INVALID) {
-		dma_addr_t dma;
-
-		dma = dma_map_single(udc->dev,
-				     req->buf, req->length, dir);
-
-		if (unlikely(dma_mapping_error(udc->dev, dma)))
-			goto dma_error;
-
-		udc_req->mapped = 1;
-		req->dma = dma;
-	} else
-		dma_sync_single_for_device(udc->dev,
-					   req->dma, req->length, dir);
-
-	return 0;
-
-dma_error:
-	dev_err(udc->dev, "%s: failed to map buffer %p, %d bytes\n",
-			  __func__, req->buf, req->length);
-
-	return -EIO;
+	return usb_gadget_map_request(&udc->gadget,
+				&udc_req->req, udc_ep->dir_in);
 }
 
 /**
  * exynos_ss_udc_unmap_dma - unmap the DMA memory being used for the request
  * @udc: The device state.
- * @udc_ep: The endpoint for the request.
  * @udc_req: The request being processed.
+ * @udc_ep: The endpoint for the request.
  *
  * This is the reverse of exynos_ss_udc_map_dma(), called for the completion
  * of a request to ensure the buffer is ready for access by the caller.
  */
 static void exynos_ss_udc_unmap_dma(struct exynos_ss_udc *udc,
-				    struct exynos_ss_udc_ep *udc_ep,
-				    struct exynos_ss_udc_req *udc_req)
+				    struct exynos_ss_udc_req *udc_req,
+				    struct exynos_ss_udc_ep *udc_ep)
 {
-	struct usb_request *req = &udc_req->req;
-	enum dma_data_direction dir;
-
-	dir = udc_ep->dir_in ? DMA_TO_DEVICE : DMA_FROM_DEVICE;
-
-	/* ignore this if we're not moving any data */
-	if (udc_req->req.length == 0)
-		return;
-
-	if (udc_req->mapped) {
-		/* we mapped this, so unmap and remove the dma */
-
-		dma_unmap_single(udc->dev, req->dma, req->length, dir);
-
-		req->dma = DMA_ADDR_INVALID;
-		udc_req->mapped = 0;
-	}
+	usb_gadget_unmap_request(&udc->gadget, &udc_req->req, udc_ep->dir_in);
 }
 
 /**
@@ -494,7 +446,7 @@ static int exynos_ss_udc_ep_queue(struct usb_ep *ep,
 	else if (req->buf == udc->ep0_buff)
 		req->dma = udc->ep0_buff_dma;
 	else {
-		ret = exynos_ss_udc_map_dma(udc, udc_ep, req);
+		ret = exynos_ss_udc_map_dma(udc, udc_req, udc_ep);
 		if (ret)
 			return ret;
 	}
@@ -1535,7 +1487,7 @@ static void exynos_ss_udc_complete_request(struct exynos_ss_udc *udc,
 
 	if (udc_req->req.buf != udc->ctrl_buff &&
 	    udc_req->req.buf != udc->ep0_buff)
-		exynos_ss_udc_unmap_dma(udc, udc_ep, udc_req);
+		exynos_ss_udc_unmap_dma(udc, udc_req, udc_ep);
 
 	/* call the complete request with the locks off, just in case the
 	 * request tries to queue more work for this endpoint. */

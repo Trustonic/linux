@@ -349,12 +349,10 @@ struct exynos_ss_udc_ep_command {
  * struct exynos_ss_udc_req - data transfer request
  * @req: The USB gadget request.
  * @queue: The list of requests for the endpoint this is queued for.
- * @mapped: DMA buffer for this request has been mapped via dma_map_single().
  */
 struct exynos_ss_udc_req {
 	struct usb_request	req;
 	struct list_head	queue;
-	unsigned char		mapped;
 };
 
 /**
