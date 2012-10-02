@@ -349,10 +349,16 @@ struct exynos_ss_udc_ep_command {
  * struct exynos_ss_udc_req - data transfer request
  * @req: The USB gadget request.
  * @queue: The list of requests for the endpoint this is queued for.
+ * @buf: Holds original buffer address if bounce buffer is used.
+ * @length: Holds original buffer length of data if bounce buffer is used.
+ * @bounced: True if bounce buffer is used for the request (only for OUT dir).
  */
 struct exynos_ss_udc_req {
 	struct usb_request	req;
 	struct list_head	queue;
+	void			*buf;
+	unsigned		length;
+	bool			bounced;
 };
 
 /**

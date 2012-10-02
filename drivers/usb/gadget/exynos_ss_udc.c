@@ -157,13 +157,49 @@ static bool on_list(struct exynos_ss_udc_ep *udc_ep,
  *
  * We've been asked to queue a request, so ensure that the memory buffer
  * is correctly setup for DMA.
+ *
+ * The UDC requires all OUT transfer request lengths to be multiple of
+ * max packet size. Bounce buffer is used to meet this requirement.
  */
 static int exynos_ss_udc_map_dma(struct exynos_ss_udc *udc,
 				 struct exynos_ss_udc_req *udc_req,
 				 struct exynos_ss_udc_ep *udc_ep)
 {
-	return usb_gadget_map_request(&udc->gadget,
-				&udc_req->req, udc_ep->dir_in);
+	struct usb_request *req = &udc_req->req;
+	int rem;
+
+	/* Bounce buffer for OUT transfers */
+	if (!udc_ep->dir_in) {
+		rem = req->length % udc_ep->ep.maxpacket;
+		if (rem > 0) {
+			dev_dbg(udc->dev,
+				"%s: buffer length is not multiple of max packet size\n",
+				__func__);
+
+			/* Backup buffer address and its length */
+			udc_req->buf = req->buf;
+			udc_req->length = req->length;
+
+			/*
+			 * Create buffer with the length divisible
+			 * by the maxpacket size
+			 */
+			req->length += udc_ep->ep.maxpacket - rem;
+			req->buf = kzalloc(req->length, GFP_ATOMIC);
+			if (!req->buf) {
+				dev_err(udc->dev,
+					"%s: cannot allocate bounce buffer\n",
+					__func__);
+				req->length = udc_req->length;
+				req->buf = udc_req->buf;
+				return -ENOMEM;
+			}
+
+			udc_req->bounced = true;
+		}
+	}
+
+	return usb_gadget_map_request(&udc->gadget, req, udc_ep->dir_in);
 }
 
 /**
@@ -179,7 +215,22 @@ static void exynos_ss_udc_unmap_dma(struct exynos_ss_udc *udc,
 				    struct exynos_ss_udc_req *udc_req,
 				    struct exynos_ss_udc_ep *udc_ep)
 {
-	usb_gadget_unmap_request(&udc->gadget, &udc_req->req, udc_ep->dir_in);
+	struct usb_request *req = &udc_req->req;
+
+	usb_gadget_unmap_request(&udc->gadget, req, udc_ep->dir_in);
+
+	/* Bounce buffer for OUT transfers */
+	if (!udc_ep->dir_in && udc_req->bounced) {
+		/* Copy data that we received */
+		memcpy(udc_req->buf, req->buf, udc_req->length);
+		kfree(req->buf);
+
+		/* Restore original buffer and its length */
+		req->length = udc_req->length;
+		req->buf = udc_req->buf;
+
+		udc_req->bounced = false;
+	}
 }
 
 /**
@@ -641,11 +692,7 @@ static void exynos_ss_udc_start_req(struct exynos_ss_udc *udc,
 		trb_type = NORMAL;
 
 	/* Get transfer length */
-	if (udc_ep->dir_in)
-		xfer_length = ureq->length;
-	else
-		xfer_length = (ureq->length + udc_ep->ep.maxpacket - 1) &
-			~(udc_ep->ep.maxpacket - 1);
+	xfer_length = ureq->length & EXYNOS_USB3_TRB_BUFSIZ_MASK;
 
 	/* Fill TRB */
 	udc_ep->trb->buff_ptr_low = (u32) ureq->dma;
@@ -1642,14 +1689,9 @@ static void exynos_ss_udc_xfer_complete(struct exynos_ss_udc *udc,
 			/* REVISIT shall we -ECONNRESET here? */
 		}
 
-		udc_req->req.actual = udc_req->req.length - size_left;
-	} else {
-		int len;
-
-		len = (req->length + udc_ep->ep.maxpacket - 1) &
-			~(udc_ep->ep.maxpacket - 1);
-		udc_req->req.actual = len - size_left;
 	}
+
+	udc_req->req.actual += udc_req->req.length - size_left;
 
 	if (udc_ep->epnum == 0) {
 		switch (udc->ep0_state) {
