@@ -1,4 +1,4 @@
-/* linux/drivers/media/video/samsung/fimg2d4x/fimg2d_ctx.c
+/* linux/drivers/media/video/exynos/fimg2d/fimg2d_ctx.c
  *
  * Copyright (c) 2011 Samsung Electronics Co., Ltd.
  *	http://www.samsung.com/
@@ -453,7 +453,7 @@ err_pgtable:
 	return ret;
 }
 
-int fimg2d_add_command(struct fimg2d_control *info, struct fimg2d_context *ctx,
+int fimg2d_add_command(struct fimg2d_control *ctrl, struct fimg2d_context *ctx,
 			struct fimg2d_blit *blit)
 {
 	int i, ret;
@@ -500,19 +500,19 @@ int fimg2d_add_command(struct fimg2d_control *info, struct fimg2d_context *ctx,
 	}
 
 	/* add command node and increase ncmd */
-	g2d_spin_lock(&info->bltlock, flags);
-	if (atomic_read(&info->suspended)) {
-		fimg2d_debug("fimg2d suspended, do sw fallback\n");
-		g2d_spin_unlock(&info->bltlock, flags);
-		ret = -EFAULT;
+	g2d_spin_lock(&ctrl->bltlock, flags);
+	if (atomic_read(&ctrl->drvact) || atomic_read(&ctrl->suspended)) {
+		fimg2d_debug("driver is unavailable, do sw fallback\n");
+		g2d_spin_unlock(&ctrl->bltlock, flags);
+		ret = -EPERM;
 		goto err_user;
 	}
 	atomic_inc(&ctx->ncmd);
-	fimg2d_enqueue(&cmd->node, &info->cmd_q);
+	fimg2d_enqueue(&cmd->node, &ctrl->cmd_q);
 	fimg2d_debug("ctx %p pgd %p ncmd(%d) seq_no(%u)\n",
 			cmd->ctx, (unsigned long *)cmd->ctx->mm->pgd,
 			atomic_read(&ctx->ncmd), cmd->seq_no);
-	g2d_spin_unlock(&info->bltlock, flags);
+	g2d_spin_unlock(&ctrl->bltlock, flags);
 
 	return 0;
 
@@ -521,23 +521,23 @@ err_user:
 	return ret;
 }
 
-struct fimg2d_bltcmd *fimg2d_get_command(struct fimg2d_control *info)
+struct fimg2d_bltcmd *fimg2d_get_command(struct fimg2d_control *ctrl)
 {
 	unsigned long flags;
 	struct fimg2d_bltcmd *cmd;
 
-	g2d_spin_lock(&info->bltlock, flags);
-	cmd = fimg2d_get_first_command(info);
-	g2d_spin_unlock(&info->bltlock, flags);
+	g2d_spin_lock(&ctrl->bltlock, flags);
+	cmd = fimg2d_get_first_command(ctrl);
+	g2d_spin_unlock(&ctrl->bltlock, flags);
 	return cmd;
 }
 
-void fimg2d_del_command(struct fimg2d_control *info, struct fimg2d_bltcmd *cmd)
+void fimg2d_del_command(struct fimg2d_control *ctrl, struct fimg2d_bltcmd *cmd)
 {
 	unsigned long flags;
 	struct fimg2d_context *ctx = cmd->ctx;
 
-	g2d_spin_lock(&info->bltlock, flags);
+	g2d_spin_lock(&ctrl->bltlock, flags);
 	fimg2d_dequeue(&cmd->node);
 	kfree(cmd);
 	atomic_dec(&ctx->ncmd);
@@ -546,28 +546,28 @@ void fimg2d_del_command(struct fimg2d_control *info, struct fimg2d_bltcmd *cmd)
 	if (!atomic_read(&ctx->ncmd))
 		wake_up(&ctx->wait_q);
 #endif
-	g2d_spin_unlock(&info->bltlock, flags);
+	g2d_spin_unlock(&ctrl->bltlock, flags);
 }
 
-void fimg2d_add_context(struct fimg2d_control *info, struct fimg2d_context *ctx)
+void fimg2d_add_context(struct fimg2d_control *ctrl, struct fimg2d_context *ctx)
 {
 	unsigned long flags;
 
-	g2d_spin_lock(&info->bltlock, flags);
+	g2d_spin_lock(&ctrl->bltlock, flags);
 	atomic_set(&ctx->ncmd, 0);
 	init_waitqueue_head(&ctx->wait_q);
 
-	atomic_inc(&info->nctx);
-	fimg2d_debug("ctx %p nctx(%d)\n", ctx, atomic_read(&info->nctx));
-	g2d_spin_unlock(&info->bltlock, flags);
+	atomic_inc(&ctrl->nctx);
+	fimg2d_debug("ctx %p nctx(%d)\n", ctx, atomic_read(&ctrl->nctx));
+	g2d_spin_unlock(&ctrl->bltlock, flags);
 }
 
-void fimg2d_del_context(struct fimg2d_control *info, struct fimg2d_context *ctx)
+void fimg2d_del_context(struct fimg2d_control *ctrl, struct fimg2d_context *ctx)
 {
 	unsigned long flags;
 
-	g2d_spin_lock(&info->bltlock, flags);
-	atomic_dec(&info->nctx);
-	fimg2d_debug("ctx %p nctx(%d)\n", ctx, atomic_read(&info->nctx));
-	g2d_spin_unlock(&info->bltlock, flags);
+	g2d_spin_lock(&ctrl->bltlock, flags);
+	atomic_dec(&ctrl->nctx);
+	fimg2d_debug("ctx %p nctx(%d)\n", ctx, atomic_read(&ctrl->nctx));
+	g2d_spin_unlock(&ctrl->bltlock, flags);
 }

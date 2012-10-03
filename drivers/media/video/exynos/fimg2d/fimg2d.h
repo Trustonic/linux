@@ -1,4 +1,4 @@
-/* linux/drivers/media/video/samsung/fimg2d4x/fimg2d.h
+/* linux/drivers/media/video/exynos/fimg2d/fimg2d.h
  *
  * Copyright (c) 2011 Samsung Electronics Co., Ltd.
  *	http://www.samsung.com/
@@ -43,6 +43,12 @@
 #define FIMG2D_BITBLT_BLIT	_IOWR(FIMG2D_IOCTL_MAGIC, 0, struct fimg2d_blit)
 #define FIMG2D_BITBLT_SYNC	_IOW(FIMG2D_IOCTL_MAGIC, 1, int)
 #define FIMG2D_BITBLT_VERSION	_IOR(FIMG2D_IOCTL_MAGIC, 2, struct fimg2d_version)
+#define FIMG2D_BITBLT_ACTIVATE	_IOW(FIMG2D_IOCTL_MAGIC, 3, enum driver_act)
+
+enum driver_act {
+	DRV_ACT = 0,
+	DRV_DEACT
+};
 
 struct fimg2d_version {
 	unsigned int hw;
@@ -52,7 +58,6 @@ struct fimg2d_version {
 /**
  * @BLIT_SYNC: sync mode, to wait for blit done irq
  * @BLIT_ASYNC: async mode, not to wait for blit done irq
- *
  */
 enum blit_sync {
 	BLIT_SYNC,
@@ -156,15 +161,6 @@ enum scaling {
 	NO_SCALING,
 	SCALING_NEAREST,
 	SCALING_BILINEAR,
-};
-
-/**
- * @SCALING_PIXELS: ratio in pixels
- * @SCALING_RATIO: ratio in fixed point 16
- */
-enum scaling_factor {
-	SCALING_PIXELS,
-	SCALING_RATIO,
 };
 
 /**
@@ -483,32 +479,34 @@ struct fimg2d_bltcmd {
  * @workqueue: workqueue_struct for kfimg2dd
 */
 struct fimg2d_control {
-	atomic_t suspended;
-	atomic_t clkon;
 	struct clk *clock;
 	struct device *dev;
 	struct resource *mem;
 	void __iomem *regs;
 
-	int irq;
+	atomic_t drvact;
+	atomic_t suspended;
+	atomic_t clkon;
+
 	atomic_t nctx;
 	atomic_t busy;
 	spinlock_t bltlock;
 	struct mutex drvlock;
+	int irq;
 	wait_queue_head_t wait_q;
 	struct list_head cmd_q;
 	struct workqueue_struct *work_q;
 
-	int (*blit)(struct fimg2d_control *info);
-	int (*configure)(struct fimg2d_control *info,
+	int (*blit)(struct fimg2d_control *ctrl);
+	int (*configure)(struct fimg2d_control *ctrl,
 			struct fimg2d_bltcmd *cmd);
-	void (*run)(struct fimg2d_control *info);
-	void (*stop)(struct fimg2d_control *info);
-	void (*dump)(struct fimg2d_control *info);
-	void (*finalize)(struct fimg2d_control *info);
+	void (*run)(struct fimg2d_control *ctrl);
+	void (*stop)(struct fimg2d_control *ctrl);
+	void (*dump)(struct fimg2d_control *ctrl);
+	void (*finalize)(struct fimg2d_control *ctrl);
 };
 
-int fimg2d_register_ops(struct fimg2d_control *info);
+int fimg2d_register_ops(struct fimg2d_control *ctrl);
 int fimg2d_ip_version_is(void);
 
 #ifdef BLIT_WORKQUE

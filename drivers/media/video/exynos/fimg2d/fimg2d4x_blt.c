@@ -1,4 +1,4 @@
-/* linux/drivers/media/video/samsung/fimg2d4x/fimg2d4x_blt.c
+/* linux/drivers/media/video/exynos/fimg2d/fimg2d4x_blt.c
  *
  * Copyright (c) 2011 Samsung Electronics Co., Ltd.
  *	http://www.samsung.com/
@@ -31,34 +31,34 @@
 
 #define BLIT_TIMEOUT	msecs_to_jiffies(2000)
 
-static int fimg2d4x_blit_wait(struct fimg2d_control *info,
+static int fimg2d4x_blit_wait(struct fimg2d_control *ctrl,
 		struct fimg2d_bltcmd *cmd)
 {
 	int ret;
 
-	ret = wait_event_timeout(info->wait_q, !atomic_read(&info->busy),
+	ret = wait_event_timeout(ctrl->wait_q, !atomic_read(&ctrl->busy),
 			BLIT_TIMEOUT);
 	if (!ret) {
-		fimg2d4x_disable_irq(info);
+		fimg2d4x_disable_irq(ctrl);
 
-		if (!fimg2d4x_blit_done_status(info))
+		if (!fimg2d4x_blit_done_status(ctrl))
 			printk(KERN_ERR "[%s] blit not finished\n", __func__);
 
 		printk(KERN_ERR "[%s] blit wait timeout\n", __func__);
 		fimg2d_dump_command(cmd);
-		fimg2d4x_reset(info);
+		fimg2d4x_reset(ctrl);
 
 		return -1;
 	}
 	return 0;
 }
 
-static void fimg2d4x_pre_bitblt(struct fimg2d_control *info, struct fimg2d_bltcmd *cmd)
+static void fimg2d4x_pre_bitblt(struct fimg2d_control *ctrl, struct fimg2d_bltcmd *cmd)
 {
 	/* TODO */
 }
 
-int fimg2d4x_bitblt(struct fimg2d_control *info)
+int fimg2d4x_bitblt(struct fimg2d_control *ctrl)
 {
 	struct fimg2d_context *ctx;
 	struct fimg2d_bltcmd *cmd;
@@ -68,46 +68,46 @@ int fimg2d4x_bitblt(struct fimg2d_control *info)
 	fimg2d_debug("enter blitter\n");
 
 	while (1) {
-		cmd = fimg2d_get_command(info);
+		cmd = fimg2d_get_command(ctrl);
 		if (!cmd)
 			break;
 
 		ctx = cmd->ctx;
 
-		atomic_set(&info->busy, 1);
+		atomic_set(&ctrl->busy, 1);
 
-		ret = info->configure(info, cmd);
+		ret = ctrl->configure(ctrl, cmd);
 		if (ret) {
-			atomic_set(&info->busy, 0);
+			atomic_set(&ctrl->busy, 0);
 			goto blitend;
 		}
 
 		if (cmd->image[IDST].addr.type != ADDR_PHYS) {
 			pgd = (unsigned long *)ctx->mm->pgd;
-			exynos_sysmmu_enable(info->dev,
+			exynos_sysmmu_enable(ctrl->dev,
 					(unsigned long)virt_to_phys(pgd));
 			fimg2d_debug("sysmmu enable: pgd %p ctx %p seq_no(%u)\n",
 					pgd, ctx, cmd->seq_no);
 		}
 
-		fimg2d4x_pre_bitblt(info, cmd);
+		fimg2d4x_pre_bitblt(ctrl, cmd);
 
 #ifdef PERF_PROFILE
 		perf_start(cmd->ctx, PERF_BLIT);
 #endif
 		/* start blit */
-		info->run(info);
-		ret = fimg2d4x_blit_wait(info, cmd);
+		ctrl->run(ctrl);
+		ret = fimg2d4x_blit_wait(ctrl, cmd);
 
 #ifdef PERF_PROFILE
 		perf_end(cmd->ctx, PERF_BLIT);
 #endif
 		if (cmd->image[IDST].addr.type != ADDR_PHYS) {
-			exynos_sysmmu_disable(info->dev);
+			exynos_sysmmu_disable(ctrl->dev);
 			fimg2d_debug("sysmmu disable\n");
 		}
 
-		fimg2d_del_command(info, cmd);
+		fimg2d_del_command(ctrl, cmd);
 	}
 
 	fimg2d_debug("exit blitter\n");
@@ -201,7 +201,7 @@ static int fast_op(struct fimg2d_bltcmd *cmd)
 	return fop;
 }
 
-static int fimg2d4x_configure(struct fimg2d_control *info,
+static int fimg2d4x_configure(struct fimg2d_control *ctrl,
 				struct fimg2d_bltcmd *cmd)
 {
 	int op;
@@ -215,7 +215,7 @@ static int fimg2d4x_configure(struct fimg2d_control *info,
 	msk = &cmd->image[IMSK];
 	dst = &cmd->image[IDST];
 
-	fimg2d4x_init(info);
+	fimg2d4x_init(ctrl);
 
 	/* src and dst select */
 	srcsel = dstsel = IMG_MEMORY;
@@ -225,106 +225,106 @@ static int fimg2d4x_configure(struct fimg2d_control *info,
 	switch (op) {
 	case BLIT_OP_SOLID_FILL:
 		srcsel = dstsel = IMG_FGCOLOR;
-		fimg2d4x_set_fgcolor(info, p->solid_color);
+		fimg2d4x_set_fgcolor(ctrl, p->solid_color);
 		break;
 	case BLIT_OP_CLR:
 		srcsel = dstsel = IMG_FGCOLOR;
-		fimg2d4x_set_color_fill(info, 0);
+		fimg2d4x_set_color_fill(ctrl, 0);
 		break;
 	case BLIT_OP_DST:
 		return -1;	/* nop */
 	default:
 		if (!src->addr.type) {
 			srcsel = IMG_FGCOLOR;
-			fimg2d4x_set_fgcolor(info, p->solid_color);
+			fimg2d4x_set_fgcolor(ctrl, p->solid_color);
 		}
 
 		if (op == BLIT_OP_SRC)
 			dstsel = IMG_FGCOLOR;
 
-		fimg2d4x_enable_alpha(info, p->g_alpha);
-		fimg2d4x_set_alpha_composite(info, op, p->g_alpha);
+		fimg2d4x_enable_alpha(ctrl, p->g_alpha);
+		fimg2d4x_set_alpha_composite(ctrl, op, p->g_alpha);
 		if (p->premult == NON_PREMULTIPLIED)
-			fimg2d4x_set_premultiplied(info);
+			fimg2d4x_set_premultiplied(ctrl);
 		break;
 	}
 
-	fimg2d4x_set_src_type(info, srcsel);
-	fimg2d4x_set_dst_type(info, dstsel);
+	fimg2d4x_set_src_type(ctrl, srcsel);
+	fimg2d4x_set_dst_type(ctrl, dstsel);
 
 	/* src */
 	if (src->addr.type) {
-		fimg2d4x_set_src_image(info, src);
-		fimg2d4x_set_src_rect(info, &src->rect);
-		fimg2d4x_set_src_repeat(info, &p->repeat);
+		fimg2d4x_set_src_image(ctrl, src);
+		fimg2d4x_set_src_rect(ctrl, &src->rect);
+		fimg2d4x_set_src_repeat(ctrl, &p->repeat);
 		if (p->scaling.mode)
-			fimg2d4x_set_src_scaling(info, &p->scaling, &p->repeat);
+			fimg2d4x_set_src_scaling(ctrl, &p->scaling, &p->repeat);
 	}
 
 	/* msk */
 	if (msk->addr.type) {
-		fimg2d4x_enable_msk(info);
-		fimg2d4x_set_msk_image(info, msk);
-		fimg2d4x_set_msk_rect(info, &msk->rect);
-		fimg2d4x_set_msk_repeat(info, &p->repeat);
+		fimg2d4x_enable_msk(ctrl);
+		fimg2d4x_set_msk_image(ctrl, msk);
+		fimg2d4x_set_msk_rect(ctrl, &msk->rect);
+		fimg2d4x_set_msk_repeat(ctrl, &p->repeat);
 		if (p->scaling.mode)
-			fimg2d4x_set_msk_scaling(info, &p->scaling, &p->repeat);
+			fimg2d4x_set_msk_scaling(ctrl, &p->scaling, &p->repeat);
 	}
 
 	/* dst */
 	if (dst->addr.type) {
-		fimg2d4x_set_dst_image(info, dst);
-		fimg2d4x_set_dst_rect(info, &dst->rect);
+		fimg2d4x_set_dst_image(ctrl, dst);
+		fimg2d4x_set_dst_rect(ctrl, &dst->rect);
 		if (p->clipping.enable)
-			fimg2d4x_enable_clipping(info, &p->clipping);
+			fimg2d4x_enable_clipping(ctrl, &p->clipping);
 	}
 
 	/* bluescreen */
 	if (p->bluscr.mode)
-		fimg2d4x_set_bluescreen(info, &p->bluscr);
+		fimg2d4x_set_bluescreen(ctrl, &p->bluscr);
 
 	/* rotation */
 	if (p->rotate)
-		fimg2d4x_set_rotation(info, p->rotate);
+		fimg2d4x_set_rotation(ctrl, p->rotate);
 
 	/* dithering */
 	if (p->dither)
-		fimg2d4x_enable_dithering(info);
+		fimg2d4x_enable_dithering(ctrl);
 
 	return 0;
 }
 
-static void fimg2d4x_run(struct fimg2d_control *info)
+static void fimg2d4x_run(struct fimg2d_control *ctrl)
 {
 	fimg2d_debug("start blit\n");
-	fimg2d4x_enable_irq(info);
-	fimg2d4x_clear_irq(info);
-	fimg2d4x_start_blit(info);
+	fimg2d4x_enable_irq(ctrl);
+	fimg2d4x_clear_irq(ctrl);
+	fimg2d4x_start_blit(ctrl);
 }
 
-static void fimg2d4x_stop(struct fimg2d_control *info)
+static void fimg2d4x_stop(struct fimg2d_control *ctrl)
 {
-	if (fimg2d4x_is_blit_done(info)) {
+	if (fimg2d4x_is_blit_done(ctrl)) {
 		fimg2d_debug("blit done\n");
-		fimg2d4x_disable_irq(info);
-		fimg2d4x_clear_irq(info);
-		atomic_set(&info->busy, 0);
-		wake_up(&info->wait_q);
+		fimg2d4x_disable_irq(ctrl);
+		fimg2d4x_clear_irq(ctrl);
+		atomic_set(&ctrl->busy, 0);
+		wake_up(&ctrl->wait_q);
 	}
 }
 
-static void fimg2d4x_dump(struct fimg2d_control *info)
+static void fimg2d4x_dump(struct fimg2d_control *ctrl)
 {
-	fimg2d4x_dump_regs(info);
+	fimg2d4x_dump_regs(ctrl);
 }
 
-int fimg2d_register_ops(struct fimg2d_control *info)
+int fimg2d_register_ops(struct fimg2d_control *ctrl)
 {
-	info->blit = fimg2d4x_bitblt;
-	info->configure = fimg2d4x_configure;
-	info->run = fimg2d4x_run;
-	info->dump = fimg2d4x_dump;
-	info->stop = fimg2d4x_stop;
+	ctrl->blit = fimg2d4x_bitblt;
+	ctrl->configure = fimg2d4x_configure;
+	ctrl->run = fimg2d4x_run;
+	ctrl->dump = fimg2d4x_dump;
+	ctrl->stop = fimg2d4x_stop;
 
 	return 0;
 }
