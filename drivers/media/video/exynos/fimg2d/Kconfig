@@ -11,11 +11,3 @@ config VIDEO_EXYNOS_FIMG2D
 	default n
 	---help---
 	  This is a graphics 2D driver for Samsung ARM based SoC.
-
-config VIDEO_FIMG2D_DEBUG
-	bool "Enables FIMG2D debug messages"
-	depends on VIDEO_EXYNOS_FIMG2D
-	default n
-	---help---
-	  This enables FIMG2D driver debug messages.
-

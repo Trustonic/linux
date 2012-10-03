@@ -30,10 +30,41 @@
 #define ip_is_g2d_5g()		(fimg2d_ip_version_is() == IP_VER_G2D_5G)
 #define ip_is_g2d_4p()		(fimg2d_ip_version_is() == IP_VER_G2D_4P)
 
-#ifdef CONFIG_VIDEO_FIMG2D_DEBUG
-#define fimg2d_debug(fmt, arg...)	printk(KERN_INFO "[%s] " fmt, __func__, ## arg)
+#ifdef DEBUG
+/*
+ * g2d_debug value:
+ *	0: no print
+ *	1: err
+ *	2: info
+ *	3: perf
+ *	4: oneline (simple)
+ *	5: debug
+ */
+extern int g2d_debug;
+
+enum debug_level {
+	DBG_NO,
+	DBG_ERR,
+	DBG_INFO,
+	DBG_PERF,
+	DBG_ONELINE,
+	DBG_DEBUG,
+};
+
+#define g2d_print(level, fmt, args...)				\
+	do {							\
+		if (g2d_debug >= level)				\
+			pr_info("[%s] " fmt, __func__, ##args);	\
+	} while (0)
+
+#define fimg2d_err(fmt, args...)	g2d_print(DBG_ERR, fmt, ##args)
+#define fimg2d_info(fmt, args...)	g2d_print(DBG_INFO, fmt, ##args)
+#define fimg2d_debug(fmt, args...)	g2d_print(DBG_DEBUG, fmt, ##args)
 #else
-#define fimg2d_debug(fmt, arg...)	do { } while (0)
+#define g2d_print(level, fmt, args...)
+#define fimg2d_err(fmt, args...)
+#define fimg2d_info(fmt, args...)
+#define fimg2d_debug(fmt, arg...)
 #endif
 
 #endif /* __KERNEL__ */
@@ -395,31 +426,19 @@ struct fimg2d_blit {
 
 #ifdef __KERNEL__
 
-/**
- * Enables definition to estimate performance.
- * These debug codes includes printk, so perf
- * data are unreliable under multi instance environment
- */
-#undef PERF_PROFILE
-#define PERF_TIMEVAL
-
 enum perf_desc {
-	PERF_INNERCACHE,
-	PERF_OUTERCACHE,
+	PERF_CACHE = 0,
+	PERF_SFR,
 	PERF_BLIT,
+	PERF_TOTAL,
 	PERF_END
 };
 #define MAX_PERF_DESCS		PERF_END
 
 struct fimg2d_perf {
-	int valid;
-#ifdef PERF_TIMEVAL
+	unsigned int seq_no;
 	struct timeval start;
 	struct timeval end;
-#else
-	unsigned long long start;
-	unsigned long long end;
-#endif
 };
 
 /**

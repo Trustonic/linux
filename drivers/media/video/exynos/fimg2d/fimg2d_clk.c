@@ -10,6 +10,7 @@
  * published by the Free Software Foundation.
 */
 
+#include <linux/err.h>
 #include <linux/clk.h>
 #include <linux/atomic.h>
 #include <linux/sched.h>
@@ -51,14 +52,14 @@ void fimg2d_clk_dump(struct fimg2d_control *ctrl)
 		sclk = clk_get(ctrl->dev, pdata->clkname);
 		pclk = clk_get(NULL, "pclk_acp");
 
-		printk(KERN_INFO "%s(%lu) pclk_acp(%lu)\n",
+		fimg2d_info("%s(%lu) pclk_acp(%lu)\n",
 				pdata->clkname,
 				clk_get_rate(sclk), clk_get_rate(pclk));
 	} else {
 		aclk = clk_get(NULL, "aclk_acp");
 		pclk = clk_get(NULL, "pclk_acp");
 
-		printk(KERN_INFO "aclk_acp(%lu) pclk_acp(%lu)\n",
+		fimg2d_info("aclk_acp(%lu) pclk_acp(%lu)\n",
 				clk_get_rate(sclk), clk_get_rate(pclk));
 	}
 }
@@ -76,25 +77,25 @@ int fimg2d_clk_setup(struct fimg2d_control *ctrl)
 		/* clock for setting parent and rate */
 		parent = clk_get(ctrl->dev, pdata->parent_clkname);
 		if (IS_ERR(parent)) {
-			printk(KERN_ERR "FIMG2D failed to get parent clk\n");
+			fimg2d_err("failed to get parent clk\n");
 			ret = -ENOENT;
 			goto err_clk1;
 		}
-		fimg2d_debug("parent clk: %s\n", pdata->parent_clkname);
+		fimg2d_info("parent clk: %s\n", pdata->parent_clkname);
 
 		sclk = clk_get(ctrl->dev, pdata->clkname);
 		if (IS_ERR(sclk)) {
-			printk(KERN_ERR "FIMG2D failed to get sclk\n");
+			fimg2d_err("failed to get sclk\n");
 			ret = -ENOENT;
 			goto err_clk2;
 		}
-		fimg2d_debug("sclk: %s\n", pdata->clkname);
+		fimg2d_info("sclk: %s\n", pdata->clkname);
 
 		if (clk_set_parent(sclk, parent))
-			printk(KERN_ERR "FIMG2D failed to set parent\n");
+			fimg2d_err("failed to set parent\n");
 
 		clk_set_rate(sclk, pdata->clkrate);
-		fimg2d_debug("clkrate: %ld parent clkrate: %ld\n",
+		fimg2d_info("clkrate: %ld parent clkrate: %ld\n",
 				clk_get_rate(sclk), clk_get_rate(parent));
 	} else {
 		fimg2d_debug("aclk_acp(%lu) pclk_acp(%lu)\n",
@@ -105,11 +106,11 @@ int fimg2d_clk_setup(struct fimg2d_control *ctrl)
 	/* clock for gating */
 	ctrl->clock = clk_get(ctrl->dev, pdata->gate_clkname);
 	if (IS_ERR(ctrl->clock)) {
-		printk(KERN_ERR "FIMG2D failed to get gate clk\n");
+		fimg2d_err("failed to get gate clk\n");
 		ret = -ENOENT;
 		goto err_clk3;
 	}
-	fimg2d_debug("gate clk: %s\n", pdata->gate_clkname);
+	fimg2d_info("gate clk: %s\n", pdata->gate_clkname);
 	return ret;
 
 err_clk3:

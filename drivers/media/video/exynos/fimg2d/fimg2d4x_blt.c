@@ -42,9 +42,8 @@ static int fimg2d4x_blit_wait(struct fimg2d_control *ctrl,
 		fimg2d4x_disable_irq(ctrl);
 
 		if (!fimg2d4x_blit_done_status(ctrl))
-			printk(KERN_ERR "[%s] blit not finished\n", __func__);
+			fimg2d_err("blit not finished\n");
 
-		printk(KERN_ERR "[%s] blit wait timeout\n", __func__);
 		fimg2d_dump_command(cmd);
 		fimg2d4x_reset(ctrl);
 
@@ -76,7 +75,9 @@ int fimg2d4x_bitblt(struct fimg2d_control *ctrl)
 
 		atomic_set(&ctrl->busy, 1);
 
+		perf_start(cmd, PERF_SFR);
 		ret = ctrl->configure(ctrl, cmd);
+		perf_end(cmd, PERF_SFR);
 		if (ret) {
 			atomic_set(&ctrl->busy, 0);
 			goto blitend;
@@ -92,16 +93,12 @@ int fimg2d4x_bitblt(struct fimg2d_control *ctrl)
 
 		fimg2d4x_pre_bitblt(ctrl, cmd);
 
-#ifdef PERF_PROFILE
-		perf_start(cmd->ctx, PERF_BLIT);
-#endif
+		perf_start(cmd, PERF_BLIT);
 		/* start blit */
 		ctrl->run(ctrl);
 		ret = fimg2d4x_blit_wait(ctrl, cmd);
+		perf_end(cmd, PERF_BLIT);
 
-#ifdef PERF_PROFILE
-		perf_end(cmd->ctx, PERF_BLIT);
-#endif
 		if (cmd->image[IDST].addr.type != ADDR_PHYS) {
 			exynos_sysmmu_disable(ctrl->dev);
 			fimg2d_debug("sysmmu disable\n");

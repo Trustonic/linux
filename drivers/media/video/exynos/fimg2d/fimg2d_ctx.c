@@ -424,29 +424,19 @@ static int fimg2d_check_dma_sync(struct fimg2d_bltcmd *cmd)
 		}
 	}
 
-#ifdef PERF_PROFILE
-	perf_start(cmd->ctx, PERF_INNERCACHE);
-#endif
+	perf_start(cmd, PERF_CACHE);
 	if (is_inner_flushall(cmd->dma_all))
 		flush_all_cpu_caches();
 	else
 		inner_flush_clip_range(cmd);
-#ifdef PERF_PROFILE
-	perf_end(cmd->ctx, PERF_INNERCACHE);
-#endif
 
 #ifdef CONFIG_OUTER_CACHE
-#ifdef PERF_PROFILE
-	perf_start(cmd->ctx, PERF_OUTERCACHE);
-#endif
 	if (is_outer_flushall(cmd->dma_all))
 		outer_flush_all();
 	else
 		outer_flush_clip_range(cmd);
-#ifdef PERF_PROFILE
-	perf_end(cmd->ctx, PERF_OUTERCACHE);
 #endif
-#endif
+	perf_end(cmd, PERF_CACHE);
 	return 0;
 
 err_pgtable:
@@ -481,13 +471,11 @@ int fimg2d_add_command(struct fimg2d_control *ctrl, struct fimg2d_context *ctx,
 		}
 	}
 
-#ifdef CONFIG_VIDEO_FIMG2D_DEBUG
 	fimg2d_dump_command(cmd);
-#endif
+
+	perf_start(cmd, PERF_TOTAL);
 
 	if (fimg2d_check_params(cmd)) {
-		printk(KERN_ERR "[%s] invalid params\n", __func__);
-		fimg2d_dump_command(cmd);
 		ret = -EINVAL;
 		goto err_user;
 	}
@@ -537,6 +525,8 @@ void fimg2d_del_command(struct fimg2d_control *ctrl, struct fimg2d_bltcmd *cmd)
 	unsigned long flags;
 	struct fimg2d_context *ctx = cmd->ctx;
 
+	perf_end(cmd, PERF_TOTAL);
+	perf_print(cmd);
 	g2d_spin_lock(&ctrl->bltlock, flags);
 	fimg2d_dequeue(&cmd->node);
 	kfree(cmd);
