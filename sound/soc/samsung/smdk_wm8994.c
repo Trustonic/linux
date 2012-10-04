@@ -11,6 +11,8 @@
 #include <sound/pcm_params.h>
 #include <linux/module.h>
 
+#include "i2s.h"
+#include "i2s-regs.h"
  /*
   * Default CFG switch settings to use this driver:
   *	SMDKV310: CFG5-1000, CFG7-111111
@@ -72,6 +74,11 @@ static int smdk_hw_params(struct snd_pcm_substream *substream,
 
 	ret = snd_soc_dai_set_sysclk(codec_dai, WM8994_SYSCLK_FLL1,
 					pll_out, SND_SOC_CLOCK_IN);
+	if (ret < 0)
+		return ret;
+
+	ret = snd_soc_dai_set_sysclk(cpu_dai, SAMSUNG_I2S_OPCLK,
+					0, MOD_OPCLK_PCLK);
 	if (ret < 0)
 		return ret;
 
