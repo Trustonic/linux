@@ -456,7 +456,7 @@ static void __init exynos5_map_io(void)
 	s5p_hdmi_setname("exynos5-hdmi");
 
 #ifdef CONFIG_S5P_DEV_ACE
-	s5p_ace_setname("exynos4-ace");
+	s5p_ace_setname("exynos-ace");
 #endif
 }
 
