@@ -731,7 +731,8 @@ int exynos_drd_switch_init(struct exynos_drd *drd)
 
 	dev_dbg(drd->dev, "%s\n", __func__);
 
-	drd_switch = kzalloc(sizeof(struct exynos_drd_switch), GFP_KERNEL);
+	drd_switch = devm_kzalloc(drd->dev, sizeof(struct exynos_drd_switch),
+				  GFP_KERNEL);
 	if (!drd_switch) {
 		dev_err(drd->dev, "not enough memory for DRD switch\n");
 		return -ENOMEM;
@@ -765,11 +766,11 @@ int exynos_drd_switch_init(struct exynos_drd *drd)
 	/* Save for using by host and peripheral */
 	drd->core.otg = &drd_switch->otg;
 
-	drd_switch->otg.phy = kzalloc(sizeof(struct usb_phy), GFP_KERNEL);
+	drd_switch->otg.phy = devm_kzalloc(drd->dev, sizeof(struct usb_phy),
+					   GFP_KERNEL);
 	if (!drd_switch->otg.phy) {
 		dev_err(drd->dev, "cannot allocate OTG phy\n");
-		ret = -ENOMEM;
-		goto err1;
+		return -ENOMEM;
 	}
 
 	drd_switch->otg.phy->otg = &drd_switch->otg;
@@ -795,47 +796,37 @@ int exynos_drd_switch_init(struct exynos_drd *drd)
 	mutex_init(&drd_switch->mutex);
 
 	if (drd_switch->id_irq >= 0) {
-		ret = request_irq(drd_switch->id_irq,
+		ret = devm_request_irq(drd->dev, drd_switch->id_irq,
 				  exynos_drd_switch_id_interrupt, irq_flags,
 				  "drd_switch_id", drd_switch);
 		if (ret) {
 			dev_err(drd->dev, "cannot claim ID irq\n");
-			goto err2;
+			goto err_irq;
 		}
 	}
 
 	if (drd_switch->vbus_irq >= 0) {
-		ret = request_irq(drd_switch->vbus_irq,
+		ret = devm_request_irq(drd->dev, drd_switch->vbus_irq,
 				  exynos_drd_switch_vbus_interrupt, irq_flags,
 				  "drd_switch_vbus", drd_switch);
 		if (ret) {
 			dev_err(drd->dev, "cannot claim VBUS irq\n");
-			goto err3;
+			goto err_irq;
 		}
 	}
 
 	ret = sysfs_create_group(&drd->dev->kobj, &exynos_drd_switch_attr_group);
 	if (ret) {
 		dev_err(drd->dev, "cannot create switch attributes\n");
-		goto err4;
+		goto err_irq;
 	}
 
 	dev_info(drd->dev, "DRD switch initialization finished normally\n");
 
 	return 0;
 
-err4:
-	if (drd_switch->vbus_irq >= 0)
-		free_irq(drd_switch->vbus_irq, drd_switch);
-err3:
-	if (drd_switch->id_irq >= 0)
-		free_irq(drd_switch->id_irq, drd_switch);
-err2:
+err_irq:
 	cancel_work_sync(&drd_switch->work);
-	kfree(drd_switch->otg.phy);
-err1:
-	drd->core.otg = NULL;
-	kfree(drd_switch);
 
 	return ret;
 }
@@ -859,12 +850,5 @@ void exynos_drd_switch_exit(struct exynos_drd *drd)
 		sysfs_remove_group(&drd->dev->kobj,
 			&exynos_drd_switch_attr_group);
 		cancel_work_sync(&drd_switch->work);
-		if (drd_switch->id_irq >= 0)
-			free_irq(drd_switch->id_irq, drd_switch);
-		if (drd_switch->vbus_irq >= 0)
-			free_irq(drd_switch->vbus_irq, drd_switch);
-		kfree(drd_switch->otg.phy);
-		kfree(drd_switch);
-		drd->core.otg = NULL;
 	}
 }
