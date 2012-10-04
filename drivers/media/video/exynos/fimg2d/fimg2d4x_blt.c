@@ -59,10 +59,11 @@ static void fimg2d4x_pre_bitblt(struct fimg2d_control *ctrl, struct fimg2d_bltcm
 
 int fimg2d4x_bitblt(struct fimg2d_control *ctrl)
 {
+	int ret = 0;
+	enum addr_space addr_type;
 	struct fimg2d_context *ctx;
 	struct fimg2d_bltcmd *cmd;
 	unsigned long *pgd;
-	int ret;
 
 	fimg2d_debug("enter blitter\n");
 
@@ -76,19 +77,17 @@ int fimg2d4x_bitblt(struct fimg2d_control *ctrl)
 		atomic_set(&ctrl->busy, 1);
 
 		perf_start(cmd, PERF_SFR);
-		ret = ctrl->configure(ctrl, cmd);
+		ctrl->configure(ctrl, cmd);
 		perf_end(cmd, PERF_SFR);
-		if (ret) {
-			atomic_set(&ctrl->busy, 0);
-			goto blitend;
-		}
 
-		if (cmd->image[IDST].addr.type != ADDR_PHYS) {
+		addr_type = cmd->image[IDST].addr.type;
+
+		if (addr_type == ADDR_USER || addr_type == ADDR_USER_CONTIG) {
 			pgd = (unsigned long *)ctx->mm->pgd;
 			exynos_sysmmu_enable(ctrl->dev,
 					(unsigned long)virt_to_phys(pgd));
 			fimg2d_debug("sysmmu enable: pgd %p ctx %p seq_no(%u)\n",
-					pgd, ctx, cmd->seq_no);
+					pgd, ctx, cmd->blt.seq_no);
 		}
 
 		fimg2d4x_pre_bitblt(ctrl, cmd);
@@ -99,7 +98,7 @@ int fimg2d4x_bitblt(struct fimg2d_control *ctrl)
 		ret = fimg2d4x_blit_wait(ctrl, cmd);
 		perf_end(cmd, PERF_BLIT);
 
-		if (cmd->image[IDST].addr.type != ADDR_PHYS) {
+		if (addr_type == ADDR_USER || addr_type == ADDR_USER_CONTIG) {
 			exynos_sysmmu_disable(ctrl->dev);
 			fimg2d_debug("sysmmu disable\n");
 		}
@@ -112,29 +111,32 @@ int fimg2d4x_bitblt(struct fimg2d_control *ctrl)
 	return ret;
 }
 
-static inline int is_opaque(enum color_format fmt)
+static inline bool is_opaque(enum color_format fmt)
 {
 	switch (fmt) {
 	case CF_ARGB_8888:
 	case CF_ARGB_1555:
 	case CF_ARGB_4444:
-		return 0;
+		return false;
 
 	default:
-		return 1;
+		return true;
 	}
 }
 
 static int fast_op(struct fimg2d_bltcmd *cmd)
 {
+	int fop;
 	int sa, da, ga;
-	int fop = cmd->op;
+	struct fimg2d_param *p;
 	struct fimg2d_image *src, *msk, *dst;
-	struct fimg2d_param *p = &cmd->param;
 
+	p = &cmd->blt.param;
 	src = &cmd->image[ISRC];
 	msk = &cmd->image[IMSK];
 	dst = &cmd->image[IDST];
+
+	fop = cmd->blt.op;
 
 	if (msk->addr.type)
 		return fop;
@@ -147,7 +149,7 @@ static int fast_op(struct fimg2d_bltcmd *cmd)
 	else
 		sa = is_opaque(src->fmt) ? 0xff : 0;
 
-	switch (cmd->op) {
+	switch (cmd->blt.op) {
 	case BLIT_OP_SRC_OVER:
 		/* Sc + (1-Sa)*Dc = Sc */
 		if (sa == 0xff && ga == 0xff)
@@ -199,15 +201,16 @@ static int fast_op(struct fimg2d_bltcmd *cmd)
 }
 
 static int fimg2d4x_configure(struct fimg2d_control *ctrl,
-				struct fimg2d_bltcmd *cmd)
+		struct fimg2d_bltcmd *cmd)
 {
 	int op;
 	enum image_sel srcsel, dstsel;
-	struct fimg2d_param *p = &cmd->param;
+	struct fimg2d_param *p;
 	struct fimg2d_image *src, *msk, *dst;
 
-	fimg2d_debug("ctx %p seq_no(%u)\n", cmd->ctx, cmd->seq_no);
+	fimg2d_debug("ctx %p seq_no(%u)\n", cmd->ctx, cmd->blt.seq_no);
 
+	p = &cmd->blt.param;
 	src = &cmd->image[ISRC];
 	msk = &cmd->image[IMSK];
 	dst = &cmd->image[IDST];
@@ -229,7 +232,8 @@ static int fimg2d4x_configure(struct fimg2d_control *ctrl,
 		fimg2d4x_set_color_fill(ctrl, 0);
 		break;
 	case BLIT_OP_DST:
-		return -1;	/* nop */
+		srcsel = dstsel = IMG_FGCOLOR;
+		break;
 	default:
 		if (!src->addr.type) {
 			srcsel = IMG_FGCOLOR;

@@ -42,6 +42,6 @@ void fimg2d_add_context(struct fimg2d_control *ctrl,
 void fimg2d_del_context(struct fimg2d_control *ctrl,
 		struct fimg2d_context *ctx);
 int fimg2d_add_command(struct fimg2d_control *ctrl,
-		struct fimg2d_context *ctx, struct fimg2d_blit *blit);
+		struct fimg2d_context *ctx, struct fimg2d_blit __user *buf);
 void fimg2d_del_command(struct fimg2d_control *ctrl, struct fimg2d_bltcmd *cmd);
 struct fimg2d_bltcmd *fimg2d_get_command(struct fimg2d_control *ctrl);

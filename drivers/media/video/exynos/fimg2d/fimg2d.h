@@ -288,13 +288,6 @@ enum image_object {
 #define IMSK			IMAGE_MSK
 #define ITMP			IMAGE_TMP
 #define IDST			IMAGE_DST
-#define image_table(u)		\
-	{			\
-		(u)->src,	\
-		(u)->msk,	\
-		(u)->tmp,	\
-		(u)->dst	\
-	}
 
 /**
  * @size: dma size of image
@@ -471,12 +464,9 @@ struct fimg2d_context {
  * @node: list head of blit command queue
  */
 struct fimg2d_bltcmd {
-	enum blit_op op;
-	enum blit_sync sync;
-	unsigned int seq_no;
-	size_t dma_all;
-	struct fimg2d_param param;
+	struct fimg2d_blit blt;
 	struct fimg2d_image image[MAX_IMAGES];
+	size_t dma_all;
 	struct fimg2d_dma_group dma[MAX_IMAGES];
 	struct fimg2d_context *ctx;
 	struct list_head node;

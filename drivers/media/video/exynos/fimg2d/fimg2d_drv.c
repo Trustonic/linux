@@ -39,8 +39,8 @@
 #include "fimg2d_helper.h"
 
 #define POLL_TIMEOUT	2
-#define POLL_RETRY	2500
-#define CTX_TIMEOUT	msecs_to_jiffies(POLL_RETRY*POLL_TIMEOUT)
+#define POLL_RETRY	1000
+#define CTX_TIMEOUT	msecs_to_jiffies(2000)
 
 #ifdef DEBUG
 int g2d_debug = DBG_INFO;
@@ -101,11 +101,9 @@ static int fimg2d_sysmmu_fault_handler(struct device *dev,
 				itype, pgtable_base, fault_addr);
 	}
 
-	cmd = fimg2d_get_first_command(ctrl);
-	if (!cmd) {
-		printk(KERN_ERR "[%s] null command\n", __func__);
+	cmd = fimg2d_get_command(ctrl);
+	if (WARN_ON(!cmd))
 		goto next;
-	}
 
 	if (cmd->ctx->mm->pgd != phys_to_virt(pgtable_base)) {
 		fimg2d_err("pgtable base invalid\n");
@@ -206,21 +204,11 @@ static long fimg2d_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	int ret = 0;
 	struct fimg2d_context *ctx;
-	struct fimg2d_platdata *pdata;
-	struct fimg2d_blit blit;
-	struct fimg2d_version ver;
 
 	ctx = file->private_data;
-	if (!ctx) {
-		printk(KERN_ERR "[%s] missing ctx\n", __func__);
-		return -EFAULT;
-	}
 
 	switch (cmd) {
 	case FIMG2D_BITBLT_BLIT:
-		if (copy_from_user(&blit, (void *)arg, sizeof(blit)))
-			return -EFAULT;
-
 		g2d_lock(&ctrl->drvlock);
 
 		if (atomic_read(&ctrl->drvact) || atomic_read(&ctrl->suspended)) {
@@ -229,10 +217,10 @@ static long fimg2d_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			return -EPERM;
 		}
 
-		ret = fimg2d_add_command(ctrl, ctx, &blit);
+		ret = fimg2d_add_command(ctrl, ctx, (struct fimg2d_blit __user *)arg);
 		if (ret) {
 			g2d_unlock(&ctrl->drvlock);
-			break;
+			return ret;
 		}
 
 		ret = fimg2d_request_bitblt(ctrl, ctx);
@@ -244,12 +232,11 @@ static long fimg2d_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		g2d_unlock(&ctrl->drvlock);
 		break;
 
-	case FIMG2D_BITBLT_SYNC:
-		fimg2d_debug("FIMG2D_BITBLT_SYNC ctx: %p\n", ctx);
-		fimg2d_context_wait(ctx);
-		break;
-
 	case FIMG2D_BITBLT_VERSION:
+	{
+		struct fimg2d_version ver;
+		struct fimg2d_platdata *pdata;
+
 		pdata = to_fimg2d_plat(ctrl->dev);
 		ver.hw = pdata->hw_ver;
 		ver.sw = 0;
@@ -258,7 +245,7 @@ static long fimg2d_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		if (copy_to_user((void *)arg, &ver, sizeof(ver)))
 			return -EFAULT;
 		break;
-
+	}
 	case FIMG2D_BITBLT_ACTIVATE:
 	{
 		enum driver_act act;
@@ -327,30 +314,26 @@ static int fimg2d_setup_controller(struct fimg2d_control *ctrl)
 
 static int fimg2d_probe(struct platform_device *pdev)
 {
+	int ret = 0;
 	struct resource *res;
-	struct fimg2d_platdata *pdata;
-	int ret;
 
-	pdata = to_fimg2d_plat(&pdev->dev);
-	if (!pdata) {
+	if (!to_fimg2d_plat(&pdev->dev)) {
 		fimg2d_err("failed to get platform data\n");
-		ret = -ENOMEM;
-		goto err_plat;
+		return -ENOMEM;
 	}
 
 	/* global structure */
 	ctrl = kzalloc(sizeof(*ctrl), GFP_KERNEL);
 	if (!ctrl) {
 		fimg2d_err("failed to allocate memory for controller\n");
-		ret = -ENOMEM;
-		goto err_plat;
+		return -ENOMEM;
 	}
 
 	/* setup global ctrl */
 	ret = fimg2d_setup_controller(ctrl);
 	if (ret) {
 		fimg2d_err("failed to setup controller\n");
-		goto free_drvdata;
+		goto drv_free;
 	}
 	ctrl->dev = &pdev->dev;
 
@@ -359,7 +342,7 @@ static int fimg2d_probe(struct platform_device *pdev)
 	if (!res) {
 		fimg2d_err("failed to get resource\n");
 		ret = -ENOENT;
-		goto err_res;
+		goto drv_free;
 	}
 
 	ctrl->mem = request_mem_region(res->start, resource_size(res),
@@ -367,7 +350,7 @@ static int fimg2d_probe(struct platform_device *pdev)
 	if (!ctrl->mem) {
 		fimg2d_err("failed to request memory region\n");
 		ret = -ENOMEM;
-		goto err_region;
+		goto res_free;
 	}
 
 	/* ioremap */
@@ -375,7 +358,7 @@ static int fimg2d_probe(struct platform_device *pdev)
 	if (!ctrl->regs) {
 		fimg2d_err("failed to ioremap for SFR\n");
 		ret = -ENOENT;
-		goto err_map;
+		goto mem_free;
 	}
 	fimg2d_info("base address: 0x%lx\n", (unsigned long)res->start);
 
@@ -384,22 +367,23 @@ static int fimg2d_probe(struct platform_device *pdev)
 	if (!ctrl->irq) {
 		fimg2d_err("failed to get irq resource\n");
 		ret = -ENOENT;
-		goto err_map;
+		goto reg_unmap;
 	}
 	fimg2d_info("irq: %d\n", ctrl->irq);
 
-	ret = request_irq(ctrl->irq, fimg2d_irq, IRQF_DISABLED, pdev->name, ctrl);
+	ret = request_irq(ctrl->irq, fimg2d_irq, IRQF_DISABLED,
+			pdev->name, ctrl);
 	if (ret) {
 		fimg2d_err("failed to request irq\n");
 		ret = -ENOENT;
-		goto err_irq;
+		goto reg_unmap;
 	}
 
 	ret = fimg2d_clk_setup(ctrl);
 	if (ret) {
 		fimg2d_err("failed to setup clk\n");
 		ret = -ENOENT;
-		goto err_clk;
+		goto irq_free;
 	}
 
 #ifdef CONFIG_PM_RUNTIME
@@ -416,13 +400,12 @@ static int fimg2d_probe(struct platform_device *pdev)
 	ret = misc_register(&fimg2d_dev);
 	if (ret) {
 		fimg2d_err("failed to register misc driver\n");
-		goto free_clk;
+		goto clk_release;
 	}
 
-	printk(KERN_INFO "Samsung Graphics 2D driver, (c) 2011 Samsung Electronics\n");
 	return 0;
 
-err_reg:
+clk_release:
 #ifdef CONFIG_PM_RUNTIME
 	pm_runtime_disable(ctrl->dev);
 #else
@@ -430,33 +413,28 @@ err_reg:
 #endif
 	fimg2d_clk_release(ctrl);
 
-err_clk:
+irq_free:
 	free_irq(ctrl->irq, NULL);
-
-err_irq:
+reg_unmap:
 	iounmap(ctrl->regs);
-
-err_map:
+mem_free:
 	kfree(ctrl->mem);
-
-err_region:
+res_free:
 	release_resource(ctrl->mem);
-
-err_res:
+drv_free:
 #ifdef BLIT_WORKQUE
 	destroy_workqueue(ctrl->work_q);
 #endif
-
-err_setup:
 	mutex_destroy(&ctrl->drvlock);
 	kfree(ctrl);
 
-err_plat:
 	return ret;
 }
 
 static int fimg2d_remove(struct platform_device *pdev)
 {
+	misc_deregister(&fimg2d_dev);
+
 #ifdef CONFIG_PM_RUNTIME
 	pm_runtime_disable(&pdev->dev);
 #else
@@ -471,8 +449,10 @@ static int fimg2d_remove(struct platform_device *pdev)
 		kfree(ctrl->mem);
 	}
 
+#ifdef BLIT_WORKQUE
 	destroy_workqueue(ctrl->work_q);
-	misc_deregister(&fimg2d_dev);
+#endif
+	mutex_destroy(&ctrl->drvlock);
 	kfree(ctrl);
 	return 0;
 }
@@ -542,8 +522,12 @@ static struct platform_driver fimg2d_driver = {
 	},
 };
 
+static char banner[] __initdata =
+	"Exynos Graphics 2D driver, (c) 2011 Samsung Electronics\n";
+
 static int __init fimg2d_register(void)
 {
+	pr_info("%s", banner);
 	return platform_driver_register(&fimg2d_driver);
 }
 

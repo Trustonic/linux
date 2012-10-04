@@ -141,7 +141,7 @@ static char *perfname(enum perf_desc id)
 void fimg2d_debug_command(struct fimg2d_bltcmd *cmd)
 {
 	int i;
-	struct fimg2d_param *p = &cmd->param;
+	struct fimg2d_param *p = &cmd->blt.param;
 	struct fimg2d_image *img;
 	struct fimg2d_rect *r;
 	struct fimg2d_dma *c;
@@ -149,8 +149,8 @@ void fimg2d_debug_command(struct fimg2d_bltcmd *cmd)
 	if (WARN_ON(!cmd->ctx))
 		return;
 
-	pr_info("\n[%s] ctx: %p seq_no(%u)\n", __func__, cmd->ctx, cmd->seq_no);
-	pr_info(" op: %s(%d)\n", opname(cmd->op), cmd->op);
+	pr_info("\n[%s] ctx: %p seq_no(%u)\n", __func__, cmd->ctx, cmd->blt.seq_no);
+	pr_info(" op: %s(%d)\n", opname(cmd->blt.op), cmd->blt.op);
 	pr_info(" solid color: 0x%lx\n", p->solid_color);
 	pr_info(" g_alpha: 0x%x\n", p->g_alpha);
 	pr_info(" premultiplied: %d\n", p->premult);
@@ -190,10 +190,12 @@ void fimg2d_debug_command(struct fimg2d_bltcmd *cmd)
 
 		pr_info(" %s type: %d addr: 0x%lx\n",
 				imagename(i), img->addr.type, img->addr.start);
-		pr_info(" %s width: %d height: %d "
-				"stride: %d order: %d format: %d\n",
+
+		pr_info(" %s width: %d height: %d " \
+				"stride: %d order: %d format: %s(%d)\n",
 				imagename(i), img->width, img->height,
-				img->stride, img->order, img->fmt);
+				img->stride, img->order,
+				cfname(img->fmt), img->fmt);
 		pr_info(" %s rect LT(%d,%d) RB(%d,%d) WH(%d,%d)\n",
 				imagename(i), r->x1, r->y1, r->x2, r->y2,
 				rect_w(r), rect_h(r));
@@ -207,7 +209,7 @@ void fimg2d_debug_command(struct fimg2d_bltcmd *cmd)
 		}
 
 		if (img->plane2.type) {
-			pr_info(" %s plane2 type: %d plane2: 0x%lx\n",
+			pr_info(" %s plane2 type: %d addr: 0x%lx\n",
 					imagename(i), img->plane2.type,
 					img->plane2.start);
 		}
@@ -229,19 +231,24 @@ void fimg2d_debug_command(struct fimg2d_bltcmd *cmd)
 
 void fimg2d_debug_command_simple(struct fimg2d_bltcmd *cmd)
 {
+	struct fimg2d_blit *blt = &cmd->blt;
 	struct fimg2d_image *src;
 	struct fimg2d_image *dst;
 	struct fimg2d_clip *clp;
 
-	src = cmd->image[ISRC];
-	dst = cmd->image[IDST];
-	clp = &cmd->param.clipping;
+	src = blt->src;
+	dst = blt->dst;
+	clp = &blt->param.clipping;
 
-	if (src && dst && clp->enable) {
-		pr_info("\n[%s] src fs(%d,%d) rect(%d,%d,%d,%d)" \
+	if (!src) {
+		pr_info("\n dst fs(%d,%d) rect(%d,%d,%d,%d)\n",
+				dst->width, dst->height,
+				dst->rect.x1, dst->rect.y1,
+				dst->rect.x2, dst->rect.y2);
+	} else if (clp->enable) {
+		pr_info("\n src fs(%d,%d) rect(%d,%d,%d,%d)" \
 				" dst fs(%d,%d) rect(%d,%d,%d,%d)" \
 				" clip(%d,%d,%d,%d)\n",
-				__func__,
 				src->width, src->height,
 				src->rect.x1, src->rect.y1,
 				src->rect.x2, src->rect.y2,
@@ -249,10 +256,9 @@ void fimg2d_debug_command_simple(struct fimg2d_bltcmd *cmd)
 				dst->rect.x1, dst->rect.y1,
 				dst->rect.x2, dst->rect.y2,
 				clp->x1, clp->y1, clp->x2, clp->y2);
-	} else if (src && dst) {
-		pr_info("\n[%s] src fs(%d,%d) rect(%d,%d,%d,%d)" \
+	} else {
+		pr_info("\n src fs(%d,%d) rect(%d,%d,%d,%d)" \
 				" dst fs(%d,%d) rect(%d,%d,%d,%d)\n",
-				__func__,
 				src->width, src->height,
 				src->rect.x1, src->rect.y1,
 				src->rect.x2, src->rect.y2,
@@ -291,7 +297,7 @@ void fimg2d_perf_start(struct fimg2d_bltcmd *cmd, enum perf_desc desc)
 
 	do_gettimeofday(&time);
 	perf->start = time;
-	perf->seq_no = cmd->seq_no;
+	perf->seq_no = cmd->blt.seq_no;
 }
 
 void fimg2d_perf_end(struct fimg2d_bltcmd *cmd, enum perf_desc desc)
@@ -306,7 +312,7 @@ void fimg2d_perf_end(struct fimg2d_bltcmd *cmd, enum perf_desc desc)
 
 	do_gettimeofday(&time);
 	perf->end = time;
-	perf->seq_no = cmd->seq_no;
+	perf->seq_no = cmd->blt.seq_no;
 }
 
 void fimg2d_perf_print(struct fimg2d_bltcmd *cmd)
@@ -325,5 +331,5 @@ void fimg2d_perf_print(struct fimg2d_bltcmd *cmd)
 				perfname(i), (unsigned int)cmd->ctx,
 				perf->seq_no, time);
 	}
-	pr_info("[FIMG2D PERF ** seq(%d)]\n", cmd->seq_no);
+	pr_info("[FIMG2D PERF ** seq(%d)]\n", cmd->blt.seq_no);
 }
