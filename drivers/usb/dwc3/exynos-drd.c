@@ -392,34 +392,35 @@ err0:
 static int __devinit exynos_drd_probe(struct platform_device *pdev)
 {
 	struct dwc3_exynos_data *pdata = pdev->dev.platform_data;
+	struct device		*dev = &pdev->dev;
 	struct exynos_drd	*drd;
 	int			ret = -ENOMEM;
 
 	if (!pdata) {
-		dev_err(&pdev->dev, "cannot get platform data\n");
+		dev_err(dev, "cannot get platform data\n");
 		return -ENODEV;
 	}
 
-	drd = devm_kzalloc(&pdev->dev, sizeof(*drd), GFP_KERNEL);
+	drd = devm_kzalloc(dev, sizeof(*drd), GFP_KERNEL);
 	if (!drd) {
-		dev_err(&pdev->dev, "not enough memory\n");
+		dev_err(dev, "not enough memory\n");
 		return -ENOMEM;
 	}
 
 	platform_set_drvdata(pdev, drd);
-	drd->dev = &pdev->dev;
+	drd->dev = dev;
 	drd->pdata = pdata;
 	drd->core.ops = &core_ops;
 
 	drd->res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!drd->res) {
-		dev_err(drd->dev, "cannot find register resource 0\n");
+		dev_err(dev, "cannot find register resource 0\n");
 		return -ENXIO;
 	}
 
 	ret = platform_get_irq(pdev, 0);
 	if (drd->irq < 0) {
-		dev_err(drd->dev, "cannot find irq\n");
+		dev_err(dev, "cannot find irq\n");
 		return ret;
 	}
 
@@ -431,24 +432,24 @@ static int __devinit exynos_drd_probe(struct platform_device *pdev)
 	drd->glob_res.end = drd->res->start + EXYNOS_USB3_GLOB_REG_END;
 	drd->glob_res.flags = IORESOURCE_MEM;
 
-	if (!devm_request_mem_region(drd->dev, drd->glob_res.start,
+	if (!devm_request_mem_region(dev, drd->glob_res.start,
 				     resource_size(&drd->glob_res),
-				     dev_name(&pdev->dev))) {
-		dev_err(drd->dev, "cannot reserve registers\n");
+				     dev_name(dev))) {
+		dev_err(dev, "cannot reserve registers\n");
 		return -ENOENT;
 	}
 
-	drd->regs = devm_ioremap_nocache(drd->dev, drd->glob_res.start,
+	drd->regs = devm_ioremap_nocache(dev, drd->glob_res.start,
 					 resource_size(&drd->glob_res));
 	if (!drd->regs) {
-		dev_err(drd->dev, "cannot map registers\n");
+		dev_err(dev, "cannot map registers\n");
 		return -ENXIO;
 	}
 	drd->regs -= EXYNOS_USB3_GLOB_REG_START;
 
-	drd->clk = clk_get(drd->dev, "usbdrd30");
+	drd->clk = clk_get(dev, "usbdrd30");
 	if (IS_ERR(drd->clk)) {
-		dev_err(drd->dev, "cannot get DRD clock\n");
+		dev_err(dev, "cannot get DRD clock\n");
 		return -EINVAL;
 	}
 
@@ -468,8 +469,8 @@ static int __devinit exynos_drd_probe(struct platform_device *pdev)
 	if (ret < 0)
 		goto err_xhci;
 
-	pm_runtime_set_active(&pdev->dev);
-	pm_runtime_enable(&pdev->dev);
+	pm_runtime_set_active(dev);
+	pm_runtime_enable(dev);
 
 	return 0;
 
