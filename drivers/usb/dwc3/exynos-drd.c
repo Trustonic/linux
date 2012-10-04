@@ -20,9 +20,10 @@
 #include <linux/dma-mapping.h>
 #include <linux/module.h>
 #include <linux/clk.h>
+#include <linux/pm_runtime.h>
+#include <linux/io.h>
 #include <linux/usb/exynos_usb3_drd.h>
 #include <linux/platform_data/dwc3-exynos.h>
-#include <linux/pm_runtime.h>
 
 #include "exynos-drd.h"
 #include "exynos-drd-switch.h"
@@ -399,10 +400,10 @@ static int __devinit exynos_drd_probe(struct platform_device *pdev)
 		return -ENODEV;
 	}
 
-	drd = kzalloc(sizeof(*drd), GFP_KERNEL);
+	drd = devm_kzalloc(&pdev->dev, sizeof(*drd), GFP_KERNEL);
 	if (!drd) {
 		dev_err(&pdev->dev, "not enough memory\n");
-		goto err0;
+		return -ENOMEM;
 	}
 
 	platform_set_drvdata(pdev, drd);
@@ -413,14 +414,13 @@ static int __devinit exynos_drd_probe(struct platform_device *pdev)
 	drd->res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!drd->res) {
 		dev_err(drd->dev, "cannot find register resource 0\n");
-		ret = -EINVAL;
-		goto err1;
+		return -ENXIO;
 	}
 
 	ret = platform_get_irq(pdev, 0);
 	if (drd->irq < 0) {
 		dev_err(drd->dev, "cannot find irq\n");
-		goto err1;
+		return ret;
 	}
 
 	drd->irq = ret;
@@ -431,28 +431,25 @@ static int __devinit exynos_drd_probe(struct platform_device *pdev)
 	drd->glob_res.end = drd->res->start + EXYNOS_USB3_GLOB_REG_END;
 	drd->glob_res.flags = IORESOURCE_MEM;
 
-	if (!request_mem_region(drd->glob_res.start,
-				resource_size(&drd->glob_res),
-				dev_name(&pdev->dev))) {
+	if (!devm_request_mem_region(drd->dev, drd->glob_res.start,
+				     resource_size(&drd->glob_res),
+				     dev_name(&pdev->dev))) {
 		dev_err(drd->dev, "cannot reserve registers\n");
-		ret = -ENOENT;
-		goto err1;
+		return -ENOENT;
 	}
 
-	drd->regs = ioremap(drd->glob_res.start,
-			    resource_size(&drd->glob_res));
+	drd->regs = devm_ioremap_nocache(drd->dev, drd->glob_res.start,
+					 resource_size(&drd->glob_res));
 	if (!drd->regs) {
 		dev_err(drd->dev, "cannot map registers\n");
-		ret = -ENXIO;
-		goto err2;
+		return -ENXIO;
 	}
 	drd->regs -= EXYNOS_USB3_GLOB_REG_START;
 
 	drd->clk = clk_get(drd->dev, "usbdrd30");
 	if (IS_ERR(drd->clk)) {
 		dev_err(drd->dev, "cannot get DRD clock\n");
-		ret = -EINVAL;
-		goto err2;
+		return -EINVAL;
 	}
 
 	clk_enable(drd->clk);
@@ -461,33 +458,29 @@ static int __devinit exynos_drd_probe(struct platform_device *pdev)
 
 	ret = exynos_drd_switch_init(drd);
 	if (ret < 0)
-		goto err3;
+		goto err_sw;
 
 	ret = exynos_drd_create_udc(drd);
 	if (ret < 0)
-		goto err4;
+		goto err_udc;
 
 	ret = exynos_drd_create_xhci(drd);
 	if (ret < 0)
-		goto err5;
+		goto err_xhci;
 
 	pm_runtime_set_active(&pdev->dev);
 	pm_runtime_enable(&pdev->dev);
 
 	return 0;
 
-err5:
+err_xhci:
 	platform_device_unregister(drd->udc);
-err4:
+err_udc:
 	exynos_drd_switch_exit(drd);
-err3:
+err_sw:
+	clk_disable(drd->clk);
 	clk_put(drd->clk);
-err2:
-	release_mem_region(drd->glob_res.start,
-			   resource_size(&drd->glob_res));
-err1:
-	kfree(drd);
-err0:
+
 	return ret;
 }
 
@@ -508,11 +501,6 @@ static int __devexit exynos_drd_remove(struct platform_device *pdev)
 	exynos_drd_phy_unset(&drd->core);
 	clk_disable(drd->clk);
 	clk_put(drd->clk);
-
-	release_mem_region(drd->glob_res.start,
-			   resource_size(&drd->glob_res));
-
-	kfree(drd);
 
 	return 0;
 }
