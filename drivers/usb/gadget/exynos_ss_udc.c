@@ -2162,25 +2162,6 @@ static irqreturn_t exynos_ss_udc_irq(int irq, void *pw)
 }
 
 /**
- * exynos_ss_udc_free_all_trb - free all allocated TRBs
- * @udc: The device state.
- */
-static void exynos_ss_udc_free_all_trb(struct exynos_ss_udc *udc)
-{
-	int epnum;
-
-	for (epnum = 0; epnum < EXYNOS_USB3_EPS; epnum++) {
-		struct exynos_ss_udc_ep *udc_ep = &udc->eps[epnum];
-
-		if (udc_ep->trb_dma)
-			dma_free_coherent(NULL,
-					  sizeof(struct exynos_ss_udc_trb),
-					  udc_ep->trb,
-					  udc_ep->trb_dma);
-	}
-}
-
-/**
  * exynos_ss_udc_initep - initialize a single endpoint
  * @udc: The device state.
  * @udc_ep: The endpoint being initialised.
@@ -2227,22 +2208,29 @@ static int __devinit exynos_ss_udc_initep(struct exynos_ss_udc *udc,
 	udc_ep->ep.maxpacket = epnum ? EP_HS_MPS : EP0_HS_MPS;
 #endif
 	udc_ep->ep.ops = &exynos_ss_udc_ep_ops;
-	udc_ep->trb = dma_alloc_coherent(NULL,
-					 sizeof(struct exynos_ss_udc_trb),
-					 &udc_ep->trb_dma,
-					 GFP_KERNEL);
+	udc_ep->trb = dmam_alloc_coherent(udc->dev,
+					  sizeof(struct exynos_ss_udc_trb),
+					  &udc_ep->trb_dma,
+					  GFP_KERNEL);
 	if (!udc_ep->trb)
 		return -ENOMEM;
 
 	memset(udc_ep->trb, 0, sizeof(struct exynos_ss_udc_trb));
 
 	if (epnum == 0) {
+		struct exynos_ss_udc_req *udc_req;
+
 		/* allocate EP0 control request */
-		udc->ctrl_req = exynos_ss_udc_ep_alloc_request(&udc->eps[0].ep,
-							       GFP_KERNEL);
-		if (!udc->ctrl_req)
+		udc_req = devm_kzalloc(udc->dev,
+				       sizeof(struct exynos_ss_udc_req),
+				       GFP_KERNEL);
+		if (!udc_req)
 			return -ENOMEM;
 
+		INIT_LIST_HEAD(&udc_req->queue);
+		udc_req->req.dma = DMA_ADDR_INVALID;
+
+		udc->ctrl_req = &udc_req->req;
 		udc->ep0_state = EP0_UNCONNECTED;
 	}
 
@@ -2679,7 +2667,7 @@ static int __devinit exynos_ss_udc_probe(struct platform_device *pdev)
 		return -ENODEV;
 	}
 
-	udc = kzalloc(sizeof(struct exynos_ss_udc), GFP_KERNEL);
+	udc = devm_kzalloc(dev, sizeof(struct exynos_ss_udc), GFP_KERNEL);
 	if (!udc) {
 		dev_err(dev, "cannot get memory\n");
 		return -ENOMEM;
@@ -2696,76 +2684,64 @@ static int __devinit exynos_ss_udc_probe(struct platform_device *pdev)
 		return -ENOENT;
 	}
 
-	udc->event_buff = dma_alloc_coherent(NULL,
-					     EXYNOS_USB3_EVENT_BUFF_BSIZE,
-					     &udc->event_buff_dma,
-					     GFP_KERNEL);
+	udc->event_buff = dmam_alloc_coherent(dev, EXYNOS_USB3_EVENT_BUFF_BSIZE,
+					      &udc->event_buff_dma,
+					      GFP_KERNEL);
 	if (!udc->event_buff) {
 		dev_err(dev, "cannot get memory for event buffer\n");
-		ret = -ENOMEM;
-		goto err_mem;
+		return -ENOMEM;
 	}
 	memset(udc->event_buff, 0, EXYNOS_USB3_EVENT_BUFF_BSIZE);
 
-	udc->ctrl_buff = dma_alloc_coherent(NULL,
-					    EXYNOS_USB3_CTRL_BUFF_SIZE,
-					    &udc->ctrl_buff_dma,
-					    GFP_KERNEL);
+	udc->ctrl_buff = dmam_alloc_coherent(dev, EXYNOS_USB3_CTRL_BUFF_SIZE,
+					     &udc->ctrl_buff_dma,
+					     GFP_KERNEL);
 	if (!udc->ctrl_buff) {
 		dev_err(dev, "cannot get memory for control buffer\n");
-		ret = -ENOMEM;
-		goto err_mem;
+		return -ENOMEM;
 	}
 	memset(udc->ctrl_buff, 0, EXYNOS_USB3_CTRL_BUFF_SIZE);
 
-	udc->ep0_buff = dma_alloc_coherent(NULL,
-					   EXYNOS_USB3_EP0_BUFF_SIZE,
-					   &udc->ep0_buff_dma,
-					   GFP_KERNEL);
+	udc->ep0_buff = dmam_alloc_coherent(dev, EXYNOS_USB3_EP0_BUFF_SIZE,
+					    &udc->ep0_buff_dma,
+					    GFP_KERNEL);
 	if (!udc->ep0_buff) {
 		dev_err(dev, "cannot get memory for EP0 buffer\n");
-		ret = -ENOMEM;
-		goto err_mem;
+		return -ENOMEM;
 	}
 	memset(udc->ep0_buff, 0, EXYNOS_USB3_EP0_BUFF_SIZE);
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
 		dev_err(dev, "cannot find register resource 0\n");
-		ret = -EINVAL;
-		goto err_mem;
+		return -ENXIO;
 	}
 
-	if (!request_mem_region(res->start, resource_size(res),
-				dev_name(dev))) {
+	if (!devm_request_mem_region(dev, res->start, resource_size(res),
+				     dev_name(dev))) {
 		dev_err(dev, "cannot reserve registers\n");
-		ret = -ENOENT;
-		goto err_mem;
+		return -ENOENT;
 	}
 
-	udc->regs = ioremap(res->start, resource_size(res));
+	udc->regs = devm_ioremap_nocache(dev, res->start, resource_size(res));
 	if (!udc->regs) {
 		dev_err(dev, "cannot map registers\n");
-		ret = -ENXIO;
-		goto err_remap;
+		return -ENXIO;
 	}
 	udc->regs -= EXYNOS_USB3_DEV_REG_START;
 
 	ret = platform_get_irq(pdev, 0);
 	if (ret < 0) {
 		dev_err(dev, "cannot find irq\n");
-		goto err_irq;
+		return ret;
 	}
 
 	udc->irq = ret;
-	ret = request_irq(udc->irq,
-			exynos_ss_udc_irq,
-			IRQF_SHARED,
-			dev_name(dev),
-			udc);
+	ret = devm_request_irq(dev, udc->irq, exynos_ss_udc_irq,
+			       IRQF_SHARED, dev_name(dev), udc);
 	if (ret < 0) {
 		dev_err(dev, "cannot claim IRQ\n");
-		goto err_irq;
+		return ret;
 	}
 
 	dev_info(dev, "regs %p, irq %d\n", udc->regs, udc->irq);
@@ -2788,7 +2764,7 @@ static int __devinit exynos_ss_udc_probe(struct platform_device *pdev)
 		ret = exynos_ss_udc_initep(udc, &udc->eps[epnum], epnum);
 		if (ret < 0) {
 			dev_err(dev, "cannot get memory for TRB\n");
-			goto err_ep;
+			return ret;
 		}
 	}
 
@@ -2796,7 +2772,7 @@ static int __devinit exynos_ss_udc_probe(struct platform_device *pdev)
 	if (ret) {
 		dev_err(udc->dev, "failed to register gadget device\n");
 		put_device(&udc->gadget.dev);
-		goto err_ep;
+		return ret;
 	}
 
 	ret = usb_add_gadget_udc(&pdev->dev, &udc->gadget);
@@ -2821,25 +2797,6 @@ err_otg:
 	usb_del_gadget_udc(&udc->gadget);
 err_add_udc:
 	device_unregister(&udc->gadget.dev);
-err_ep:
-	exynos_ss_udc_ep_free_request(&udc->eps[0].ep, udc->ctrl_req);
-	exynos_ss_udc_free_all_trb(udc);
-	free_irq(udc->irq, udc);
-err_irq:
-	iounmap(udc->regs);
-err_remap:
-	release_mem_region(res->start, resource_size(res));
-err_mem:
-	if (udc->ep0_buff)
-		dma_free_coherent(NULL, EXYNOS_USB3_EP0_BUFF_SIZE,
-				  udc->ep0_buff, udc->ep0_buff_dma);
-	if (udc->ctrl_buff)
-		dma_free_coherent(NULL, EXYNOS_USB3_CTRL_BUFF_SIZE,
-				  udc->ctrl_buff, udc->ctrl_buff_dma);
-	if (udc->event_buff)
-		dma_free_coherent(NULL, EXYNOS_USB3_EVENT_BUFF_BSIZE,
-				  udc->event_buff, udc->event_buff_dma);
-	kfree(udc);
 
 	return ret;
 }
@@ -2847,7 +2804,6 @@ err_mem:
 static int __devexit exynos_ss_udc_remove(struct platform_device *pdev)
 {
 	struct exynos_ss_udc *udc = platform_get_drvdata(pdev);
-	struct resource *res;
 
 	if (udc->core->otg)
 		otg_set_peripheral(udc->core->otg, NULL);
@@ -2856,28 +2812,9 @@ static int __devexit exynos_ss_udc_remove(struct platform_device *pdev)
 
 	usb_gadget_unregister_driver(udc->driver);
 
-	free_irq(udc->irq, udc);
-
-	iounmap(udc->regs);
-
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (res)
-		release_mem_region(res->start, resource_size(res));
-
 	device_unregister(&udc->gadget.dev);
 
 	platform_set_drvdata(pdev, NULL);
-
-	exynos_ss_udc_ep_free_request(&udc->eps[0].ep, udc->ctrl_req);
-	exynos_ss_udc_free_all_trb(udc);
-
-	dma_free_coherent(NULL, EXYNOS_USB3_EP0_BUFF_SIZE,
-			  udc->ep0_buff, udc->ep0_buff_dma);
-	dma_free_coherent(NULL, EXYNOS_USB3_CTRL_BUFF_SIZE,
-			  udc->ctrl_buff, udc->ctrl_buff_dma);
-	dma_free_coherent(NULL, EXYNOS_USB3_EVENT_BUFF_BSIZE,
-			  udc->event_buff, udc->event_buff_dma);
-	kfree(udc);
 
 	return 0;
 }
