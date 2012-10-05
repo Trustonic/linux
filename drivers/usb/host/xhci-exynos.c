@@ -37,12 +37,12 @@
 #include "xhci.h"
 
 struct exynos_xhci_hcd {
-	struct device *dev;
-	struct dwc3_exynos_data *pdata;
-	struct usb_hcd *hcd;
-	struct exynos_drd_core *core;
-	struct clk *clk;
-	int irq;
+	struct device		*dev;
+	struct dwc3_exynos_data	*pdata;
+	struct usb_hcd		*hcd;
+	struct exynos_drd_core	*core;
+	struct clk		*clk;
+	int			irq;
 };
 
 struct xhci_hcd *exynos_xhci_dbg;
@@ -169,6 +169,7 @@ static int exynos_xhci_runtime_resume(struct device *dev)
 		return 0;
 
 	pm_runtime_get_sync(exynos_xhci->dev->parent);
+
 	if (exynos_xhci->core->ops->change_mode)
 		exynos_xhci->core->ops->change_mode(exynos_xhci->core, true);
 
@@ -282,13 +283,15 @@ static const struct hc_driver exynos_xhci_hc_driver = {
 	.bus_resume		= exynos_xhci_bus_resume,
 };
 
-static int usb_hcd_exynos_probe(struct platform_device *pdev, const struct hc_driver *driver)
+static int usb_hcd_exynos_probe(struct platform_device *pdev,
+				const struct hc_driver *driver)
 {
-	struct exynos_xhci_hcd *exynos_xhci;
-	struct dwc3_exynos_data *pdata;
+	struct exynos_xhci_hcd	*exynos_xhci;
+	struct dwc3_exynos_data	*pdata = pdev->dev.platform_data;
+	struct device		*dev = &pdev->dev;
 	struct usb_hcd		*hcd;
-	struct resource *res;
-	int err;
+	struct resource		*res;
+	int			err;
 
 	if (usb_disabled())
 		return -ENODEV;
@@ -296,42 +299,39 @@ static int usb_hcd_exynos_probe(struct platform_device *pdev, const struct hc_dr
 	if (!driver)
 		return -EINVAL;
 
-	pdata = pdev->dev.platform_data;
 	if (!pdata) {
-		dev_err(&pdev->dev, "No platform data defined\n");
+		dev_err(dev, "No platform data defined\n");
 		return -EINVAL;
 	}
 
-	exynos_xhci = devm_kzalloc(&pdev->dev, sizeof(struct exynos_xhci_hcd),
+	exynos_xhci = devm_kzalloc(dev, sizeof(struct exynos_xhci_hcd),
 				   GFP_KERNEL);
 	if (!exynos_xhci)
 		return -ENOMEM;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
-		dev_err(&pdev->dev, "Failed to get I/O memory\n");
+		dev_err(dev, "Failed to get I/O memory\n");
 		return -ENXIO;
 	}
 
-	if (!devm_request_mem_region(&pdev->dev, res->start, resource_size(res),
-				dev_name(&pdev->dev))) {
-		dev_err(&pdev->dev, "Failed to reserve registers\n");
+	if (!devm_request_mem_region(dev, res->start, resource_size(res),
+				dev_name(dev))) {
+		dev_err(dev, "Failed to reserve registers\n");
 		return -ENOENT;
 	}
 
-	hcd = usb_create_hcd(driver, &pdev->dev, dev_name(&pdev->dev));
-	if (!hcd) {
+	hcd = usb_create_hcd(driver, dev, dev_name(dev));
+	if (!hcd)
 		return -ENOMEM;
-	}
 
 	/* EHCI, OHCI */
 	hcd->rsrc_start = res->start;
 	hcd->rsrc_len = resource_size(res);
 
-	hcd->regs = devm_ioremap_nocache(&pdev->dev, res->start,
-					 resource_size(res));
+	hcd->regs = devm_ioremap_nocache(dev, res->start, resource_size(res));
 	if (!hcd->regs) {
-		dev_err(&pdev->dev, "Failed to remap I/O memory\n");
+		dev_err(dev, "Failed to remap I/O memory\n");
 		err = -ENOMEM;
 		goto fail_io;
 	}
@@ -339,12 +339,12 @@ static int usb_hcd_exynos_probe(struct platform_device *pdev, const struct hc_dr
 
 	exynos_xhci->irq = platform_get_irq(pdev, 0);
 	if (!exynos_xhci->irq) {
-		dev_err(&pdev->dev, "Failed to get IRQ\n");
+		dev_err(dev, "Failed to get IRQ\n");
 		err = -ENODEV;
 		goto fail_io;
 	}
 
-	exynos_xhci->dev = &pdev->dev;
+	exynos_xhci->dev = dev;
 	exynos_xhci->pdata = pdata;
 	exynos_xhci->hcd = hcd;
 	exynos_xhci->core = exynos_drd_bind(pdev);
@@ -359,12 +359,12 @@ static int usb_hcd_exynos_probe(struct platform_device *pdev, const struct hc_dr
 
 	err = usb_add_hcd(hcd, exynos_xhci->irq, IRQF_DISABLED | IRQF_SHARED);
 	if (err) {
-		dev_err(&pdev->dev, "Failed to add USB HCD\n");
+		dev_err(dev, "Failed to add USB HCD\n");
 		goto fail_io;
 	}
 
-	pm_runtime_set_active(&pdev->dev);
-	pm_runtime_enable(&pdev->dev);
+	pm_runtime_set_active(dev);
+	pm_runtime_enable(dev);
 
 	return err;
 
@@ -375,7 +375,7 @@ fail_io:
 
 void usb_hcd_exynos_remove(struct platform_device *pdev)
 {
-	struct exynos_xhci_hcd *exynos_xhci;
+	struct exynos_xhci_hcd	*exynos_xhci;
 	struct usb_hcd		*hcd;
 
 	exynos_xhci = dev_get_drvdata(&pdev->dev);
@@ -384,6 +384,7 @@ void usb_hcd_exynos_remove(struct platform_device *pdev)
 		return;
 
 	pm_runtime_disable(&pdev->dev);
+
 	/* Fake an interrupt request in order to give the driver a chance
 	 * to test whether the controller hardware has been removed (e.g.,
 	 * cardbus physical eject).
@@ -402,10 +403,10 @@ void usb_hcd_exynos_remove(struct platform_device *pdev)
 
 static int __devinit exynos_xhci_probe(struct platform_device *pdev)
 {
-	struct exynos_xhci_hcd *exynos_xhci;
-	struct usb_hcd *hcd;
-	struct xhci_hcd *xhci;
-	int err;
+	struct exynos_xhci_hcd	*exynos_xhci;
+	struct usb_hcd		*hcd;
+	struct xhci_hcd		*xhci;
+	int			err;
 
 	/* Register the USB 2.0 roothub.
 	 * FIXME: USB core must know to register the USB 2.0 roothub first.
@@ -414,11 +415,11 @@ static int __devinit exynos_xhci_probe(struct platform_device *pdev)
 	 * the other parts of the HCD code.
 	 */
 	err = usb_hcd_exynos_probe(pdev, &exynos_xhci_hc_driver);
-
 	if (err)
 		return err;
 
 	exynos_xhci = dev_get_drvdata(&pdev->dev);
+
 	hcd = exynos_xhci->hcd;
 	xhci = hcd_to_xhci(hcd);
 	xhci->shared_hcd = usb_create_shared_hcd(&exynos_xhci_hc_driver,
@@ -431,8 +432,10 @@ static int __devinit exynos_xhci_probe(struct platform_device *pdev)
 
 	xhci->shared_hcd->regs = hcd->regs;
 	exynos_xhci_dbg = xhci;
-	/* Set the xHCI pointer before exynos_xhci_setup() (aka hcd_driver.reset)
-	 * is called by usb_add_hcd().
+
+	/*
+	 * Set the xHCI pointer before exynos_xhci_setup()
+	 * (aka hcd_driver.reset) is called by usb_add_hcd().
 	 */
 	*((struct xhci_hcd **) xhci->shared_hcd->hcd_priv) = xhci;
 
@@ -451,7 +454,7 @@ static int __devinit exynos_xhci_probe(struct platform_device *pdev)
 
 	/* Roothub already marked as USB 3.0 speed */
 
-	return err;
+	return 0;
 
 put_usb3_hcd:
 	usb_put_hcd(xhci->shared_hcd);
@@ -463,9 +466,9 @@ dealloc_usb2_hcd:
 
 static int __devexit exynos_xhci_remove(struct platform_device *pdev)
 {
-	struct exynos_xhci_hcd *exynos_xhci = platform_get_drvdata(pdev);
-	struct usb_hcd *hcd = exynos_xhci->hcd;
-	struct xhci_hcd *xhci;
+	struct exynos_xhci_hcd	*exynos_xhci = platform_get_drvdata(pdev);
+	struct usb_hcd		*hcd = exynos_xhci->hcd;
+	struct xhci_hcd		*xhci;
 
 	if (exynos_xhci->core->otg)
 		otg_set_host(exynos_xhci->core->otg, NULL);
@@ -484,8 +487,8 @@ static int __devexit exynos_xhci_remove(struct platform_device *pdev)
 
 static void exynos_xhci_shutdown(struct platform_device *pdev)
 {
-	struct exynos_xhci_hcd *s5p_xhci = platform_get_drvdata(pdev);
-	struct usb_hcd *hcd = s5p_xhci->hcd;
+	struct exynos_xhci_hcd	*s5p_xhci = platform_get_drvdata(pdev);
+	struct usb_hcd		*hcd = s5p_xhci->hcd;
 
 	if (hcd->driver->shutdown)
 		hcd->driver->shutdown(hcd);
