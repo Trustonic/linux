@@ -302,39 +302,38 @@ static int usb_hcd_exynos_probe(struct platform_device *pdev, const struct hc_dr
 		return -EINVAL;
 	}
 
-	exynos_xhci = kzalloc(sizeof(struct exynos_xhci_hcd), GFP_KERNEL);
+	exynos_xhci = devm_kzalloc(&pdev->dev, sizeof(struct exynos_xhci_hcd),
+				   GFP_KERNEL);
 	if (!exynos_xhci)
 		return -ENOMEM;
-
-	hcd = usb_create_hcd(driver, &pdev->dev, dev_name(&pdev->dev));
-	if (!hcd) {
-		err = -ENOMEM;
-		goto fail_hcd;
-	}
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
 		dev_err(&pdev->dev, "Failed to get I/O memory\n");
-		err = -ENXIO;
-		goto fail_io;
+		return -ENXIO;
 	}
 
-	if (!request_mem_region(res->start, resource_size(res),
+	if (!devm_request_mem_region(&pdev->dev, res->start, resource_size(res),
 				dev_name(&pdev->dev))) {
 		dev_err(&pdev->dev, "Failed to reserve registers\n");
-		err = -ENOENT;
-		goto fail_io;
+		return -ENOENT;
+	}
+
+	hcd = usb_create_hcd(driver, &pdev->dev, dev_name(&pdev->dev));
+	if (!hcd) {
+		return -ENOMEM;
 	}
 
 	/* EHCI, OHCI */
 	hcd->rsrc_start = res->start;
 	hcd->rsrc_len = resource_size(res);
 
-	hcd->regs = ioremap(res->start, resource_size(res));
+	hcd->regs = devm_ioremap_nocache(&pdev->dev, res->start,
+					 resource_size(res));
 	if (!hcd->regs) {
 		dev_err(&pdev->dev, "Failed to remap I/O memory\n");
 		err = -ENOMEM;
-		goto fail_remap;
+		goto fail_io;
 	}
 	hcd->regs -= EXYNOS_USB3_XHCI_REG_START;
 
@@ -342,7 +341,7 @@ static int usb_hcd_exynos_probe(struct platform_device *pdev, const struct hc_dr
 	if (!exynos_xhci->irq) {
 		dev_err(&pdev->dev, "Failed to get IRQ\n");
 		err = -ENODEV;
-		goto fail;
+		goto fail_io;
 	}
 
 	exynos_xhci->dev = &pdev->dev;
@@ -361,7 +360,7 @@ static int usb_hcd_exynos_probe(struct platform_device *pdev, const struct hc_dr
 	err = usb_add_hcd(hcd, exynos_xhci->irq, IRQF_DISABLED | IRQF_SHARED);
 	if (err) {
 		dev_err(&pdev->dev, "Failed to add USB HCD\n");
-		goto fail;
+		goto fail_io;
 	}
 
 	pm_runtime_set_active(&pdev->dev);
@@ -369,14 +368,8 @@ static int usb_hcd_exynos_probe(struct platform_device *pdev, const struct hc_dr
 
 	return err;
 
-fail:
-	iounmap(hcd->regs);
-fail_remap:
-	release_mem_region(res->start, resource_size(res));
 fail_io:
 	usb_put_hcd(hcd);
-fail_hcd:
-	kfree(exynos_xhci);
 	return err;
 }
 
@@ -404,12 +397,7 @@ void usb_hcd_exynos_remove(struct platform_device *pdev)
 	if (exynos_xhci->core->ops->change_mode)
 		exynos_xhci->core->ops->change_mode(exynos_xhci->core, false);
 
-	iounmap(hcd->regs);
-	release_mem_region(hcd->rsrc_start, hcd->rsrc_len);
-
 	usb_put_hcd(hcd);
-
-	kfree(exynos_xhci);
 }
 
 static int __devinit exynos_xhci_probe(struct platform_device *pdev)
