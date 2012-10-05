@@ -41,7 +41,6 @@ struct exynos_xhci_hcd {
 	struct dwc3_exynos_data	*pdata;
 	struct usb_hcd		*hcd;
 	struct exynos_drd_core	*core;
-	struct clk		*clk;
 	int			irq;
 };
 
@@ -338,7 +337,7 @@ static int usb_hcd_exynos_probe(struct platform_device *pdev,
 	hcd->regs -= EXYNOS_USB3_XHCI_REG_START;
 
 	exynos_xhci->irq = platform_get_irq(pdev, 0);
-	if (!exynos_xhci->irq) {
+	if (exynos_xhci->irq < 0) {
 		dev_err(dev, "Failed to get IRQ\n");
 		err = -ENODEV;
 		goto fail_io;
