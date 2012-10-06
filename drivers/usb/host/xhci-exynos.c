@@ -41,7 +41,6 @@ struct exynos_xhci_hcd {
 	struct dwc3_exynos_data	*pdata;
 	struct usb_hcd		*hcd;
 	struct exynos_drd_core	*core;
-	int			irq;
 };
 
 struct xhci_hcd *exynos_xhci_dbg;
@@ -282,31 +281,42 @@ static const struct hc_driver exynos_xhci_hc_driver = {
 	.bus_resume		= exynos_xhci_bus_resume,
 };
 
-static int usb_hcd_exynos_probe(struct platform_device *pdev,
-				const struct hc_driver *driver)
+static int __devinit exynos_xhci_probe(struct platform_device *pdev)
 {
-	struct exynos_xhci_hcd	*exynos_xhci;
 	struct dwc3_exynos_data	*pdata = pdev->dev.platform_data;
 	struct device		*dev = &pdev->dev;
+	const struct hc_driver	*driver = &exynos_xhci_hc_driver;
+	struct exynos_xhci_hcd	*exynos_xhci;
 	struct usb_hcd		*hcd;
+	struct xhci_hcd		*xhci;
 	struct resource		*res;
+	int			irq;
 	int			err;
 
 	if (usb_disabled())
 		return -ENODEV;
 
-	if (!driver)
-		return -EINVAL;
-
 	if (!pdata) {
 		dev_err(dev, "No platform data defined\n");
-		return -EINVAL;
+		return -ENODEV;
 	}
 
 	exynos_xhci = devm_kzalloc(dev, sizeof(struct exynos_xhci_hcd),
 				   GFP_KERNEL);
-	if (!exynos_xhci)
+	if (!exynos_xhci) {
+		dev_err(dev, "Not enough memory\n");
 		return -ENOMEM;
+	}
+
+	exynos_xhci->dev = dev;
+	exynos_xhci->pdata = pdata;
+	exynos_xhci->core = exynos_drd_bind(pdev);
+
+	irq = platform_get_irq(pdev, 0);
+	if (irq < 0) {
+		dev_err(dev, "Failed to get IRQ\n");
+		return -ENXIO;
+	}
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
@@ -314,123 +324,63 @@ static int usb_hcd_exynos_probe(struct platform_device *pdev,
 		return -ENXIO;
 	}
 
-	if (!devm_request_mem_region(dev, res->start, resource_size(res),
-				dev_name(dev))) {
-		dev_err(dev, "Failed to reserve registers\n");
-		return -ENOENT;
-	}
+	/* Create and add primary HCD */
 
 	hcd = usb_create_hcd(driver, dev, dev_name(dev));
-	if (!hcd)
+	if (!hcd) {
+		dev_err(dev, "Failed to create primary HCD\n");
 		return -ENOMEM;
+	}
 
-	/* EHCI, OHCI */
+	exynos_xhci->hcd = hcd;
+	/* Rewrite driver data with our structure */
+	platform_set_drvdata(pdev, exynos_xhci);
+
 	hcd->rsrc_start = res->start;
 	hcd->rsrc_len = resource_size(res);
+
+	if (!devm_request_mem_region(dev, res->start,
+				     resource_size(res), dev_name(dev))) {
+		dev_err(dev, "Failed to reserve registers\n");
+		err = -ENOENT;
+		goto put_hcd;
+	}
 
 	hcd->regs = devm_ioremap_nocache(dev, res->start, resource_size(res));
 	if (!hcd->regs) {
 		dev_err(dev, "Failed to remap I/O memory\n");
 		err = -ENOMEM;
-		goto fail_io;
+		goto put_hcd;
 	}
 	hcd->regs -= EXYNOS_USB3_XHCI_REG_START;
 
-	exynos_xhci->irq = platform_get_irq(pdev, 0);
-	if (exynos_xhci->irq < 0) {
-		dev_err(dev, "Failed to get IRQ\n");
-		err = -ENODEV;
-		goto fail_io;
-	}
-
-	exynos_xhci->dev = dev;
-	exynos_xhci->pdata = pdata;
-	exynos_xhci->hcd = hcd;
-	exynos_xhci->core = exynos_drd_bind(pdev);
-	platform_set_drvdata(pdev, exynos_xhci);
-
-	pm_runtime_get_sync(exynos_xhci->dev->parent);
-
+	/* Wake up and initialize DRD core */
+	pm_runtime_get_sync(dev->parent);
 	if (exynos_xhci->core->ops->change_mode)
 		exynos_xhci->core->ops->change_mode(exynos_xhci->core, true);
 	if (exynos_xhci->core->ops->core_init)
 		exynos_xhci->core->ops->core_init(exynos_xhci->core);
 
-	err = usb_add_hcd(hcd, exynos_xhci->irq, IRQF_DISABLED | IRQF_SHARED);
+	err = usb_add_hcd(hcd, irq, IRQF_DISABLED | IRQF_SHARED);
 	if (err) {
-		dev_err(dev, "Failed to add USB HCD\n");
-		goto fail_io;
+		dev_err(dev, "Failed to add primary HCD\n");
+		goto put_hcd;
 	}
 
-	pm_runtime_set_active(dev);
-	pm_runtime_enable(dev);
+	/* Create and add shared HCD */
 
-	return err;
-
-fail_io:
-	usb_put_hcd(hcd);
-	return err;
-}
-
-void usb_hcd_exynos_remove(struct platform_device *pdev)
-{
-	struct exynos_xhci_hcd	*exynos_xhci;
-	struct usb_hcd		*hcd;
-
-	exynos_xhci = dev_get_drvdata(&pdev->dev);
-	hcd = exynos_xhci->hcd;
-	if (!hcd)
-		return;
-
-	pm_runtime_disable(&pdev->dev);
-
-	/* Fake an interrupt request in order to give the driver a chance
-	 * to test whether the controller hardware has been removed (e.g.,
-	 * cardbus physical eject).
-	 */
-	local_irq_disable();
-	usb_hcd_irq(0, hcd);
-	local_irq_enable();
-
-	usb_remove_hcd(hcd);
-
-	if (exynos_xhci->core->ops->change_mode)
-		exynos_xhci->core->ops->change_mode(exynos_xhci->core, false);
-
-	usb_put_hcd(hcd);
-}
-
-static int __devinit exynos_xhci_probe(struct platform_device *pdev)
-{
-	struct exynos_xhci_hcd	*exynos_xhci;
-	struct usb_hcd		*hcd;
-	struct xhci_hcd		*xhci;
-	int			err;
-
-	/* Register the USB 2.0 roothub.
-	 * FIXME: USB core must know to register the USB 2.0 roothub first.
-	 * This is sort of silly, because we could just set the HCD driver flags
-	 * to say USB 2.0, but I'm not sure what the implications would be in
-	 * the other parts of the HCD code.
-	 */
-	err = usb_hcd_exynos_probe(pdev, &exynos_xhci_hc_driver);
-	if (err)
-		return err;
-
-	exynos_xhci = dev_get_drvdata(&pdev->dev);
-
-	hcd = exynos_xhci->hcd;
 	xhci = hcd_to_xhci(hcd);
-	xhci->shared_hcd = usb_create_shared_hcd(&exynos_xhci_hc_driver,
-				&pdev->dev, dev_name(&pdev->dev), hcd);
+	exynos_xhci_dbg = xhci;
+
+	xhci->shared_hcd = usb_create_shared_hcd(driver, dev,
+						 dev_name(dev), hcd);
 	if (!xhci->shared_hcd) {
-		dev_err(&pdev->dev, "Unable to create HCD\n");
+		dev_err(dev, "Failed to create shared HCD\n");
 		err = -ENOMEM;
-		goto dealloc_usb2_hcd;
+		goto remove_hcd;
 	}
 
 	xhci->shared_hcd->regs = hcd->regs;
-	exynos_xhci_dbg = xhci;
 
 	/*
 	 * Set the xHCI pointer before exynos_xhci_setup()
@@ -438,27 +388,34 @@ static int __devinit exynos_xhci_probe(struct platform_device *pdev)
 	 */
 	*((struct xhci_hcd **) xhci->shared_hcd->hcd_priv) = xhci;
 
-	err = usb_add_hcd(xhci->shared_hcd, exynos_xhci->irq,
-			IRQF_DISABLED | IRQF_SHARED);
-	if (err)
+	err = usb_add_hcd(xhci->shared_hcd, irq, IRQF_DISABLED | IRQF_SHARED);
+	if (err) {
+		dev_err(dev, "Failed to add shared HCD\n");
 		goto put_usb3_hcd;
+	}
+
+	pm_runtime_set_active(dev);
+	pm_runtime_enable(dev);
 
 	if (exynos_xhci->core->otg) {
 		err = otg_set_host(exynos_xhci->core->otg, &hcd->self);
 		if (err) {
-			dev_err(&pdev->dev, "Unable to bind hcd to DRD switch\n");
-			goto put_usb3_hcd;
+			dev_err(dev, "Unable to bind hcd to DRD switch\n");
+			goto remove_usb3_hcd;
 		}
 	}
 
-	/* Roothub already marked as USB 3.0 speed */
-
 	return 0;
 
+remove_usb3_hcd:
+	pm_runtime_disable(dev);
+	usb_remove_hcd(xhci->shared_hcd);
 put_usb3_hcd:
 	usb_put_hcd(xhci->shared_hcd);
-dealloc_usb2_hcd:
-	usb_hcd_exynos_remove(pdev);
+remove_hcd:
+	usb_remove_hcd(hcd);
+put_hcd:
+	usb_put_hcd(hcd);
 
 	return err;
 }
@@ -467,18 +424,19 @@ static int __devexit exynos_xhci_remove(struct platform_device *pdev)
 {
 	struct exynos_xhci_hcd	*exynos_xhci = platform_get_drvdata(pdev);
 	struct usb_hcd		*hcd = exynos_xhci->hcd;
-	struct xhci_hcd		*xhci;
+	struct xhci_hcd		*xhci = hcd_to_xhci(hcd);
 
 	if (exynos_xhci->core->otg)
 		otg_set_host(exynos_xhci->core->otg, NULL);
 
-	xhci = hcd_to_xhci(hcd);
-	if (xhci->shared_hcd) {
-		usb_remove_hcd(xhci->shared_hcd);
-		usb_put_hcd(xhci->shared_hcd);
-	}
+	pm_runtime_disable(&pdev->dev);
 
-	usb_hcd_exynos_remove(pdev);
+	usb_remove_hcd(xhci->shared_hcd);
+	usb_put_hcd(xhci->shared_hcd);
+
+	usb_remove_hcd(hcd);
+	usb_put_hcd(hcd);
+
 	kfree(xhci);
 
 	return 0;
