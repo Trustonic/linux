@@ -663,15 +663,6 @@ static int i2s_hw_params(struct snd_pcm_substream *substream,
 	return 0;
 }
 
-static void audss_register_clear(struct i2s_dai *i2s)
-{
-	if ((i2s->pdev->id == 0) || (i2s->pdev->id == SAMSUNG_I2S_SECOFF)) {
-		writel(0x0, i2s->audss_base + EXYNOS_CLKSRC_AUDSS_OFFSET);
-		writel(0x0, i2s->audss_base + EXYNOS_CLKDIV_AUDSS_OFFSET);
-		writel(0x0, i2s->audss_base + EXYNOS_CLKGATE_AUDSS_OFFSET);
-	}
-}
-
 static void i2s_register_save(struct i2s_dai *i2s)
 {
 	i2s->suspend_i2smod = readl(i2s->addr + I2SMOD);
@@ -1147,8 +1138,6 @@ static int samsung_i2s_dai_probe(struct snd_soc_dai *dai)
 #endif
 
 probe_exit:
-	audss_register_clear(i2s);
-
 	/* Set clock hierarchy for audio subsystem */
 	ret = clk_set_heirachy(i2s);
 	if (ret) {
