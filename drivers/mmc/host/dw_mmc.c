@@ -32,6 +32,7 @@
 #include <linux/mmc/mmc.h>
 #include <linux/mmc/card.h>
 #include <linux/mmc/sdio.h>
+#include <linux/mmc/sd.h>
 #include <linux/mmc/dw_mmc.h>
 #include <linux/bitops.h>
 #include <linux/regulator/consumer.h>
@@ -286,6 +287,9 @@ static u32 dw_mci_prepare_command(struct mmc_host *mmc, struct mmc_command *cmd)
 
 	cmdr = cmd->opcode;
 	argr = ((cmd->arg >> 9) & 0xFF);
+
+	if (cmdr == SD_SWITCH_VOLTAGE)
+		cmdr |= SDMMC_VOLT_SWITCH;
 
 	if (cmdr == MMC_STOP_TRANSMISSION)
 		cmdr |= SDMMC_CMD_STOP;
@@ -1335,6 +1339,80 @@ static int dw_mci_execute_tuning(struct mmc_host *mmc, u32 opcode)
 	return 0;
 }
 
+static int dw_mci_3_3v_signal_voltage_switch(struct dw_mci_slot *slot)
+{
+	struct dw_mci *host = slot->host;
+	u32 reg;
+	int ret = 0;
+
+	if (host->vqmmc) {
+		ret = regulator_set_voltage(host->vqmmc, 3300000, 3300000);
+		if (ret) {
+			dev_warn(&host->dev, "Switching to 3.3V signalling "
+					"voltage failed\n");
+			return -EIO;
+		}
+	} else {
+		reg = mci_readl(slot->host, UHS_REG);
+		reg |= (0x1 << slot->id);
+		mci_writel(slot->host, UHS_REG, reg);
+	}
+
+	/* Wait for 5ms */
+	usleep_range(5000, 5500);
+
+	return ret;
+}
+
+static int dw_mci_1_8v_signal_voltage_switch(struct dw_mci_slot *slot)
+{
+	struct dw_mci *host = slot->host;
+	u32 reg;
+	int ret = 0;
+
+	dw_mci_wait_reset(&host->dev, host, SDMMC_CTRL_RESET);
+	reg = mci_readl(host, CLKENA);
+	reg &= ~((SDMMC_CLKEN_LOW_PWR | SDMMC_CLKEN_ENABLE) << slot->id);
+	mci_writel(host, CLKENA, reg);
+	mci_send_cmd(slot, SDMMC_CMD_UPD_CLK | SDMMC_CMD_PRV_DAT_WAIT, 0);
+
+	if (host->vqmmc) {
+		ret = regulator_set_voltage(host->vqmmc, 1800000, 1800000);
+		if (ret) {
+			dev_warn(&host->dev, "Switching to 1.8V signalling "
+					"voltage failed\n");
+			return -EIO;
+		}
+	} else {
+		reg = mci_readl(slot->host, UHS_REG);
+		reg |= (0x1 << slot->id);
+		mci_writel(slot->host, UHS_REG, reg);
+	}
+
+	/* Wait for 5ms */
+	usleep_range(5000, 5500);
+
+	reg = mci_readl(host, CLKENA);
+	reg |= SDMMC_CLKEN_ENABLE << slot->id;
+	mci_writel(host, CLKENA, reg);
+	mci_send_cmd(slot, SDMMC_CMD_UPD_CLK | SDMMC_CMD_PRV_DAT_WAIT, 0);
+
+	return ret;
+}
+
+static int dw_mci_start_signal_voltage_switch(struct mmc_host *mmc,
+		struct mmc_ios *ios)
+{
+	struct dw_mci_slot *slot = mmc_priv(mmc);
+
+	if (ios->signal_voltage == MMC_SIGNAL_VOLTAGE_330)
+		return dw_mci_3_3v_signal_voltage_switch(slot);
+	else if (ios->signal_voltage == MMC_SIGNAL_VOLTAGE_180)
+		return dw_mci_1_8v_signal_voltage_switch(slot);
+	else
+		return 0;
+}
+
 static const struct mmc_host_ops dw_mci_ops = {
 	.request		= dw_mci_request,
 	.pre_req		= dw_mci_pre_req,
@@ -1344,6 +1422,7 @@ static const struct mmc_host_ops dw_mci_ops = {
 	.get_cd			= dw_mci_get_cd,
 	.enable_sdio_irq	= dw_mci_enable_sdio_irq,
 	.execute_tuning		= dw_mci_execute_tuning,
+	.start_signal_voltage_switch	= dw_mci_start_signal_voltage_switch,
 };
 
 static void dw_mci_request_end(struct dw_mci *host, struct mmc_request *mrq)
@@ -2065,6 +2144,14 @@ static irqreturn_t dw_mci_interrupt(int irq, void *dev_id)
 			ret = IRQ_HANDLED;
 		}
 
+		if (pending & SDMMC_INT_VOLT_SW) {
+			u32 cmd = mci_readl(host, CMD) & 0x3f;
+			if (cmd == SD_SWITCH_VOLTAGE) {
+				mci_writel(host, RINTSTS, SDMMC_INT_VOLT_SW);
+				dw_mci_cmd_interrupt(host, pending);
+			}
+		}
+
 		if (pending & DW_MCI_DATA_ERROR_FLAGS) {
 			/* if there is an error report DATA_ERROR */
 			mci_writel(host, RINTSTS, DW_MCI_DATA_ERROR_FLAGS);
@@ -2391,8 +2478,19 @@ static int __devinit dw_mci_init_slot(struct dw_mci *host, unsigned int id)
 	if (IS_ERR(host->vmmc)) {
 		pr_info("%s: no vmmc regulator found\n", mmc_hostname(mmc));
 		host->vmmc = NULL;
-	} else
+	} else {
+		pr_info("%s: vmmc regulator found\n", mmc_hostname(mmc));
 		regulator_enable(host->vmmc);
+	}
+
+	host->vqmmc = regulator_get(mmc_dev(mmc), "vqmmc");
+	if (IS_ERR(host->vqmmc)) {
+		pr_info("%s: no vqmmc regulator found\n", mmc_hostname(mmc));
+		host->vqmmc = NULL;
+	} else {
+		pr_info("%s: vqmmc regulator found\n", mmc_hostname(mmc));
+		regulator_enable(host->vqmmc);
+	}
 
 	host->pdata->init(id, dw_mci_detect_interrupt, host);
 

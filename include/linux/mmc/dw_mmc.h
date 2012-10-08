@@ -188,6 +188,7 @@ struct dw_mci {
 	struct timer_list       timer;
 
 	struct regulator	*vmmc;	/* Power regulator */
+	struct regulator	*vqmmc;
 	unsigned long		irq_flags; /* IRQ flags */
 	unsigned int		irq;
 };
