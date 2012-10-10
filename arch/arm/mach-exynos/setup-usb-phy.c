@@ -661,7 +661,7 @@ static int exynos5_usb_phy_host_resume(struct platform_device *pdev)
 static int exynos5_usb_phy20_init(struct platform_device *pdev)
 {
 	u32 refclk_freq;
-	u32 hostphy_ctrl0, otgphy_sys, hsic_ctrl, ehcictrl;
+	u32 hostphy_ctrl0, otgphy_sys, hsic_ctrl, ehcictrl, ohcictrl;
 
 	atomic_inc(&host_usage);
 
@@ -733,6 +733,11 @@ static int exynos5_usb_phy20_init(struct platform_device *pdev)
 	ehcictrl |= (EHCICTRL_ENAINCRXALIGN | EHCICTRL_ENAINCR4 |
 			EHCICTRL_ENAINCR8 | EHCICTRL_ENAINCR16);
 	writel(ehcictrl, EXYNOS5_PHY_HOST_EHCICTRL);
+
+	/* set ohci_suspend_on_n */
+	ohcictrl = readl(EXYNOS5_PHY_HOST_OHCICTRL);
+	ohcictrl |= OHCICTRL_SUSPLGCY;
+	writel(ohcictrl, EXYNOS5_PHY_HOST_OHCICTRL);
 
 	return 0;
 }
