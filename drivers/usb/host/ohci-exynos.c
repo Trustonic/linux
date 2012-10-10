@@ -424,7 +424,7 @@ static int exynos_ohci_runtime_suspend(struct device *dev)
 	 * any locks =P But that will be a different fix.
 	 */
 	spin_lock_irqsave(&ohci->lock, flags);
-	if (hcd->state != HC_STATE_SUSPENDED && hcd->state != HC_STATE_HALT) {
+	if (ohci->rh_state != OHCI_RH_SUSPENDED && ohci->rh_state != OHCI_RH_HALTED) {
 		spin_unlock_irqrestore(&ohci->lock, flags);
 		err("Not ready %s", hcd->self.bus_name);
 		return 0;

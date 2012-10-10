@@ -122,7 +122,7 @@ static int s5p_ehci_suspend(struct device *dev)
 	 */
 
 	spin_lock_irqsave(&ehci->lock, flags);
-	if (hcd->state != HC_STATE_SUSPENDED && hcd->state != HC_STATE_HALT) {
+	if (ehci->rh_state != EHCI_RH_SUSPENDED && ehci->rh_state != EHCI_RH_HALTED) {
 		spin_unlock_irqrestore(&ehci->lock, flags);
 		return -EINVAL;
 	}
@@ -187,7 +187,7 @@ static int s5p_ehci_resume(struct device *dev)
 	/* here we "know" root ports should always stay powered */
 	ehci_port_power(ehci, 1);
 
-	hcd->state = HC_STATE_SUSPENDED;
+	ehci->rh_state = EHCI_RH_SUSPENDED;
 	return 0;
 }
 
@@ -251,7 +251,7 @@ static int s5p_ehci_runtime_resume(struct device *dev)
 		/* here we "know" root ports should always stay powered */
 		ehci_port_power(ehci, 1);
 
-		hcd->state = HC_STATE_SUSPENDED;
+		ehci->rh_state = EHCI_RH_SUSPENDED;
 	}
 
 	return 0;
