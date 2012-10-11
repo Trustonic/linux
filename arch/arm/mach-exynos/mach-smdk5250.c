@@ -1606,6 +1606,7 @@ static struct samsung_bl_gpio_info smdk5250_bl_gpio_info = {
 static struct platform_pwm_backlight_data smdk5250_bl_data = {
 	.pwm_id		= 0,
 	.pwm_period_ns	= 30000,
+	.dft_brightness	= 102,
 };
 
 #ifdef CONFIG_BATTERY_SAMSUNG
