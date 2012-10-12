@@ -1157,15 +1157,13 @@ srp_firmware_request_complete(const struct firmware *vliw, void *context)
 	release_firmware(srp.fw_info.cga);
 	srp.is_loaded = true;
 
+	srp_get_buf_info();
+	srp_alloc_buf();
+
 	if (reset_type == SRP_SW_RESET) {
 		i2s_enable(srp.pm_info);
 
 		srp_core_reset();
-
-		if (!srp.wbuf) {
-			srp_get_buf_info();
-			srp_alloc_buf();
-		}
 
 		i2s_disable(srp.pm_info);
 	}
