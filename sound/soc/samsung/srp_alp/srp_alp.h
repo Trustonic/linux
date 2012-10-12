@@ -3,52 +3,6 @@
 
 #define SRP_DEV_MINOR	(250)
 
-/* Base address */
-#define SRP_IRAM_BASE	(0x02020000)
-#define SRP_DMEM_BASE	(0x03000000)
-
-/* IRAM Size for exnos4x12 */
-#define IRAM_SIZE	((soc_is_exynos4412() || soc_is_exynos4212()) ? \
-			(0x40000) : (0x20000))
-
-/* SRAM information */
-#if defined(CONFIG_ARCH_EXYNOS4)
-#define DMEM_SIZE	(0x20000)
-#define ICACHE_SIZE	(0x10000)
-#elif defined(CONFIG_ARCH_EXYNOS5)
-#define DMEM_SIZE	(0x28000)
-#define ICACHE_SIZE	(0x18000)
-#endif
-#define CMEM_SIZE	(0x9000)
-#define INT_MEM_SIZE	(DMEM_SIZE + ICACHE_SIZE + CMEM_SIZE)
-
-/* IBUF/OBUF Size */
-#define IBUF_SIZE	(0x4000)
-#define WBUF_SIZE	(IBUF_SIZE * 4)
-#if defined(CONFIG_ARCH_EXYNOS4)
-#define OBUF_SIZE	(0x8000)
-#elif defined(CONFIG_ARCH_EXYNOS5)
-#define OBUF_SIZE	(0x4000)
-#endif
-
-/* Start threshold */
-#define START_THRESHOLD	(IBUF_SIZE * 3)
-
-/* IDMA Buffer */
-#if defined(CONFIG_ARCH_EXYNOS4)
-#define IDMA_OFFSET	((soc_is_exynos4412() || soc_is_exynos4212()) ? \
-			(0x38000) : (0x18000))
-#define SRP_IDMA_BASE	(SRP_IRAM_BASE + IDMA_OFFSET)
-#elif defined(CONFIG_ARCH_EXYNOS5)
-#define IDMA_OFFSET	(0x4)
-#define SRP_IDMA_BASE	(SRP_DMEM_BASE + IDMA_OFFSET)
-#endif
-
-/* Commbox & Etc information */
-#define COMMBOX_SIZE	(0x308)
-
-/* Reserved memory on DRAM */
-#define BASE_MEM_SIZE	(CONFIG_AUDIO_SAMSUNG_MEMSIZE_SRP << 10)
 #define BITSTREAM_SIZE_MAX	(0x7FFFFFFF)
 
 /* F/W Endian Configuration */
