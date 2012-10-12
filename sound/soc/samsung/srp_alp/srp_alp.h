@@ -115,6 +115,7 @@ struct srp_for_suspend {
 };
 
 struct srp_info {
+	struct exynos_srp_pdata *pdata;
 	struct srp_buf_info	ibuf_info;
 	struct srp_buf_info	obuf_info;
 	struct srp_buf_info	pcm_info;
@@ -136,8 +137,6 @@ struct srp_info {
 	unsigned int	ibuf0_pa;
 	unsigned int	ibuf1_pa;
 	unsigned int	ibuf_num;
-	unsigned long	ibuf_size;
-	unsigned long	ibuf_offset;
 	unsigned int	ibuf_next;
 	unsigned int	ibuf_empty[2];
 
@@ -147,8 +146,6 @@ struct srp_info {
 	unsigned int	obuf0_pa;
 	unsigned int	obuf1_pa;
 	unsigned int	obuf_num;
-	unsigned long	obuf_size;
-	unsigned long	obuf_offset;
 	unsigned int	obuf_fill_done[2];
 	unsigned int	obuf_copy_done[2];
 	unsigned int	obuf_ready;

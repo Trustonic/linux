@@ -38,6 +38,7 @@
 #include <mach/irqs.h>
 #include <mach/map.h>
 #include <plat/cpu.h>
+#include <plat/srp.h>
 
 #include "srp_alp.h"
 #include "srp_alp_reg.h"
@@ -65,7 +66,8 @@ void srp_prepare_pm(void *info)
 
 unsigned int srp_get_idma_addr(void)
 {
-	srp.idma_addr = SRP_IDMA_BASE;
+	struct exynos_srp_buf idma = srp.pdata->idma;
+	srp.idma_addr = idma.base + idma.offset;
 	return srp.idma_addr;
 }
 
@@ -113,6 +115,7 @@ static void srp_pending_ctrl(int ctrl)
 
 static void srp_request_intr_mode(int mode)
 {
+	unsigned int reset_type = srp.pdata->type;
 	unsigned long deadline;
 	u32 pwr_mode = readl(srp.commbox + SRP_POWER_MODE);
 	u32 intr_en = readl(srp.commbox + SRP_INTREN);
@@ -151,12 +154,13 @@ static void srp_request_intr_mode(int mode)
 	intr_msk &= ~SRP_ARM_INTR_MASK;
 	intr_src |= SRP_ARM_INTR_SRC;
 
-#ifdef CONFIG_ARCH_EXYNOS5
-	intr_irq = readl(srp.commbox + SRP_INTRIRQ);
-	intr_irq &= ~(SRP_INTRIRQ_MASK);
-	intr_irq |= SRP_INTRIRQ_CONF;
-	writel(intr_irq, srp.commbox + SRP_INTRIRQ);
-#endif
+	if (reset_type == SRP_SW_RESET) {
+		intr_irq = readl(srp.commbox + SRP_INTRIRQ);
+		intr_irq &= ~(SRP_INTRIRQ_MASK);
+		intr_irq |= SRP_INTRIRQ_CONF;
+		writel(intr_irq, srp.commbox + SRP_INTRIRQ);
+	}
+
 	writel(pwr_mode, srp.commbox + SRP_POWER_MODE);
 	writel(intr_en, srp.commbox + SRP_INTREN);
 	writel(intr_msk, srp.commbox + SRP_INTRMASK);
@@ -206,29 +210,35 @@ static void srp_check_stream_info(void)
 
 static void srp_flush_ibuf(void)
 {
-	memset(srp.ibuf0, 0xFF, srp.ibuf_size);
-	memset(srp.ibuf1, 0xFF, srp.ibuf_size);
+	unsigned long size = srp.pdata->ibuf.size;
+
+	memset(srp.ibuf0, 0xFF, size);
+	memset(srp.ibuf1, 0xFF, size);
 }
 
 static void srp_flush_obuf(void)
 {
-	memset(srp.obuf0, 0, srp.obuf_size);
-	memset(srp.obuf1, 0, srp.obuf_size);
+	unsigned long size = srp.pdata->obuf.size;
+
+	memset(srp.obuf0, 0, size);
+	memset(srp.obuf1, 0, size);
 }
 
 static void srp_reset(void)
 {
+	unsigned int reset_type = srp.pdata->type;
 	unsigned int reg = 0;
 
 	srp_debug("Reset\n");
 
-#ifdef CONFIG_ARCH_EXYNOS4
-	/* HW Reset */
-	writel(reg, srp.commbox + SRP_CONT);
-#elif CONFIG_ARCH_EXYNOS5
-	/* SW Reset */
-	srp_request_intr_mode(SW_RESET);
-#endif
+	if (reset_type == SRP_HW_RESET) {
+		/* HW Reset */
+		writel(reg, srp.commbox + SRP_CONT);
+	} else if (reset_type == SRP_SW_RESET) {
+		/* SW Reset */
+		srp_request_intr_mode(SW_RESET);
+	}
+
 	writel(reg, srp.commbox + SRP_INTERRUPT);
 
 	/* Store Total Count */
@@ -259,6 +269,8 @@ static void srp_reset(void)
 
 static void srp_commbox_init(void)
 {
+	unsigned long ibuf_size = srp.pdata->ibuf.size;
+	unsigned int reset_type = srp.pdata->type;
 	u32 pwr_mode = readl(srp.commbox + SRP_POWER_MODE);
 	u32 intr_en = readl(srp.commbox + SRP_INTREN);
 	u32 intr_msk = readl(srp.commbox + SRP_INTRMASK);
@@ -272,12 +284,12 @@ static void srp_commbox_init(void)
 	/* Support Mono Decoding */
 	writel(SRP_ARM_INTR_CODE_SUPPORT_MONO, srp.commbox + SRP_ARM_INTERRUPT_CODE);
 
-#ifdef CONFIG_ARCH_EXYNOS4
-	/* Init Ibuf information */
-	writel(srp.ibuf0_pa, srp.commbox + SRP_BITSTREAM_BUFF_DRAM_ADDR0);
-	writel(srp.ibuf1_pa, srp.commbox + SRP_BITSTREAM_BUFF_DRAM_ADDR1);
-	writel(srp.ibuf_size, srp.commbox + SRP_BITSTREAM_BUFF_DRAM_SIZE);
-#endif
+	if (reset_type == SRP_HW_RESET) {
+		/* Init Ibuf information */
+		writel(srp.ibuf0_pa, srp.commbox + SRP_BITSTREAM_BUFF_DRAM_ADDR0);
+		writel(srp.ibuf1_pa, srp.commbox + SRP_BITSTREAM_BUFF_DRAM_ADDR1);
+		writel(ibuf_size, srp.commbox + SRP_BITSTREAM_BUFF_DRAM_SIZE);
+	}
 
 	/* Output PCM control : 16bit */
 	writel(SRP_CFGR_OUTPUT_PCM_16BIT, srp.commbox + SRP_CFGR);
@@ -288,18 +300,19 @@ static void srp_commbox_init(void)
 	/* Init Read bitstream size */
 	writel(reg, srp.commbox + SRP_READ_BITSTREAM_SIZE);
 
-#ifdef CONFIG_ARCH_EXYNOS4
-	/* Configure fw address */
-	writel(srp.fw_info.vliw_pa, srp.commbox + SRP_CODE_START_ADDR);
-	writel(srp.fw_info.cga_pa, srp.commbox + SRP_CONF_START_ADDR);
-	writel(srp.fw_info.data_pa, srp.commbox + SRP_DATA_START_ADDR);
-#endif
+	if (reset_type == SRP_HW_RESET) {
+		/* Configure fw address */
+		writel(srp.fw_info.vliw_pa, srp.commbox + SRP_CODE_START_ADDR);
+		writel(srp.fw_info.cga_pa, srp.commbox + SRP_CONF_START_ADDR);
+		writel(srp.fw_info.data_pa, srp.commbox + SRP_DATA_START_ADDR);
+	}
 
-#ifdef CONFIG_ARCH_EXYNOS5
-	intr_irq = readl(srp.commbox + SRP_INTRIRQ);
-	intr_irq &= ~(SRP_INTRIRQ_MASK);
-	writel(intr_irq, srp.commbox + SRP_INTRIRQ);
-#endif
+	if (reset_type == SRP_SW_RESET) {
+		intr_irq = readl(srp.commbox + SRP_INTRIRQ);
+		intr_irq &= ~(SRP_INTRIRQ_MASK);
+		writel(intr_irq, srp.commbox + SRP_INTRIRQ);
+	}
+
 	/* Initialize Suspended mode */
 	pwr_mode &= ~SRP_POWER_MODE_MASK;
 	intr_en &= ~SRP_INTR_EN;
@@ -326,20 +339,23 @@ static void srp_commbox_deinit(void)
 
 static void srp_fw_download(void)
 {
+	unsigned long icache_size = srp.pdata->icache_size;
+	unsigned long dmem_size = srp.pdata->dmem_size;
+	unsigned long cmem_size = srp.pdata->cmem_size;
 	unsigned long n;
 	unsigned long *pval;
 	unsigned int reg = 0;
 
 	/* Fill ICACHE with first 64KB area : ARM access I$ */
-	memcpy(srp.icache, srp.fw_info.vliw_va, ICACHE_SIZE);
+	memcpy(srp.icache, srp.fw_info.vliw_va, icache_size);
 
 	/* Fill DMEM */
 	memcpy(srp.dmem + srp.data_offset, srp.fw_info.data_va,
-	       DMEM_SIZE - srp.data_offset);
+	       dmem_size - srp.data_offset);
 
 	/* Fill CMEM : Should be write by the 1word(32bit) */
 	pval = (unsigned long *)srp.fw_info.cga_va;
-	for (n = 0; n < CMEM_SIZE; n += 4, pval++)
+	for (n = 0; n < cmem_size; n += 4, pval++)
 		writel(ENDIAN_CHK_CONV(*pval), srp.cmem + n);
 
 	reg = readl(srp.commbox + SRP_CFGR);
@@ -386,109 +402,117 @@ void srp_core_reset(void)
 
 void srp_core_suspend(void)
 {
+	unsigned long ibuf_size = srp.pdata->ibuf.size;
+	unsigned long obuf_size = srp.pdata->obuf.size;
+	unsigned long dmem_size = srp.pdata->dmem_size;
+	unsigned long commbox_size = srp.pdata->commbox_size;
+	unsigned int reset_type = srp.pdata->type;
 	unsigned char *data;
 	size_t size;
 
 	if (!srp.is_loaded)
 		return;
 
-#ifdef CONFIG_ARCH_EXYNOS4
-	if (!srp.decoding_started)
+	if (reset_type == SRP_HW_RESET && !srp.decoding_started)
 		return;
-#endif
-#ifdef CONFIG_SND_PM_RUNTIME
-	if (srp.pm_suspended)
+
+	if (reset_type == SRP_SW_RESET && srp.pm_suspended)
 		goto exit_func;
-#endif
 
 	data = srp.fw_info.data_va;
-	size = DMEM_SIZE - srp.data_offset;
+	size = dmem_size - srp.data_offset;
 
 	/* IBUF/OBUF Save */
-	memcpy(srp.sp_data.ibuf, srp.ibuf0, IBUF_SIZE * 2);
-	memcpy(srp.sp_data.obuf, srp.obuf0, OBUF_SIZE * 2);
+	memcpy(srp.sp_data.ibuf, srp.ibuf0, ibuf_size * 2);
+	memcpy(srp.sp_data.obuf, srp.obuf0, obuf_size * 2);
 
 	/* Request Suspend mode */
 	srp_request_intr_mode(SUSPEND);
 
 	memcpy(data, srp.dmem + srp.data_offset, size);
-	memcpy(srp.sp_data.commbox, srp.commbox, COMMBOX_SIZE);
+	memcpy(srp.sp_data.commbox, srp.commbox, commbox_size);
 	srp.pm_suspended = true;
 
-#ifdef CONFIG_SND_PM_RUNTIME
 exit_func:
-	srp.hw_reset_stat = false;
-#endif
+	if (reset_type == SRP_SW_RESET)
+		srp.hw_reset_stat = false;
 }
 
 void srp_core_resume(void)
 {
-#ifdef CONFIG_ARCH_EXYNOS4
-	if (!srp.decoding_started)
+	unsigned long ibuf_size = srp.pdata->ibuf.size;
+	unsigned long obuf_size = srp.pdata->obuf.size;
+	unsigned long commbox_size = srp.pdata->commbox_size;
+	unsigned int reset_type = srp.pdata->type;
+
+	if (reset_type == SRP_HW_RESET && !srp.decoding_started)
 		return;
-#endif
+
 	if (!srp.pm_suspended)
 		return;
 
 	srp_fw_download();
-	memcpy(srp.commbox, srp.sp_data.commbox, COMMBOX_SIZE);
-	memcpy(srp.ibuf0, srp.sp_data.ibuf, IBUF_SIZE * 2);
-	memcpy(srp.obuf0, srp.sp_data.obuf, OBUF_SIZE * 2);
+	memcpy(srp.commbox, srp.sp_data.commbox, commbox_size);
+	memcpy(srp.ibuf0, srp.sp_data.ibuf, ibuf_size * 2);
+	memcpy(srp.obuf0, srp.sp_data.obuf, obuf_size * 2);
 
-#ifndef CONFIG_SND_PM_RUNTIME
-	/* RESET */
-	writel(0x0, srp.commbox + SRP_CONT);
-#endif
+	if (reset_type == SRP_HW_RESET) {
+		/* RESET */
+		writel(0x0, srp.commbox + SRP_CONT);
+	}
+
 	srp_request_intr_mode(RESUME);
 	srp.pm_suspended = false;
 }
 
 static void srp_fill_ibuf(void)
 {
+	unsigned long ibuf_size = srp.pdata->ibuf.size;
 	unsigned long fill_size = 0;
 
 	if (!srp.wbuf_pos)
 		return;
 
-	if (srp.wbuf_pos >= srp.ibuf_size) {
-		fill_size = srp.ibuf_size;
+	if (srp.wbuf_pos >= ibuf_size) {
+		fill_size = ibuf_size;
 		srp.wbuf_pos -= fill_size;
 	} else {
 		if (srp.wait_for_eos) {
 			fill_size = srp.wbuf_pos;
 			memset(&srp.wbuf[fill_size], 0xFF,
-				srp.ibuf_size - fill_size);
+				ibuf_size - fill_size);
 			srp.wbuf_pos = 0;
 		}
 	}
 
 	if (srp.ibuf_next == 0) {
-		memcpy(srp.ibuf0, srp.wbuf, srp.ibuf_size);
+		memcpy(srp.ibuf0, srp.wbuf, ibuf_size);
 		srp_debug("Fill IBUF0 (%lu)\n", fill_size);
 		srp.ibuf_empty[0] = 0;
 		srp.ibuf_next = 1;
 	} else {
-		memcpy(srp.ibuf1, srp.wbuf, srp.ibuf_size);
+		memcpy(srp.ibuf1, srp.wbuf, ibuf_size);
 		srp_debug("Fill IBUF1 (%lu)\n", fill_size);
 		srp.ibuf_empty[1] = 0;
 		srp.ibuf_next = 0;
 	}
 
 	if (srp.wbuf_pos)
-		memcpy(srp.wbuf, &srp.wbuf[srp.ibuf_size], srp.wbuf_pos);
+		memcpy(srp.wbuf, &srp.wbuf[ibuf_size], srp.wbuf_pos);
 }
 
 static ssize_t srp_write(struct file *file, const char *buffer,
 					size_t size, loff_t *pos)
 {
+	unsigned long ibuf_size = srp.pdata->ibuf.size;
+	unsigned int reset_type = srp.pdata->type;
 	unsigned long start_threshold = 0;
 	ssize_t ret = 0;
 
 	srp_debug("Write(%d bytes)\n", size);
 
 	i2s_enable(srp.pm_info);
-#ifdef CONFIG_SND_PM_RUNTIME
-	if (srp.pm_suspended) {
+	if (reset_type == SRP_SW_RESET && srp.pm_suspended) {
 		ret = wait_event_interruptible_timeout(reset_wq,
 				    srp.hw_reset_stat, HZ / 20);
 		if (!ret) {
@@ -498,7 +522,7 @@ static ssize_t srp_write(struct file *file, const char *buffer,
 
 		srp_core_resume();
 	}
-#endif
+
 	if (srp.initialized) {
 		srp.initialized = false;
 		srp_flush_ibuf();
@@ -514,7 +538,7 @@ static ssize_t srp_write(struct file *file, const char *buffer,
 		srp_obuf_elapsed();
 	}
 
-	if (srp.wbuf_pos + size > WBUF_SIZE) {
+	if (srp.wbuf_pos + size > srp.wbuf_size) {
 		srp_debug("Occured Ibuf Overflow!!\n");
 		ret = SRP_ERROR_IBUF_OVERFLOW;
 		goto exit_func;
@@ -530,7 +554,7 @@ static ssize_t srp_write(struct file *file, const char *buffer,
 	srp.wbuf_fill_size += size;
 
 	start_threshold = srp.decoding_started
-			? srp.ibuf_size : START_THRESHOLD;
+			? ibuf_size : ibuf_size * 3;
 
 	if (srp.wbuf_pos < start_threshold) {
 		ret = size;
@@ -554,24 +578,26 @@ static ssize_t srp_read(struct file *file, char *buffer,
 				size_t size, loff_t *pos)
 {
 	struct srp_buf_info *argp = (struct srp_buf_info *)buffer;
+	unsigned long obuf_size = srp.pdata->obuf.size;
+	unsigned int reset_type = srp.pdata->type;
 	unsigned char *mmapped_obuf0 = srp.obuf_info.addr;
-	unsigned char *mmapped_obuf1 = srp.obuf_info.addr + srp.obuf_size;
+	unsigned char *mmapped_obuf1 = srp.obuf_info.addr + obuf_size;
 	int ret = 0;
 
 	srp_debug("Entered Get Obuf in PCM function\n");
 
 	if (srp.prepare_for_eos) {
 		i2s_enable(srp.pm_info);
-#ifdef CONFIG_SND_PM_RUNTIME
-		ret = wait_event_interruptible_timeout(reset_wq,
-			    srp.hw_reset_stat, HZ / 20);
-		if (!ret) {
-			srp_err("Not ready to resume srp core.\n");
-			return -EFAULT;
-		}
+		if (reset_type == SRP_SW_RESET && srp.pm_suspended) {
+			ret = wait_event_interruptible_timeout(reset_wq,
+				    srp.hw_reset_stat, HZ / 20);
+			if (!ret) {
+				srp_err("Not ready to resume srp core.\n");
+				return -EFAULT;
+			}
 
-		srp_core_resume();
-#endif
+			srp_core_resume();
+		}
 
 		srp.obuf_fill_done[srp.obuf_ready] = 0;
 		srp_debug("Elapsed Obuf[%d] after Send EOS\n", srp.obuf_ready);
@@ -647,6 +673,9 @@ static void srp_set_stream_size(void)
 static long srp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct srp_buf_info *argp = (struct srp_buf_info *)arg;
+	struct exynos_srp_buf obuf = srp.pdata->obuf;
+	unsigned long ibuf_size = srp.pdata->ibuf.size;
+	unsigned long ibuf_num = srp.pdata->ibuf.num;
 	unsigned long val = 0;
 	long ret = 0;
 
@@ -665,7 +694,7 @@ static long srp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 
 	case SRP_GET_MMAP_SIZE:
-		srp.obuf_info.mmapped_size = srp.obuf_size * srp.obuf_num + srp.obuf_offset;
+		srp.obuf_info.mmapped_size = obuf.size * obuf.num + obuf.offset;
 		val = srp.obuf_info.mmapped_size;
 		ret = copy_to_user((unsigned long *)arg,
 					&val, sizeof(unsigned long));
@@ -681,8 +710,8 @@ static long srp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	case SRP_GET_IBUF_INFO:
 		srp.ibuf_info.addr = (void *) srp.wbuf;
-		srp.ibuf_info.size = srp.ibuf_size * 2;
-		srp.ibuf_info.num  = srp.ibuf_num;
+		srp.ibuf_info.size = ibuf_size * 2;
+		srp.ibuf_info.num  = ibuf_num;
 
 		ret = copy_to_user(argp, &srp.ibuf_info,
 						sizeof(struct srp_buf_info));
@@ -693,9 +722,9 @@ static long srp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 				sizeof(struct srp_buf_info));
 		if (!ret) {
 			srp.obuf_info.addr = srp.obuf_info.mmapped_addr
-							+ srp.obuf_offset;
-			srp.obuf_info.size = srp.obuf_size;
-			srp.obuf_info.num = srp.obuf_num;
+							+ obuf.offset;
+			srp.obuf_info.size = obuf.size;
+			srp.obuf_info.num = obuf.num;
 		}
 
 		ret = copy_to_user(argp, &srp.obuf_info,
@@ -706,14 +735,14 @@ static long srp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		srp_info("Send End-Of-Stream\n");
 		if (srp.wbuf_fill_size == 0) {
 			srp.stop_after_eos = 1;
-		} else if (srp.wbuf_fill_size < srp.ibuf_size * 3) {
+		} else if (srp.wbuf_fill_size < ibuf_size * 3) {
 			srp_debug("%ld, smaller than ibuf_size * 3\n", srp.wbuf_fill_size);
 			srp.wait_for_eos = 1;
 			srp_fill_ibuf();
 			srp_set_stream_size();
 			srp_pending_ctrl(RUN);
 			srp.decoding_started = 1;
-		} else if (srp.wbuf_fill_size >= srp.ibuf_size * 3) {
+		} else if (srp.wbuf_fill_size >= ibuf_size * 3) {
 			srp_debug("%ld Bigger than ibuf * 3!!\n", srp.wbuf_fill_size);
 			srp.wait_for_eos = 1;
 		}
@@ -801,6 +830,7 @@ static int srp_release(struct inode *inode, struct file *file)
 
 static int srp_mmap(struct file *filep, struct vm_area_struct *vma)
 {
+	unsigned int base = srp.pdata->obuf.base;
 	unsigned long size = vma->vm_end - vma->vm_start;
 	unsigned int pfn;
 	unsigned int mmap_addr;
@@ -809,7 +839,7 @@ static int srp_mmap(struct file *filep, struct vm_area_struct *vma)
 	vma->vm_flags |= VM_RESERVED;
 	vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
 
-	mmap_addr = SRP_DMEM_BASE;
+	mmap_addr = base;
 	pfn = __phys_to_pfn(mmap_addr);
 
 	if (remap_pfn_range(vma, vma->vm_start, pfn, size, vma->vm_page_prot)) {
@@ -822,6 +852,7 @@ static int srp_mmap(struct file *filep, struct vm_area_struct *vma)
 
 static void srp_check_obuf_info(void)
 {
+	unsigned long obuf_size = srp.pdata->obuf.size;
 	unsigned int buf0 = readl(srp.commbox + SRP_PCM_BUFF0);
 	unsigned int buf1 = readl(srp.commbox + SRP_PCM_BUFF1);
 	unsigned int size = readl(srp.commbox + SRP_PCM_BUFF_SIZE);
@@ -832,47 +863,32 @@ static void srp_check_obuf_info(void)
 	if (srp.obuf1_pa != buf1)
 		srp_err("Wrong PCM BUF1[0x%x], OBUF1[0x%x]\n",
 					buf1, srp.obuf1_pa);
-	if ((srp.obuf_size >> 2) != size)
+	if ((obuf_size >> 2) != size)
 		srp_err("Wrong OBUF SIZE[%d]\n", size);
 }
 
 static void srp_get_buf_info(void)
 {
-	unsigned int ibuf0 = readl(srp.commbox + SRP_BITSTREAM_BUFF_DRAM_ADDR0);
-	unsigned int ibuf1 = readl(srp.commbox + SRP_BITSTREAM_BUFF_DRAM_ADDR1);
-	unsigned int obuf0 = readl(srp.commbox + SRP_PCM_BUFF0);
-	unsigned int obuf1 = readl(srp.commbox + SRP_PCM_BUFF1);
-	unsigned int ibuf_base;
+	struct exynos_srp_buf ibuf = srp.pdata->ibuf;
+	struct exynos_srp_buf obuf = srp.pdata->obuf;
 
-	/* Get I/O Buffer offset */
-	srp.ibuf_offset = ibuf0 & 0xfffff;
-	srp.obuf_offset = obuf0 & 0xfffff;
+	/* Get I/O Buffer virtual address */
+	srp.ibuf0 = srp.dmem + ibuf.offset;
+	srp.ibuf1 = srp.ibuf0 + ibuf.size;
+	srp.obuf0 = srp.dmem + obuf.offset;
+	srp.obuf1 = srp.obuf0 + obuf.size;
 
-	/* Get I/O Buffer address */
-	srp.ibuf0 = srp.dmem + (ibuf0 & 0xfffff);
-	srp.ibuf1 = srp.dmem + (ibuf1 & 0xfffff);
-	srp.obuf0 = srp.dmem + (obuf0 & 0xfffff);
-	srp.obuf1 = srp.dmem + (obuf1 & 0xfffff);
-
-#ifdef CONFIG_ARCH_EXYNOS4
-	ibuf_base = SRP_IRAM_BASE;
-#elif CONFIG_ARCH_EXYNOS5
-	ibuf_base = SRP_DMEM_BASE;
-#endif
 	/* Get I/O Buffer Physical address */
-	srp.ibuf0_pa = ibuf_base + (ibuf0 & 0xfffff);
-	srp.ibuf1_pa = ibuf_base + (ibuf1 & 0xfffff);
-	srp.obuf0_pa = SRP_DMEM_BASE + (obuf0 & 0xfffff);
-	srp.obuf1_pa = SRP_DMEM_BASE + (obuf1 & 0xfffff);
+	srp.ibuf0_pa = ibuf.base + ibuf.offset;
+	srp.ibuf1_pa = srp.ibuf0_pa + ibuf.size;
+	srp.obuf0_pa = obuf.base + obuf.offset;
+	srp.obuf1_pa = srp.obuf0_pa + obuf.size;
 
-	/* Get I/O Buffer size */
-	srp.ibuf_size = readl(srp.commbox + SRP_BITSTREAM_BUFF_DRAM_SIZE);
-	srp.obuf_size = (readl(srp.commbox + SRP_PCM_BUFF_SIZE) << 2);
-	srp.wbuf_size = srp.ibuf_size * 4;
+	/* Get bitstream bufferring size */
+	srp.wbuf_size = ibuf.size * 4;
 
-	srp.ibuf_num = 2;
-	srp.obuf_num = 2;
-	srp.data_offset = (srp.ibuf_size * 2) + srp.obuf_offset;
+	/* Get Data offset */
+	srp.data_offset = (ibuf.size * 2) + obuf.offset;
 
 	srp_info("[VA]IBUF0[0x%p], [PA]IBUF0[0x%x]\n",
 						srp.ibuf0, srp.ibuf0_pa);
@@ -883,30 +899,34 @@ static void srp_get_buf_info(void)
 	srp_info("[VA]OBUF1[0x%p], [PA]OBUF1[0x%x]\n",
 						srp.obuf1, srp.obuf1_pa);
 	srp_info("IBUF SIZE [%ld]Bytes, OBUF SIZE [%ld]Bytes\n",
-						srp.ibuf_size, srp.obuf_size);
+						ibuf.size, obuf.size);
 }
 
 static void srp_alloc_buf(void)
 {
+	unsigned long ibuf_size = srp.pdata->ibuf.size;
+	unsigned long obuf_size = srp.pdata->obuf.size;
+	unsigned long commbox_size = srp.pdata->commbox_size;
+
 	srp.wbuf = kmalloc(srp.wbuf_size, GFP_KERNEL | GFP_DMA);
 	if (!srp.wbuf) {
 		srp_err("Failed to alloc memory for wbuf\n");
 		return;
 	}
 
-	srp.sp_data.ibuf = kmalloc(srp.ibuf_size * 2, GFP_KERNEL | GFP_DMA);
+	srp.sp_data.ibuf = kmalloc(ibuf_size * 2, GFP_KERNEL | GFP_DMA);
 	if (!srp.sp_data.ibuf) {
 		srp_err("Failed to alloc memory for sp_data ibuf\n");
 		goto err1;
 	}
 
-	srp.sp_data.obuf = kmalloc(srp.obuf_size * 2, GFP_KERNEL | GFP_DMA);
+	srp.sp_data.obuf = kmalloc(obuf_size * 2, GFP_KERNEL | GFP_DMA);
 	if (!srp.sp_data.obuf) {
 		srp_err("Failed to alloc memory for sp_data obuf\n");
 		goto err2;
 	}
 
-	srp.sp_data.commbox = kmalloc(COMMBOX_SIZE, GFP_KERNEL | GFP_DMA);
+	srp.sp_data.commbox = kmalloc(commbox_size, GFP_KERNEL | GFP_DMA);
 	if (!srp.sp_data.commbox) {
 		srp_err("Failed to alloc memory for sp_data commbox\n");
 		goto err3;
@@ -1074,6 +1094,10 @@ srp_firmware_request_complete(const struct firmware *vliw, void *context)
 	const struct firmware *cga;
 	const struct firmware *data;
 	struct device *dev = context;
+	unsigned long icache_size = srp.pdata->icache_size;
+	unsigned long dmem_size = srp.pdata->dmem_size;
+	unsigned long cmem_size = srp.pdata->cmem_size;
+	unsigned int reset_type = srp.pdata->type;
 
 	if (!vliw) {
 		srp_err("Failed to requset firmware[%s]\n", VLIW_NAME);
@@ -1099,19 +1123,19 @@ srp_firmware_request_complete(const struct firmware *vliw, void *context)
 	srp.fw_info.data_size = data->size;
 
 	/* Firmware Memory allocation */
-	srp.fw_info.vliw_va = kmalloc(ICACHE_SIZE, GFP_KERNEL | GFP_DMA);
+	srp.fw_info.vliw_va = kmalloc(icache_size, GFP_KERNEL | GFP_DMA);
 	if (!srp.fw_info.vliw_va) {
 		srp_err("Failed to alloc memory for vliw\n");
 		goto err1;
 	}
 
-	srp.fw_info.cga_va = kmalloc(CMEM_SIZE, GFP_KERNEL | GFP_DMA);
+	srp.fw_info.cga_va = kmalloc(cmem_size, GFP_KERNEL | GFP_DMA);
 	if (!srp.fw_info.cga_va) {
 		srp_err("Failed to alloc memory for cga\n");
 		goto err2;
 	}
 
-	srp.fw_info.data_va = kmalloc(DMEM_SIZE, GFP_KERNEL | GFP_DMA);
+	srp.fw_info.data_va = kmalloc(dmem_size, GFP_KERNEL | GFP_DMA);
 	if (!srp.fw_info.data_va) {
 		srp_err("Failed to alloc memory for data\n");
 		goto err3;
@@ -1133,16 +1157,18 @@ srp_firmware_request_complete(const struct firmware *vliw, void *context)
 	release_firmware(srp.fw_info.cga);
 	srp.is_loaded = true;
 
-	i2s_enable(srp.pm_info);
-#ifndef CONFIG_SND_PM_RUNTIME
-	srp_core_reset();
-#endif
-	if (!srp.wbuf) {
-		srp_get_buf_info();
-		srp_alloc_buf();
-	}
+	if (reset_type == SRP_SW_RESET) {
+		i2s_enable(srp.pm_info);
 
-	i2s_disable(srp.pm_info);
+		srp_core_reset();
+
+		if (!srp.wbuf) {
+			srp_get_buf_info();
+			srp_alloc_buf();
+		}
+
+		i2s_disable(srp.pm_info);
+	}
 
 	return;
 
@@ -1177,14 +1203,14 @@ static struct miscdevice srp_miscdev = {
 #ifdef CONFIG_PM
 static int srp_suspend(struct platform_device *pdev, pm_message_t state)
 {
+	unsigned int reset_type = srp.pdata->type;
+
 	srp_info("Suspend\n");
 
-#ifdef CONFIG_SND_PM_RUNTIME
-	if (srp.pm_suspended) {
+	if (reset_type == SRP_SW_RESET && srp.pm_suspended) {
 		srp_info("Already suspended!\n");
 		return 0;
 	}
-#endif
 
 	i2s_enable(srp.pm_info);
 
@@ -1197,14 +1223,14 @@ static int srp_suspend(struct platform_device *pdev, pm_message_t state)
 
 static int srp_resume(struct platform_device *pdev)
 {
+	unsigned int reset_type = srp.pdata->type;
+
 	srp_info("Resume\n");
 
-#ifdef CONFIG_SND_PM_RUNTIME
-	if (srp.pm_suspended) {
+	if (reset_type == SRP_SW_RESET && srp.pm_suspended) {
 		srp_info("No need to resume in here\n");
 		return 0;
 	}
-#endif
 
 	i2s_enable(srp.pm_info);
 
@@ -1222,28 +1248,50 @@ static int srp_resume(struct platform_device *pdev)
 
 static __devinit int srp_probe(struct platform_device *pdev)
 {
+	struct exynos_srp_pdata *pdata = pdev->dev.platform_data;
 	struct resource *int_mem_res;
 	struct resource *commbox_res;
+	unsigned long int_mem_size = 0;
 	unsigned int int_mem_base = 0;
 	unsigned int commbox_base = 0;
 	int ret = 0;
 
+	if (!pdata) {
+		srp_err("Failed to get platform data\n");
+		return -ENODEV;
+	}
+
+	srp.pdata = kzalloc(sizeof(struct exynos_srp_pdata), GFP_KERNEL);
+	if (!srp.pdata) {
+		srp_err("Failed to alloc memory for platform data\n");
+		return -ENOMEM;
+	}
+
+	memcpy(srp.pdata, pdata, sizeof(struct exynos_srp_pdata));
+
+	/* Total size of internal memory */
+	int_mem_size = srp.pdata->icache_size + srp.pdata->dmem_size
+					      + srp.pdata->cmem_size;
+
 	int_mem_res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!int_mem_res) {
 		srp_err("Unable to get internal mem resource\n");
-		return -ENXIO;
+		ret = -ENXIO;
+		goto err0;
 	}
 	
 	commbox_res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
 	if (!commbox_res) {
 		srp_err("Unable to get commbox resource\n");
-		return -ENXIO;
+		ret = -ENXIO;
+		goto err0;
 	}
 
 	if (!request_mem_region(int_mem_res->start, resource_size(int_mem_res),
 								"samsung-rp")) {
 		srp_err("Unable to request internal mem\n");
-		return -EBUSY;
+		ret = -EBUSY;
+		goto err0;
 	}
 	int_mem_base = int_mem_res->start;
 
@@ -1255,28 +1303,31 @@ static __devinit int srp_probe(struct platform_device *pdev)
 	}
 	commbox_base = commbox_res->start;
 
-	srp.dmem = ioremap(int_mem_base, INT_MEM_SIZE);
+	srp.dmem = ioremap(int_mem_base, int_mem_size);
 	if (srp.dmem == NULL) {
 		srp_err("Failed to ioremap for dmem\n");
 		ret = -ENOMEM;
 		goto err2;
 
 	}
-	srp.icache = srp.dmem + DMEM_SIZE;
-	srp.cmem = srp.icache + ICACHE_SIZE;
+	srp.icache = srp.dmem + srp.pdata->dmem_size;
+	srp.cmem = srp.icache + srp.pdata->icache_size;
 
-	srp.commbox = ioremap(commbox_base, COMMBOX_SIZE);
+	srp.commbox = ioremap(commbox_base, srp.pdata->commbox_size);
 	if (srp.commbox == NULL) {
 		srp_err("Failed to ioremap for audio subsystem\n");
 		ret = -ENOMEM;
 		goto err3;
 	}
 
-	srp.iram = ioremap(SRP_IRAM_BASE, IRAM_SIZE);
-	if (srp.iram == NULL) {
-		srp_err("Failed to ioremap for sram area\n");
-		ret = -ENOMEM;
-		goto err4;
+	if (srp.pdata->use_iram) {
+		srp.iram = ioremap(srp.pdata->ibuf.base,
+					srp.pdata->iram_size);
+		if (srp.iram == NULL) {
+			srp_err("Failed to ioremap for sram area\n");
+			ret = -ENOMEM;
+			goto err4;
+		}
 	}
 
 	ret = request_irq(IRQ_AUDIO_SS, srp_irq, IRQF_DISABLED, "samsung-rp", pdev);
@@ -1311,7 +1362,8 @@ err7:
 err6:
 	free_irq(IRQ_AUDIO_SS, pdev);
 err5:
-	iounmap(srp.iram);
+	if (srp.pdata->use_iram)
+		iounmap(srp.iram);
 err4:
 	iounmap(srp.commbox);
 err3:
@@ -1320,6 +1372,8 @@ err2:
 	release_mem_region(commbox_base, resource_size(commbox_res));
 err1:
 	release_mem_region(int_mem_base, resource_size(int_mem_res));
+err0:
+	kfree(srp.pdata);
 
 	return ret;
 }
