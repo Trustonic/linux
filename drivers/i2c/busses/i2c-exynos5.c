@@ -320,6 +320,7 @@ static int exynos5_i2c_xfer(struct i2c_adapter *adap,
 
 			if (ret == -EAGAIN) {
 				msgs_ptr = msgs;
+				stop = 0;
 				break;
 			}
 		}
