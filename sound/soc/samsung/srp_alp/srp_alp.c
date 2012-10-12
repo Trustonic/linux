@@ -512,14 +512,15 @@ static ssize_t srp_write(struct file *file, const char *buffer,
 	srp_debug("Write(%d bytes)\n", size);
 
 	i2s_enable(srp.pm_info);
-	if (reset_type == SRP_SW_RESET && srp.pm_suspended) {
-		ret = wait_event_interruptible_timeout(reset_wq,
-				    srp.hw_reset_stat, HZ / 20);
-		if (!ret) {
-			srp_err("Not ready to resume srp core.\n");
-			return -EFAULT;
+	if (srp.pm_suspended) {
+		if (reset_type == SRP_SW_RESET) {
+			ret = wait_event_interruptible_timeout(reset_wq,
+					    srp.hw_reset_stat, HZ / 20);
+			if (!ret) {
+				srp_err("Not ready to resume srp core.\n");
+				return -EFAULT;
+			}
 		}
-
 		srp_core_resume();
 	}
 
@@ -588,14 +589,15 @@ static ssize_t srp_read(struct file *file, char *buffer,
 
 	if (srp.prepare_for_eos) {
 		i2s_enable(srp.pm_info);
-		if (reset_type == SRP_SW_RESET && srp.pm_suspended) {
-			ret = wait_event_interruptible_timeout(reset_wq,
-				    srp.hw_reset_stat, HZ / 20);
-			if (!ret) {
-				srp_err("Not ready to resume srp core.\n");
-				return -EFAULT;
+		if (srp.pm_suspended) {
+			if (reset_type == SRP_SW_RESET) {
+				ret = wait_event_interruptible_timeout(reset_wq,
+					    srp.hw_reset_stat, HZ / 20);
+				if (!ret) {
+					srp_err("Not ready to resume srp core.\n");
+					return -EFAULT;
+				}
 			}
-
 			srp_core_resume();
 		}
 
@@ -1201,11 +1203,9 @@ static struct miscdevice srp_miscdev = {
 #ifdef CONFIG_PM
 static int srp_suspend(struct platform_device *pdev, pm_message_t state)
 {
-	unsigned int reset_type = srp.pdata->type;
-
 	srp_info("Suspend\n");
 
-	if (reset_type == SRP_SW_RESET && srp.pm_suspended) {
+	if (srp.pm_suspended) {
 		srp_info("Already suspended!\n");
 		return 0;
 	}
@@ -1221,20 +1221,7 @@ static int srp_suspend(struct platform_device *pdev, pm_message_t state)
 
 static int srp_resume(struct platform_device *pdev)
 {
-	unsigned int reset_type = srp.pdata->type;
-
 	srp_info("Resume\n");
-
-	if (reset_type == SRP_SW_RESET && srp.pm_suspended) {
-		srp_info("No need to resume in here\n");
-		return 0;
-	}
-
-	i2s_enable(srp.pm_info);
-
-	srp_core_resume();
-
-	i2s_disable(srp.pm_info);
 
 	return 0;
 }
