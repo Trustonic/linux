@@ -220,7 +220,7 @@ static int exynos4_usb_phy20_is_on(void)
 
 static int exynos5_usb_phy20_is_on(void)
 {
-	return (readl(EXYNOS5_PHY_HOST_CTRL0) & HOST_CTRL0_PHYSWRSTALL) ? 0 : 1;
+	return (readl(EXYNOS5_PHY_HOST_CTRL0) & HOST_CTRL0_SIDDQ) ? 0 : 1;
 }
 
 static int exynos5_usb_phy30_is_on(void)
