@@ -1039,20 +1039,6 @@ static void mipi_lcd_set_power(struct plat_lcd_data *pd,
 		gpio_set_value(EXYNOS5_GPX3(0), 0);
 		gpio_free(EXYNOS5_GPX3(0));
 	}
-
-#ifndef CONFIG_BACKLIGHT_PWM
-	/* backlight */
-	gpio_request_one(EXYNOS5_GPB2(0), GPIOF_OUT_INIT_LOW, "GPB2");
-	if (power) {
-		/* fire nRESET on power up */
-		gpio_set_value(EXYNOS5_GPB2(0), 1);
-		gpio_free(EXYNOS5_GPB2(0));
-	} else {
-		/* fire nRESET on power off */
-		gpio_set_value(EXYNOS5_GPB2(0), 0);
-		gpio_free(EXYNOS5_GPB2(0));
-	}
-#endif
 }
 
 static struct plat_lcd_data smdk5250_mipi_lcd_data = {
@@ -1155,20 +1141,6 @@ static void mipi_lcd_set_power(struct plat_lcd_data *pd,
 		gpio_set_value(EXYNOS5_GPX3(0), 0);
 		gpio_free(EXYNOS5_GPX3(0));
 	}
-
-#ifndef CONFIG_BACKLIGHT_PWM
-	/* backlight */
-	gpio_request_one(EXYNOS5_GPB2(0), GPIOF_OUT_INIT_LOW, "GPB2");
-	if (power) {
-		/* fire nRESET on power up */
-		gpio_set_value(EXYNOS5_GPB2(0), 1);
-		gpio_free(EXYNOS5_GPB2(0));
-	} else {
-		/* fire nRESET on power off */
-		gpio_set_value(EXYNOS5_GPB2(0), 0);
-		gpio_free(EXYNOS5_GPB2(0));
-	}
-#endif
 }
 
 static struct plat_lcd_data smdk5250_mipi_lcd_data = {
@@ -1239,118 +1211,39 @@ static struct s3c_fb_pd_win smdk5250_fb_win2 = {
 static void smdk5250_backlight_on(void);
 static void smdk5250_backlight_off(void);
 
+#define LCD_POWER_OFF_TIME_US	(500 * USEC_PER_MSEC)
+
+static ktime_t lcd_on_time;
+
 static void smdk5250_lcd_on(void)
 {
+	s64 us = ktime_us_delta(lcd_on_time, ktime_get_boottime());
+
+	if (us > LCD_POWER_OFF_TIME_US) {
+		pr_warn("lcd on sleep time too long\n");
+		us = LCD_POWER_OFF_TIME_US;
+	}
+
+	if (us > 0)
+		usleep_range(us, us);
+
 	if (get_smdk5250_rev() == SMDK5250_REV_0_0) {
-#ifndef CONFIG_BACKLIGHT_PWM
-		/* LCD_PWM_IN_2.8V: LCD_B_PWM, GPB2_0 */
-		gpio_request(EXYNOS5_GPB2(0), "GPB2");
-#endif
-		/* LCD_APS_EN_2.8V: GPD0_6 */
-		gpio_request(EXYNOS5_GPD0(6), "GPD0");
-
-		/* LCD_EN: GPD0_5 */
-		gpio_request(EXYNOS5_GPD0(5), "GPD0");
-
-		/* LCD_EN: GPD0_5 */
-		gpio_direction_output(EXYNOS5_GPD0(5), 1);
-		mdelay(20);
-
-		/* LCD_APS_EN_2.8V: GPD0_6 */
-		gpio_direction_output(EXYNOS5_GPD0(6), 1);
-		mdelay(20);
-#ifndef CONFIG_BACKLIGHT_PWM
-		/* LCD_PWM_IN_2.8V: LCD_B_PWM, GPB2_0 */
-		gpio_direction_output(EXYNOS5_GPB2(0), 1);
-
-		gpio_free(EXYNOS5_GPB2(0));
-#endif
-		gpio_free(EXYNOS5_GPD0(6));
-		gpio_free(EXYNOS5_GPD0(5));
+		gpio_set_value(EXYNOS5_GPD0(5), 1);
+		usleep_range(200000, 200000);
 	} else {
-#ifndef CONFIG_BACKLIGHT_PWM
-		/* LCD_PWM_IN_2.8V: LCD_B_PWM, GPB2_0 */
-		gpio_request(EXYNOS5_GPB2(0), "GPB2");
-#endif
-		/* LCD_APS_EN_2.8V: GPH1_2 */
-		gpio_request(EXYNOS5_GPH1(2), "GPH1");
-
-		/* LCD_EN: GPH1_1 */
-		gpio_request(EXYNOS5_GPH1(1), "GPH1");
-
-		/* LCD_EN: GPH1_1 */
-		gpio_direction_output(EXYNOS5_GPH1(1), 1);
-		mdelay(20);
-
-		/* LCD_APS_EN_2.8V: GPH1_2 */
-		gpio_direction_output(EXYNOS5_GPH1(2), 1);
-		mdelay(20);
-#ifndef CONFIG_BACKLIGHT_PWM
-		/* LCD_PWM_IN_2.8V: LCD_B_PWM, GPB2_0 */
-		gpio_direction_output(EXYNOS5_GPB2(0), 1);
-
-		gpio_free(EXYNOS5_GPB2(0));
-#endif
-		gpio_free(EXYNOS5_GPH1(2));
-		gpio_free(EXYNOS5_GPH1(1));
+		gpio_set_value(EXYNOS5_GPH1(1), 1);
+		usleep_range(200000, 200000);
 	}
 }
 
 static void smdk5250_lcd_off(void)
 {
-	if (get_smdk5250_rev() == SMDK5250_REV_0_0) {
-#ifndef CONFIG_BACKLIGHT_PWM
-		/* LCD_PWM_IN_2.8V: LCD_B_PWM, GPB2_0 */
-		gpio_request(EXYNOS5_GPB2(0), "GPB2");
-#endif
-		/* LCD_APS_EN_2.8V: GPD0_6 */
-		gpio_request(EXYNOS5_GPD0(6), "GPD0");
+	if (get_smdk5250_rev() == SMDK5250_REV_0_0)
+		gpio_set_value(EXYNOS5_GPD0(5), 0);
+	else
+		gpio_set_value(EXYNOS5_GPH1(1), 0);
 
-		/* LCD_EN: GPD0_5 */
-		gpio_request(EXYNOS5_GPD0(5), "GPD0");
-
-		/* LCD_EN: GPD0_5 */
-		gpio_direction_output(EXYNOS5_GPD0(5), 0);
-		mdelay(20);
-
-		/* LCD_APS_EN_2.8V: GPD0_6 */
-		gpio_direction_output(EXYNOS5_GPD0(6), 0);
-		mdelay(20);
-#ifndef CONFIG_BACKLIGHT_PWM
-		/* LCD_PWM_IN_2.8V: LCD_B_PWM, GPB2_0 */
-		gpio_direction_output(EXYNOS5_GPB2(0), 0);
-
-		gpio_free(EXYNOS5_GPB2(0));
-#endif
-		gpio_free(EXYNOS5_GPD0(6));
-		gpio_free(EXYNOS5_GPD0(5));
-	} else {
-#ifndef CONFIG_BACKLIGHT_PWM
-		/* LCD_PWM_IN_2.8V: LCD_B_PWM, GPB2_0 */
-		gpio_request(EXYNOS5_GPB2(0), "GPB2");
-#endif
-		/* LCD_APS_EN_2.8V: GPH1_2 */
-		gpio_request(EXYNOS5_GPH1(2), "GPH1");
-
-		/* LCD_EN: GPH1_1 */
-		gpio_request(EXYNOS5_GPH1(1), "GPH1");
-
-		/* LCD_EN: GPH1_1 */
-		gpio_direction_output(EXYNOS5_GPH1(1), 0);
-		mdelay(20);
-
-		/* LCD_APS_EN_2.8V: GPH1_2 */
-		gpio_direction_output(EXYNOS5_GPH1(2), 0);
-		mdelay(20);
-#ifndef CONFIG_BACKLIGHT_PWM
-		/* LCD_PWM_IN_2.8V: LCD_B_PWM, GPB2_0 */
-		gpio_direction_output(EXYNOS5_GPB2(0), 0);
-
-		gpio_free(EXYNOS5_GPB2(0));
-#endif
-		gpio_free(EXYNOS5_GPH1(2));
-		gpio_free(EXYNOS5_GPH1(1));
-	}
+	lcd_on_time = ktime_add_us(ktime_get_boottime(), LCD_POWER_OFF_TIME_US);
 }
 
 static void smdk5250_lcd_set_power(struct plat_lcd_data *pd,
@@ -1559,24 +1452,16 @@ static struct video_info smdk5250_dp_config = {
 
 static void smdk5250_backlight_on(void)
 {
+	usleep_range(97000, 97000);
+
 	/* LED_BACKLIGHT_RESET: GPX1_5 */
-	gpio_request(EXYNOS5_GPX1(5), "GPX1");
-
-	gpio_direction_output(EXYNOS5_GPX1(5), 1);
-	mdelay(20);
-
-	gpio_free(EXYNOS5_GPX1(5));
+	gpio_set_value(EXYNOS5_GPX1(5), 1);
 }
 
 static void smdk5250_backlight_off(void)
 {
 	/* LED_BACKLIGHT_RESET: GPX1_5 */
-	gpio_request(EXYNOS5_GPX1(5), "GPX1");
-
-	gpio_direction_output(EXYNOS5_GPX1(5), 0);
-	mdelay(20);
-
-	gpio_free(EXYNOS5_GPX1(5));
+	gpio_set_value(EXYNOS5_GPX1(5), 0);
 }
 
 static struct s5p_dp_platdata smdk5250_dp_data __initdata = {
@@ -2056,6 +1941,29 @@ static void __init smdk5250_machine_init(void)
 #ifdef CONFIG_VIDEO_EXYNOS_MFC
 	s5p_mfc_set_platdata(&smdk5250_mfc_pd);
 #endif
+	if (get_smdk5250_rev() == SMDK5250_REV_0_0) {
+		/* LCD_EN: GPD0_5 */
+		gpio_request_one(EXYNOS5_GPD0(5), GPIOF_OUT_INIT_LOW, "GPD0");
+
+		/* LCD_APS_EN_2.8V: GPD0_6 */
+		gpio_request_one(EXYNOS5_GPD0(6), GPIOF_OUT_INIT_LOW, "GPD0");
+		gpio_export(EXYNOS5_GPD0(6), true);
+	} else {
+		/* LCD_EN: GPH1_1 */
+		gpio_request_one(EXYNOS5_GPH1(1), GPIOF_OUT_INIT_LOW, "GPH1");
+
+		/* LCD_APS_EN_2.8V: GPD0_6 */
+		gpio_request_one(EXYNOS5_GPH1(2), GPIOF_OUT_INIT_LOW, "GPH1");
+		gpio_export(EXYNOS5_GPH1(2), true);
+	}
+
+	/* LED_BACKLIGHT_RESET: GPX1_5 */
+	gpio_request_one(EXYNOS5_GPX1(5), GPIOF_OUT_INIT_LOW, "GPX1");
+
+	/* LCD_PWM_IN_2.8V: LCD_B_PWM, GPB2_0 */
+	gpio_request_one(EXYNOS5_GPB2(0), GPIOF_OUT_INIT_LOW, "GPB2");
+	gpio_free(EXYNOS5_GPB2(0));
+
 	samsung_bl_set(&smdk5250_bl_gpio_info, &smdk5250_bl_data);
 
 #ifdef CONFIG_FB_S3C
