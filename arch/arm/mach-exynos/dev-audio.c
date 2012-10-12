@@ -19,6 +19,7 @@
 #include <plat/gpio-cfg.h>
 #include <plat/audio.h>
 #include <plat/cpu.h>
+#include <plat/srp.h>
 
 #include <mach/map.h>
 #include <mach/dma.h>
@@ -429,6 +430,57 @@ static struct resource exynos5_srp_resource[] = {
 
 static u64 exynos_srp_dmamask = DMA_BIT_MASK(32);
 
+static struct exynos_srp_pdata exynos4_pdata = {
+	.type = SRP_HW_RESET,
+	.use_iram = true,
+	.iram_size = 256 * 1024,
+	.icache_size = 64 * 1024,
+	.dmem_size = 128 * 1024,
+	.cmem_size = 36 * 1024,
+	.commbox_size = 0x200,
+	.ibuf = {
+		.base = EXYNOS4_PA_SYSRAM1,
+		.size = 16 * 1024,
+		.offset = 0x30000,
+		.num = 2,
+	},
+	.obuf = {
+		.base = EXYNOS_PA_AUDSS_INTMEM,
+		.size = 32 * 1024,
+		.offset = 0x4,
+		.num = 2,
+	},
+	.idma = {
+		.base = EXYNOS4_PA_SYSRAM1,
+		.offset = 0x38000,
+	},
+};
+
+static struct exynos_srp_pdata exynos5_pdata = {
+	.type = SRP_SW_RESET,
+	.use_iram = false,
+	.icache_size = 96 * 1024,
+	.dmem_size = 160 * 1024,
+	.cmem_size = 36 * 1024,
+	.commbox_size = 0x308,
+	.ibuf = {
+		.base = EXYNOS_PA_AUDSS_INTMEM,
+		.size = 16 * 1024,
+		.offset = 0x8104,
+		.num = 2,
+	},
+	.obuf = {
+		.base = EXYNOS_PA_AUDSS_INTMEM,
+		.size = 16 * 1024,
+		.offset = 0x10104,
+		.num = 2,
+	},
+	.idma = {
+		.base = EXYNOS_PA_AUDSS_INTMEM,
+		.offset = 0x4,
+	},
+};
+
 struct platform_device exynos4_device_srp = {
 	.name = "samsung-rp",
 	.id = -1,
@@ -437,6 +489,7 @@ struct platform_device exynos4_device_srp = {
 	.dev = {
 		.dma_mask = &exynos_srp_dmamask,
 		.coherent_dma_mask = DMA_BIT_MASK(32),
+		.platform_data = &exynos4_pdata,
 	},
 };
 
@@ -448,5 +501,6 @@ struct platform_device exynos5_device_srp = {
 	.dev = {
 		.dma_mask = &exynos_srp_dmamask,
 		.coherent_dma_mask = DMA_BIT_MASK(32),
+		.platform_data = &exynos5_pdata,
 	},
 };
