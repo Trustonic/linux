@@ -1236,10 +1236,10 @@ static struct s3c_fb_pd_win smdk5250_fb_win2 = {
 	.default_bpp		= 24,
 };
 #elif defined(CONFIG_S5P_DP)
-static void s5p_dp_backlight_on(void);
-static void s5p_dp_backlight_off(void);
+static void smdk5250_backlight_on(void);
+static void smdk5250_backlight_off(void);
 
-static void s5p_lcd_on(void)
+static void smdk5250_lcd_on(void)
 {
 	if (get_smdk5250_rev() == SMDK5250_REV_0_0) {
 #ifndef CONFIG_BACKLIGHT_PWM
@@ -1296,7 +1296,7 @@ static void s5p_lcd_on(void)
 	}
 }
 
-static void s5p_lcd_off(void)
+static void smdk5250_lcd_off(void)
 {
 	if (get_smdk5250_rev() == SMDK5250_REV_0_0) {
 #ifndef CONFIG_BACKLIGHT_PWM
@@ -1353,17 +1353,17 @@ static void s5p_lcd_off(void)
 	}
 }
 
-static void dp_lcd_set_power(struct plat_lcd_data *pd,
+static void smdk5250_lcd_set_power(struct plat_lcd_data *pd,
 				unsigned int power)
 {
 	if (power)
-		s5p_lcd_on();
+		smdk5250_lcd_on();
 	else
-		s5p_lcd_off();
+		smdk5250_lcd_off();
 }
 
 static struct plat_lcd_data smdk5250_dp_lcd_data = {
-	.set_power	= dp_lcd_set_power,
+	.set_power	= smdk5250_lcd_set_power,
 };
 
 static struct platform_device smdk5250_dp_lcd = {
@@ -1420,8 +1420,8 @@ static struct s3c_fb_platdata smdk5250_lcd1_pdata __initdata = {
 	.vidcon1	= 0,
 #endif
 	.setup_gpio	= smdk5250_fimd_gpio_setup_24bpp,
-	.backlight_off	= s5p_dp_backlight_off,
-	.lcd_off	= s5p_lcd_off,
+	.backlight_off	= smdk5250_backlight_off,
+	.lcd_off	= smdk5250_lcd_off,
 };
 
 #endif
@@ -1557,7 +1557,7 @@ static struct video_info smdk5250_dp_config = {
 	.lane_count		= LANE_COUNT4,
 };
 
-static void s5p_dp_backlight_on(void)
+static void smdk5250_backlight_on(void)
 {
 	/* LED_BACKLIGHT_RESET: GPX1_5 */
 	gpio_request(EXYNOS5_GPX1(5), "GPX1");
@@ -1568,7 +1568,7 @@ static void s5p_dp_backlight_on(void)
 	gpio_free(EXYNOS5_GPX1(5));
 }
 
-static void s5p_dp_backlight_off(void)
+static void smdk5250_backlight_off(void)
 {
 	/* LED_BACKLIGHT_RESET: GPX1_5 */
 	gpio_request(EXYNOS5_GPX1(5), "GPX1");
@@ -1583,10 +1583,10 @@ static struct s5p_dp_platdata smdk5250_dp_data __initdata = {
 	.video_info	= &smdk5250_dp_config,
 	.phy_init	= s5p_dp_phy_init,
 	.phy_exit	= s5p_dp_phy_exit,
-	.backlight_on	= s5p_dp_backlight_on,
-	.backlight_off  = s5p_dp_backlight_off,
-	.lcd_on		= s5p_lcd_on,
-	.lcd_off	= s5p_lcd_off,
+	.backlight_on	= smdk5250_backlight_on,
+	.backlight_off  = smdk5250_backlight_off,
+	.lcd_on		= smdk5250_lcd_on,
+	.lcd_off	= smdk5250_lcd_off,
 };
 #endif
 
