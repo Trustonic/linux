@@ -988,6 +988,7 @@ static irqreturn_t srp_irq(int irqno, void *dev_id)
 	unsigned int wakeup_read = 0;
 	unsigned int wakeup_decinfo = 0;
 	unsigned int hw_reset = 0;
+	unsigned int reset_type = srp.pdata->type;
 
 	srp_debug("IRQ: Code [0x%x], Pending [%s], CFGR [0x%x]", irq_code,
 			readl(srp.commbox + SRP_PENDING) ? "STALL" : "RUN",
@@ -1011,10 +1012,12 @@ static irqreturn_t srp_irq(int irqno, void *dev_id)
 			} else {
 				srp_debug("IBUF1 empty\n");
 				srp.ibuf_empty[1] = 1;
-				if (!srp.hw_reset_stat) {
-					srp_pending_ctrl(STALL);
-					hw_reset = 1;
-					break;
+				if (reset_type == SRP_SW_RESET) {
+					if (!srp.hw_reset_stat) {
+						srp_pending_ctrl(STALL);
+						hw_reset = 1;
+						break;
+					}
 				}
 			}
 
