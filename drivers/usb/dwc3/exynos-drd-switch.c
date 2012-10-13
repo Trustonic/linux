@@ -636,6 +636,21 @@ void exynos_drd_switch_reset(struct exynos_drd *drd, int run)
 	}
 }
 
+/* /sys/devices/platform/exynos-dwc3.%d/ interface */
+
+static ssize_t
+exynos_drd_switch_show_state(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct exynos_drd *drd = dev_get_drvdata(dev);
+	struct usb_otg *otg = drd->core.otg;
+	struct usb_phy *phy = otg->phy;
+
+	return sprintf(buf, "%s\n", otg_state_string(phy->state));
+}
+
+static DEVICE_ATTR(state, S_IRUGO, exynos_drd_switch_show_state, NULL);
+
 /*
  * id and vbus attributes allow to change DRD mode and VBus state.
  * Can be used for debug purpose.
@@ -708,6 +723,7 @@ static DEVICE_ATTR(id, S_IWUSR | S_IRUGO,
 static struct attribute *exynos_drd_switch_attributes[] = {
 	&dev_attr_id.attr,
 	&dev_attr_vbus.attr,
+	&dev_attr_state.attr,
 	NULL
 };
 
