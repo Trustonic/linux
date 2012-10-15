@@ -540,6 +540,7 @@ static ssize_t srp_write(struct file *file, const char *buffer,
 
 	if (srp.initialized) {
 		srp.initialized = false;
+		srp.pm_suspended = false;
 		srp_flush_ibuf();
 		srp_flush_obuf();
 		srp_set_default_fw();
