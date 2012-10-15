@@ -385,7 +385,12 @@ static void srp_set_default_fw(void)
 
 void srp_core_reset(void)
 {
+	unsigned int reset_type = srp.pdata->type;
+
 	if (!srp.is_loaded)
+		return;
+
+	if (reset_type == SRP_HW_RESET)
 		return;
 
 	srp_commbox_init();
