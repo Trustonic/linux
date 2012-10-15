@@ -1119,7 +1119,7 @@ done:
 
 static int exynos5_check_usb_op(void)
 {
-	u32 hostphy_ctrl0, otgphy_sys;
+	u32 hostphy_ctrl0, otgphy_sys, hsic_ctrl1, hsic_ctrl2;
 	u32 op = 1;
 	unsigned long flags;
 	int ret;
@@ -1144,11 +1144,19 @@ static int exynos5_check_usb_op(void)
 	}
 
 	hostphy_ctrl0 = readl(EXYNOS5_PHY_HOST_CTRL0);
+	hsic_ctrl1 = readl(EXYNOS5_PHY_HSIC_CTRL1);
+	hsic_ctrl2 = readl(EXYNOS5_PHY_HSIC_CTRL2);
 
-	if (hostphy_ctrl0 & HOST_CTRL0_FORCESUSPEND) {
+	if (hostphy_ctrl0 & HOST_CTRL0_FORCESUSPEND &&
+		hsic_ctrl1 & HSIC_CTRL_FORCESUSPEND &&
+		hsic_ctrl2 & HSIC_CTRL_FORCESUSPEND) {
 		/* unset to normal of Host */
 		hostphy_ctrl0 |= (HOST_CTRL0_SIDDQ);
 		writel(hostphy_ctrl0, EXYNOS5_PHY_HOST_CTRL0);
+
+		/* unset to normal of HSIC */
+		writel(hsic_ctrl1 | HSIC_CTRL_SIDDQ, EXYNOS5_PHY_HSIC_CTRL1);
+		writel(hsic_ctrl2 | HSIC_CTRL_SIDDQ, EXYNOS5_PHY_HSIC_CTRL2);
 
 		/* unset to normal of Device */
 		otgphy_sys = readl(EXYNOS5_PHY_OTG_SYS);
@@ -1195,14 +1203,23 @@ int s5p_usb_phy_suspend(struct platform_device *pdev, int type)
 		return 0;
 
 	mutex_lock(&usb_phy_control.phy_lock);
+	if (!strcmp(pdev->name, "s5p-ehci"))
+		clear_bit(HOST_PHY_EHCI, &usb_phy_control.flags);
+	else if (!strcmp(pdev->name, "exynos-ohci"))
+		clear_bit(HOST_PHY_OHCI, &usb_phy_control.flags);
 
-	if (soc_is_exynos4210() ||
-		soc_is_exynos4212() ||
-		soc_is_exynos4412())
-		ret = exynos4_usb_phy1_suspend(pdev);
-	else
-		ret = exynos5_usb_phy_host_suspend(pdev);
+	if (usb_phy_control.flags)
+		goto done;
 
+	if (type == S5P_USB_PHY_HOST) {
+		if (soc_is_exynos4210() ||
+			soc_is_exynos4212() ||
+			soc_is_exynos4412())
+			ret = exynos4_usb_phy1_suspend(pdev);
+		else
+			ret = exynos5_usb_phy_host_suspend(pdev);
+	}
+done:
 	mutex_unlock(&usb_phy_control.phy_lock);
 	exynos_usb_phy_clock_disable(pdev, type);
 
@@ -1220,13 +1237,20 @@ int s5p_usb_phy_resume(struct platform_device *pdev, int type)
 	if (usb_phy_control.flags)
 		goto done;
 
-	if (soc_is_exynos4210() ||
-		soc_is_exynos4212() ||
-		soc_is_exynos4412())
-		ret = exynos4_usb_phy1_resume(pdev);
-	else
-		ret = exynos5_usb_phy_host_resume(pdev);
+	if (type == S5P_USB_PHY_HOST) {
+		if (soc_is_exynos4210() ||
+			soc_is_exynos4212() ||
+			soc_is_exynos4412())
+			ret = exynos4_usb_phy1_resume(pdev);
+		else
+			ret = exynos5_usb_phy_host_resume(pdev);
+	}
 done:
+	if (!strcmp(pdev->name, "s5p-ehci"))
+		set_bit(HOST_PHY_EHCI, &usb_phy_control.flags);
+	else if (!strcmp(pdev->name, "exynos-ohci"))
+		set_bit(HOST_PHY_OHCI, &usb_phy_control.flags);
+
 	mutex_unlock(&usb_phy_control.phy_lock);
 	exynos_usb_phy_clock_disable(pdev, type);
 
@@ -1242,6 +1266,11 @@ int s5p_usb_phy_init(struct platform_device *pdev, int type)
 
 	mutex_lock(&usb_phy_control.phy_lock);
 	if (type == S5P_USB_PHY_HOST) {
+		if (!strcmp(pdev->name, "s5p-ehci"))
+			set_bit(HOST_PHY_EHCI, &usb_phy_control.flags);
+		else if (!strcmp(pdev->name, "exynos-ohci"))
+			set_bit(HOST_PHY_OHCI, &usb_phy_control.flags);
+
 		if (soc_is_exynos4210()) {
 			ret = exynos4_usb_phy1_init(pdev);
 		} else if (soc_is_exynos4212() || soc_is_exynos4412()) {
@@ -1285,6 +1314,10 @@ int s5p_usb_phy_exit(struct platform_device *pdev, int type)
 		else
 			ret = exynos5_usb_phy20_exit(pdev);
 
+		if (!strcmp(pdev->name, "s5p-ehci"))
+			clear_bit(HOST_PHY_EHCI, &usb_phy_control.flags);
+		else if (!strcmp(pdev->name, "exynos-ohci"))
+			clear_bit(HOST_PHY_OHCI, &usb_phy_control.flags);
 	} else if (type == S5P_USB_PHY_DEVICE) {
 		if (soc_is_exynos4210()) {
 			ret = exynos4_usb_phy0_exit(pdev);
