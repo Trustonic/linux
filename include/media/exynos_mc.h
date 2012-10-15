@@ -82,7 +82,7 @@ struct exynos_media_ops {
 };
 
 struct exynos_entity_data {
-	const struct exynos_media_ops *media_ops;
+	struct exynos_media_ops *media_ops;
 	enum mxr_data_from mxr_data_from;
 };
 

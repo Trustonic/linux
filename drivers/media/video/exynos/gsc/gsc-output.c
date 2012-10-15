@@ -34,15 +34,7 @@
 
 int gsc_out_hw_reset_off (struct gsc_dev *gsc)
 {
-	int ret;
-
 	gsc_hw_enable_control(gsc, false);
-	ret = gsc_wait_stop(gsc);
-	if (ret < 0) {
-		gsc_err("gscaler stop timeout");
-		return ret;
-	}
-
 	return 0;
 }
 
@@ -317,10 +309,6 @@ static int gsc_out_power_off(struct v4l2_subdev *sd)
 
 	return 0;
 }
-
-static struct exynos_media_ops gsc_out_link_callback = {
-	.power_off = gsc_out_power_off,
-};
 
 /*
  * The video node ioctl operations
@@ -637,14 +625,13 @@ static int gsc_out_stop_streaming(struct vb2_queue *q)
 		return ret;
 
 	if (ctx->out_path == GSC_FIMD) {
-		gsc_hw_enable_control(gsc, false);
 		ret = gsc_wait_stop(gsc);
-		if (ret < 0)
+		if (ret < 0) {
+			gsc_err("gscaler stop timeout");
 			return ret;
+		}
 	}
-	gsc_hw_set_input_buf_mask_all(gsc);
 
-	/* TODO: Add gscaler clock off function */
 	ret = gsc_out_video_s_stream(gsc, 0);
 	if (ret) {
 		gsc_err("G-Scaler video s_stream off failed");
@@ -947,6 +934,7 @@ static int gsc_create_link(struct gsc_dev *gsc)
 static int gsc_create_subdev(struct gsc_dev *gsc)
 {
 	struct v4l2_subdev *sd;
+	struct exynos_media_ops *gsc_out_link_callback;
 	int ret;
 
 	sd = kzalloc(sizeof(*sd), GFP_KERNEL);
@@ -976,7 +964,13 @@ static int gsc_create_subdev(struct gsc_dev *gsc)
 	gsc_dbg("gsc_sd[%d] = 0x%08x\n", gsc->id,
 			(u32)gsc->mdev[MDEV_OUTPUT]->gsc_sd[gsc->id]);
 	gsc->out.sd = sd;
-	gsc->md_data.media_ops = &gsc_out_link_callback;
+
+	gsc_out_link_callback = kzalloc(sizeof(*gsc_out_link_callback), GFP_KERNEL);
+	if (!gsc_out_link_callback)
+	       goto error;
+
+	gsc_out_link_callback->power_off = gsc_out_power_off;
+	gsc->md_data.media_ops = gsc_out_link_callback;
 	v4l2_set_subdevdata(sd, &gsc->md_data);
 
 	return 0;
