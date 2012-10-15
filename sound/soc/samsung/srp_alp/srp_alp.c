@@ -416,8 +416,10 @@ void srp_core_suspend(void)
 	if (reset_type == SRP_HW_RESET && !srp.decoding_started)
 		return;
 
-	if (reset_type == SRP_SW_RESET && srp.pm_suspended)
+#ifdef CONFIG_PM_RUNTIME
+	if (srp.pm_suspended)
 		goto exit_func;
+#endif
 
 	data = srp.fw_info.data_va;
 	size = dmem_size - srp.data_offset;
@@ -433,9 +435,11 @@ void srp_core_suspend(void)
 	memcpy(srp.sp_data.commbox, srp.commbox, commbox_size);
 	srp.pm_suspended = true;
 
+#ifdef CONFIG_PM_RUNTIME
 exit_func:
 	if (reset_type == SRP_SW_RESET)
 		srp.hw_reset_stat = false;
+#endif
 }
 
 void srp_core_resume(void)
@@ -460,6 +464,12 @@ void srp_core_resume(void)
 		/* RESET */
 		writel(0x0, srp.commbox + SRP_CONT);
 	}
+#ifndef CONFIG_PM_RUNTIME
+	else if (reset_type == SRP_SW_RESET) {
+		/* RESET */
+		writel(0x0, srp.commbox + SRP_CONT);
+	}
+#endif
 
 	srp_request_intr_mode(RESUME);
 	srp.pm_suspended = false;
@@ -505,14 +515,17 @@ static ssize_t srp_write(struct file *file, const char *buffer,
 					size_t size, loff_t *pos)
 {
 	unsigned long ibuf_size = srp.pdata->ibuf.size;
-	unsigned int reset_type = srp.pdata->type;
 	unsigned long start_threshold = 0;
 	ssize_t ret = 0;
+#ifdef CONFIG_PM_RUNTIME
+	unsigned int reset_type = srp.pdata->type;
+#endif
 
 	srp_debug("Write(%d bytes)\n", size);
 
 	i2s_enable(srp.pm_info);
 	if (srp.pm_suspended) {
+#ifdef CONFIG_PM_RUNTIME
 		if (reset_type == SRP_SW_RESET) {
 			ret = wait_event_interruptible_timeout(reset_wq,
 					    srp.hw_reset_stat, HZ / 20);
@@ -521,6 +534,7 @@ static ssize_t srp_write(struct file *file, const char *buffer,
 				return -EFAULT;
 			}
 		}
+#endif
 		srp_core_resume();
 	}
 
@@ -580,16 +594,19 @@ static ssize_t srp_read(struct file *file, char *buffer,
 {
 	struct srp_buf_info *argp = (struct srp_buf_info *)buffer;
 	unsigned long obuf_size = srp.pdata->obuf.size;
-	unsigned int reset_type = srp.pdata->type;
 	unsigned char *mmapped_obuf0 = srp.obuf_info.addr;
 	unsigned char *mmapped_obuf1 = srp.obuf_info.addr + obuf_size;
 	int ret = 0;
+#ifdef CONFIG_PM_RUNTIME
+	unsigned int reset_type = srp.pdata->type;
+#endif
 
 	srp_debug("Entered Get Obuf in PCM function\n");
 
 	if (srp.prepare_for_eos) {
 		i2s_enable(srp.pm_info);
 		if (srp.pm_suspended) {
+#ifdef CONFIG_PM_RUNTIME
 			if (reset_type == SRP_SW_RESET) {
 				ret = wait_event_interruptible_timeout(reset_wq,
 					    srp.hw_reset_stat, HZ / 20);
@@ -598,6 +615,7 @@ static ssize_t srp_read(struct file *file, char *buffer,
 					return -EFAULT;
 				}
 			}
+#endif
 			srp_core_resume();
 		}
 
@@ -1102,7 +1120,9 @@ srp_firmware_request_complete(const struct firmware *vliw, void *context)
 	unsigned long icache_size = srp.pdata->icache_size;
 	unsigned long dmem_size = srp.pdata->dmem_size;
 	unsigned long cmem_size = srp.pdata->cmem_size;
+#ifndef CONFIG_PM_RUNTIME
 	unsigned int reset_type = srp.pdata->type;
+#endif
 
 	if (!vliw) {
 		srp_err("Failed to requset firmware[%s]\n", VLIW_NAME);
@@ -1165,6 +1185,7 @@ srp_firmware_request_complete(const struct firmware *vliw, void *context)
 	srp_get_buf_info();
 	srp_alloc_buf();
 
+#ifndef CONFIG_PM_RUNTIME
 	if (reset_type == SRP_SW_RESET) {
 		i2s_enable(srp.pm_info);
 
@@ -1172,6 +1193,7 @@ srp_firmware_request_complete(const struct firmware *vliw, void *context)
 
 		i2s_disable(srp.pm_info);
 	}
+#endif
 
 	return;
 
