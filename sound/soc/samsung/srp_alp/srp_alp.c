@@ -405,7 +405,7 @@ void srp_core_reset(void)
 		srp_err("Not ready to sw reset.\n");
 }
 
-void srp_core_suspend(void)
+void srp_core_suspend(int num)
 {
 	unsigned long ibuf_size = srp.pdata->ibuf.size;
 	unsigned long obuf_size = srp.pdata->obuf.size;
@@ -418,7 +418,8 @@ void srp_core_suspend(void)
 	if (!srp.is_loaded)
 		return;
 
-	if (reset_type == SRP_HW_RESET && !srp.decoding_started)
+	if ((reset_type == SRP_HW_RESET && !srp.decoding_started)
+		|| (reset_type == SRP_HW_RESET && num == RUNTIME))
 		return;
 
 #ifdef CONFIG_PM_RUNTIME
@@ -1243,7 +1244,7 @@ static int srp_suspend(struct platform_device *pdev, pm_message_t state)
 
 	i2s_enable(srp.pm_info);
 
-	srp_core_suspend();
+	srp_core_suspend(SLEEP);
 
 	i2s_disable(srp.pm_info);
 

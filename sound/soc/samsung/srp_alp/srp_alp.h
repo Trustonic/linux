@@ -149,7 +149,13 @@ enum {
 	SW_RESET,
 };
 
+/* Core suspend parameter */
+enum {
+	RUNTIME = 0,
+	SLEEP,
+};
+
 extern void srp_core_reset(void);
-extern void srp_core_suspend(void);
+extern void srp_core_suspend(int num);
 extern void srp_prepare_pm(void *info);
 #endif /* __SRP_ALP_H */
