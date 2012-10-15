@@ -423,7 +423,8 @@ res_free:
 	release_resource(ctrl->mem);
 drv_free:
 #ifdef BLIT_WORKQUE
-	destroy_workqueue(ctrl->work_q);
+	if (ctrl->work_q)
+		destroy_workqueue(ctrl->work_q);
 #endif
 	mutex_destroy(&ctrl->drvlock);
 	kfree(ctrl);
