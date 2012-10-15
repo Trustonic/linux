@@ -4241,6 +4241,13 @@ static int wm8994_codec_probe(struct snd_soc_codec *codec)
 		break;
 	}
 
+	/*
+	 * Set AIF1_RATE to low value so headset detection works at the
+	 * correct rate.
+	 */
+	snd_soc_update_bits(codec, WM8994_AIF1_RATE, WM8994_AIF1_SR_MASK |
+						WM8994_AIF1CLK_RATE_MASK, 0x1);
+
 	return 0;
 
 err_irq:
