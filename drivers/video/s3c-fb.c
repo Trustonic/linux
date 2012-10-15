@@ -97,7 +97,11 @@ extern struct ion_device *ion_exynos;
 #define SYSREG_MIXER1_VALID	(1 << 4)
 #define FIMD_PAD_SINK_FROM_GSCALER_SRC		0
 #define FIMD_PADS_NUM				1
-
+#define LOCAL_IMG_MIN_H				64
+#define LOCAL_IMG_MIN_W				64
+#define LOCAL_FIFO_SIZE				(2 * 1024)
+#define MIN_LINE_CNT				((LOCAL_IMG_MIN_H * LOCAL_IMG_MIN_W \
+						  - LOCAL_FIFO_SIZE) / LOCAL_IMG_MIN_H)
 /* SYSREG for local path between Gscaler and Mixer */
 #define SYSREG_DISP1BLK_CFG	(S3C_VA_SYS + 0x0214)
 #endif
@@ -1310,7 +1314,7 @@ static irqreturn_t s3c_fb_irq(int irq, void *dev_id)
 
 		data = readl(sfb->regs + VIDCON1);
 		data = VIDCON1_LINECNT_GET(data);
-		sfb->windows[win_no]->end_stream = data ? 1 : 0;
+		sfb->windows[win_no]->end_stream = (data > MIN_LINE_CNT) ? 1 : 0;
 
 		if (!sfb->windows[win_no]->end_stream) {
 			pad = &sd->entity.pads[FIMD_PAD_SINK_FROM_GSCALER_SRC];
@@ -1324,9 +1328,11 @@ static irqreturn_t s3c_fb_irq(int irq, void *dev_id)
 				md_data->media_ops->power_off(gsc_sd);
 			}
 
-			s3c_fb_blank(FB_BLANK_POWERDOWN, win->fbinfo);
-
 			shadow_protect_win(win, 1);
+			data = readl(sfb->regs + WINCON(win->index));
+			data &= ~WINCONx_ENWIN;
+			writel(data, sfb->regs + WINCON(win->index));
+
 			data = readl(sfb->regs + SHADOWCON);
 			data &= ~(SHADOWCON_CHx_ENABLE(win->index) |
 				   SHADOWCON_CHx_LOCAL_ENABLE(win->index));
@@ -1998,8 +2004,10 @@ static int s3c_fb_set_win_config(struct s3c_fb *sfb,
 	}
 
 	for (i = 0; i < sfb->variant.nr_windows; i++) {
-		sfb->windows[i]->prev_fix = sfb->windows[i]->fbinfo->fix;
-		sfb->windows[i]->prev_var = sfb->windows[i]->fbinfo->var;
+		if (!sfb->windows[i]->local) {
+			sfb->windows[i]->prev_fix = sfb->windows[i]->fbinfo->fix;
+			sfb->windows[i]->prev_var = sfb->windows[i]->fbinfo->var;
+		}
 	}
 
 	for (i = 0; i < sfb->variant.nr_windows && !ret; i++) {
@@ -2009,28 +2017,30 @@ static int s3c_fb_set_win_config(struct s3c_fb *sfb,
 		bool enabled = 0;
 		u32 color_map = WINxMAP_MAP | WINxMAP_MAP_COLOUR(0);
 
-		switch (config->state) {
-		case S3C_FB_WIN_STATE_DISABLED:
-			break;
-		case S3C_FB_WIN_STATE_COLOR:
-			enabled = 1;
-			color_map |= WINxMAP_MAP_COLOUR(config->color);
-			regs->vidosd_a[i] = vidosd_a(config->x, config->y);
-			regs->vidosd_b[i] = vidosd_b(config->x, config->y,
-					config->w, config->h);
-			break;
-		case S3C_FB_WIN_STATE_BUFFER:
-			ret = s3c_fb_set_win_buffer(sfb, win, config, regs);
-			if (!ret) {
+		if (!sfb->windows[i]->local) {
+			switch (config->state) {
+			case S3C_FB_WIN_STATE_DISABLED:
+				break;
+			case S3C_FB_WIN_STATE_COLOR:
 				enabled = 1;
-				color_map = 0;
+				color_map |= WINxMAP_MAP_COLOUR(config->color);
+				regs->vidosd_a[i] = vidosd_a(config->x, config->y);
+				regs->vidosd_b[i] = vidosd_b(config->x, config->y,
+						config->w, config->h);
+				break;
+			case S3C_FB_WIN_STATE_BUFFER:
+				ret = s3c_fb_set_win_buffer(sfb, win, config, regs);
+				if (!ret) {
+					enabled = 1;
+					color_map = 0;
+				}
+				break;
+			default:
+				dev_warn(sfb->dev, "unrecognized window state %u",
+						config->state);
+				ret = -EINVAL;
+				break;
 			}
-			break;
-		default:
-			dev_warn(sfb->dev, "unrecognized window state %u",
-					config->state);
-			ret = -EINVAL;
-			break;
 		}
 
 		if (enabled)
@@ -2056,11 +2066,13 @@ static int s3c_fb_set_win_config(struct s3c_fb *sfb,
 
 	if (ret) {
 		for (i = 0; i < sfb->variant.nr_windows; i++) {
-			sfb->windows[i]->fbinfo->fix =
+			if (!sfb->windows[i]->local) {
+				sfb->windows[i]->fbinfo->fix =
 					sfb->windows[i]->prev_fix;
-			sfb->windows[i]->fbinfo->var =
+				sfb->windows[i]->fbinfo->var =
 					sfb->windows[i]->prev_var;
-			s3c_fb_free_dma_buf(sfb, &regs->dma_buf_data[i]);
+				s3c_fb_free_dma_buf(sfb, &regs->dma_buf_data[i]);
+			}
 		}
 		put_unused_fd(fd);
 		kfree(regs);
@@ -2086,44 +2098,58 @@ err:
 static void __s3c_fb_update_regs(struct s3c_fb *sfb, struct s3c_reg_data *regs)
 {
 	unsigned short i;
-
-	for (i = 0; i < sfb->variant.nr_windows; i++)
-		shadow_protect_win(sfb->windows[i], 1);
+	unsigned int data;
 
 	for (i = 0; i < sfb->variant.nr_windows; i++) {
-		writel(regs->wincon[i], sfb->regs + WINCON(i));
-		writel(regs->win_rgborder[i], sfb->regs + WIN_RGB_ORDER(i));
-		writel(regs->winmap[i], sfb->regs + WINxMAP(i));
-		writel(regs->vidosd_a[i],
-				sfb->regs + VIDOSD_A(i, sfb->variant));
-		writel(regs->vidosd_b[i],
-				sfb->regs + VIDOSD_B(i, sfb->variant));
-		if (sfb->windows[i]->variant.has_osd_c)
-			writel(regs->vidosd_c[i],
-					sfb->regs + VIDOSD_C(i, sfb->variant));
-		if (sfb->windows[i]->variant.has_osd_d)
-			writel(regs->vidosd_d[i],
-					sfb->regs + VIDOSD_D(i, sfb->variant));
-		writel(regs->vidw_alpha0[i],
-				sfb->regs + VIDW_ALPHA0(i));
-		writel(regs->vidw_alpha1[i],
-				sfb->regs + VIDW_ALPHA1(i));
-		writel(regs->vidw_buf_start[i],
-				sfb->regs + VIDW_BUF_START(i));
-		writel(regs->vidw_buf_end[i],
-				sfb->regs + VIDW_BUF_END(i));
-		writel(regs->vidw_buf_size[i],
-				sfb->regs + VIDW_BUF_SIZE(i));
-		if (i)
-			writel(regs->blendeq[i - 1], sfb->regs + BLENDEQ(i));
-
-		sfb->windows[i]->dma_buf_data = regs->dma_buf_data[i];
+		if (!sfb->windows[i]->local)
+			shadow_protect_win(sfb->windows[i], 1);
 	}
-	if (sfb->variant.has_shadowcon)
-		writel(regs->shadowcon, sfb->regs + SHADOWCON);
 
-	for (i = 0; i < sfb->variant.nr_windows; i++)
-		shadow_protect_win(sfb->windows[i], 0);
+	for (i = 0; i < sfb->variant.nr_windows; i++) {
+		if (!sfb->windows[i]->local) {
+			writel(regs->wincon[i], sfb->regs + WINCON(i));
+			writel(regs->win_rgborder[i], sfb->regs + WIN_RGB_ORDER(i));
+			writel(regs->winmap[i], sfb->regs + WINxMAP(i));
+			writel(regs->vidosd_a[i],
+			       sfb->regs + VIDOSD_A(i, sfb->variant));
+			writel(regs->vidosd_b[i],
+			       sfb->regs + VIDOSD_B(i, sfb->variant));
+			if (sfb->windows[i]->variant.has_osd_c)
+				writel(regs->vidosd_c[i],
+				       sfb->regs + VIDOSD_C(i, sfb->variant));
+			if (sfb->windows[i]->variant.has_osd_d)
+				writel(regs->vidosd_d[i],
+				       sfb->regs + VIDOSD_D(i, sfb->variant));
+			writel(regs->vidw_alpha0[i],
+			       sfb->regs + VIDW_ALPHA0(i));
+			writel(regs->vidw_alpha1[i],
+			       sfb->regs + VIDW_ALPHA1(i));
+			writel(regs->vidw_buf_start[i],
+			       sfb->regs + VIDW_BUF_START(i));
+			writel(regs->vidw_buf_end[i],
+			       sfb->regs + VIDW_BUF_END(i));
+			writel(regs->vidw_buf_size[i],
+			       sfb->regs + VIDW_BUF_SIZE(i));
+			if (i)
+				writel(regs->blendeq[i - 1], sfb->regs + BLENDEQ(i));
+
+			sfb->windows[i]->dma_buf_data = regs->dma_buf_data[i];
+		}
+	}
+	if (sfb->variant.has_shadowcon) {
+		data = readl(sfb->regs + SHADOWCON);
+		if ((data & 0x21) == 0x21)
+			data = (0x21 | regs->shadowcon);
+		else
+			data = regs->shadowcon;
+
+		writel(data, sfb->regs + SHADOWCON);
+	}
+
+	for (i = 0; i < sfb->variant.nr_windows; i++) {
+		if (!sfb->windows[i]->local)
+			shadow_protect_win(sfb->windows[i], 0);
+	}
 }
 
 static void s3c_fd_fence_wait(struct s3c_fb *sfb, struct sync_fence *fence)
@@ -2149,10 +2175,15 @@ static void s3c_fb_update_regs(struct s3c_fb *sfb, struct s3c_reg_data *regs)
 	pm_runtime_get_sync(sfb->dev);
 
 	for (i = 0; i < sfb->variant.nr_windows; i++) {
-		old_dma_bufs[i] = sfb->windows[i]->dma_buf_data;
-
-		if (regs->dma_buf_data[i].fence)
-			s3c_fd_fence_wait(sfb, regs->dma_buf_data[i].fence);
+		if (!sfb->windows[i]->local) {
+			old_dma_bufs[i] = sfb->windows[i]->dma_buf_data;
+			if (regs->dma_buf_data[i].fence) {
+				int err = sync_fence_wait(regs->dma_buf_data[i].fence,
+						100);
+				if (err < 0)
+					dev_warn(sfb->dev, "synce_fence_wait() timeout\n");
+			}
+		}
 	}
 
 	do {
@@ -2161,28 +2192,32 @@ static void s3c_fb_update_regs(struct s3c_fb *sfb, struct s3c_reg_data *regs)
 		wait_for_vsync = false;
 
 		for (i = 0; i < sfb->variant.nr_windows; i++) {
-			u32 new_start = regs->vidw_buf_start[i];
-			u32 shadow_start = readl(sfb->regs +
-					SHD_VIDW_BUF_START(i));
-			if (unlikely(new_start != shadow_start)) {
-				wait_for_vsync = true;
-				break;
+			if (!sfb->windows[i]->local) {
+				u32 new_start = regs->vidw_buf_start[i];
+				u32 shadow_start = readl(sfb->regs +
+						SHD_VIDW_BUF_START(i));
+				if (unlikely(new_start != shadow_start)) {
+					wait_for_vsync = true;
+					break;
+				}
 			}
 		}
 	} while (wait_for_vsync && count--);
 	if (wait_for_vsync) {
 		pr_err("%s: failed to update registers\n", __func__);
 		for (i = 0; i < sfb->variant.nr_windows; i++)
-			pr_err("window %d new value %08x register value %08x\n",
-				i, regs->vidw_buf_start[i],
-				readl(sfb->regs + SHD_VIDW_BUF_START(i)));
+			if (!sfb->windows[i]->local)
+				pr_err("window %d new value %08x register value %08x\n",
+					i, regs->vidw_buf_start[i],
+					readl(sfb->regs + SHD_VIDW_BUF_START(i)));
 	}
 
 	pm_runtime_put_sync(sfb->dev);
 	sw_sync_timeline_inc(sfb->timeline, 1);
 
 	for (i = 0; i < sfb->variant.nr_windows; i++)
-		s3c_fb_free_dma_buf(sfb, &old_dma_bufs[i]);
+		if (!sfb->windows[i]->local)
+			s3c_fb_free_dma_buf(sfb, &old_dma_bufs[i]);
 }
 
 static void s3c_fb_update_regs_handler(struct kthread_work *work)
@@ -2788,9 +2823,14 @@ static int s3c_fb_sd_s_stream(struct v4l2_subdev *sd, int enable)
 		data &=  ~(SHADOWCON_CHx_ENABLE(win->index) | SHADOWCON_CHx_LOCAL_ENABLE(win->index));
 		data |= (SHADOWCON_CHx_ENABLE(win->index) | SHADOWCON_CHx_LOCAL_ENABLE(win->index));
 		writel(data, sfb->regs + SHADOWCON);
-		shadow_protect_win(win, 0);
 
-		s3c_fb_blank(FB_BLANK_UNBLANK, win->fbinfo);
+		/* Change RGB -> BGR */
+		writel(WIN_RGB_ORDER_BGR, sfb->regs + WIN_RGB_ORDER(0));
+
+		data = readl(sfb->regs + WINCON(win->index));
+		data |= WINCONx_ENWIN;
+		writel(data, sfb->regs + WINCON(win->index));
+		shadow_protect_win(win, 0);
 
 	} else {
 		sfb->windows[win_no]->end_stream = 1;
