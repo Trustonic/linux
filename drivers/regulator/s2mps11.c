@@ -434,7 +434,6 @@ static int s2mps11_set_voltage(struct regulator_dev *rdev,
 	const struct s2mps11_voltage_desc *desc;
 	int reg_id = rdev_get_id(rdev);
 	int sel, reg, ret, mask;
-	u8 val;
 
 	mask = (reg_id < S2MPS11_BUCK1) ? 0x3f : 0xff;
 
@@ -448,11 +447,7 @@ static int s2mps11_set_voltage(struct regulator_dev *rdev,
 	if (ret)
 		return ret;
 
-	sec_reg_read(s2mps11->iodev, reg, &val);
-	val &= ~mask;
-	val |= sel;
-
-	ret = sec_reg_write(s2mps11->iodev, reg, val);
+	ret = sec_reg_update(s2mps11->iodev, reg, sel, mask);
 	*selector = sel;
 
 	return ret;
