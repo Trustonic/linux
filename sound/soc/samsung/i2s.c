@@ -1156,9 +1156,13 @@ probe_exit:
 #endif
 	}
 
-	if ((i2s->quirks & QUIRK_SEC_DAI) && !is_secondary(i2s))
+	if ((i2s->quirks & QUIRK_SEC_DAI) && !is_secondary(i2s)) {
+		if (srp_enabled_status())
+			other->idma_playback.dma_addr = srp_get_idma_addr();
+
 		idma_reg_addr_init(i2s->addr,
-				   i2s->sec_dai->idma_playback.dma_addr);
+				   other->idma_playback.dma_addr);
+	}
 
 #ifdef CONFIG_SND_SAMSUNG_USE_IDMA
 	clk_enable(i2s->srpclk);
@@ -1407,11 +1411,7 @@ static __devinit int samsung_i2s_probe(struct platform_device *pdev)
 		sec_dai->dma_playback.dma_size = 4;
 		sec_dai->base = regs_base;
 		sec_dai->quirks = quirks;
-
-		if (srp_enabled_status())
-			sec_dai->idma_playback.dma_addr = srp_get_idma_addr();
-		else
-			sec_dai->idma_playback.dma_addr = i2s_cfg->idma_addr;
+		sec_dai->idma_playback.dma_addr = i2s_cfg->idma_addr;
 
 		sec_dai->pri_dai = pri_dai;
 		pri_dai->sec_dai = sec_dai;
