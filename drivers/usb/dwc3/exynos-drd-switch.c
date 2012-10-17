@@ -296,6 +296,8 @@ static int exynos_drd_switch_set_peripheral(struct usb_otg *otg,
 {
 	struct exynos_drd_switch *drd_switch = container_of(otg,
 					struct exynos_drd_switch, otg);
+	struct exynos_drd *drd = container_of(drd_switch->core,
+						struct exynos_drd, core);
 
 	if (gadget) {
 		dev_dbg(otg->phy->dev, "%s: binding gadget %s\n",
@@ -304,10 +306,12 @@ static int exynos_drd_switch_set_peripheral(struct usb_otg *otg,
 
 		/*
 		 * Prevents unnecessary activation of the work function.
-		 * If both peripheral and host are set or if ID pin is high
-		 * then we ensure that work function will enter to valid state.
+		 * If both peripheral and host are set or if we want to force
+		 * peripheral to run then we ensure that work function will
+		 * enter to valid state.
 		 */
-		if (otg->host || drd_switch->id_state == B_DEV)
+		if (otg->host || (drd->pdata->quirks & FORCE_RUN_PERIPHERAL &&
+				  drd_switch->id_state == B_DEV))
 			exynos_drd_switch_schedule_work(&drd_switch->work);
 	} else {
 		dev_dbg(otg->phy->dev, "%s: unbinding gadget\n", __func__);
@@ -620,7 +624,7 @@ void exynos_drd_switch_reset(struct exynos_drd *drd, int run)
 		drd_switch = container_of(otg,
 					struct exynos_drd_switch, otg);
 
-		if (drd->pdata->quirks & FORCE_RUN_PERIPHERAL)
+		if (drd->pdata->quirks & FORCE_INIT_PERIPHERAL)
 			drd_switch->id_state = B_DEV;
 		else
 			drd_switch->id_state =
