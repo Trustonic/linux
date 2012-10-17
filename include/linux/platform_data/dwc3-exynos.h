@@ -26,10 +26,12 @@ struct dwc3_exynos_data {
 	bool (*get_bses_vld)(struct platform_device *pdev);
 	unsigned int quirks;
 #define EXYNOS_PHY20_NO_SUSPEND	(1 << 0)
-/* Force udc to start/stop when ID sensing isn't available */
+/* Force udc to start; useful when host driver support is off */
 #define FORCE_RUN_PERIPHERAL	(1 << 1)
 /* Force udc to suspend when VBus sensing isn't available */
 #define FORCE_PM_PERIPHERAL	(1 << 2)
+/* Initialize ID state to 1; useful when ID sensing isn't available */
+#define FORCE_INIT_PERIPHERAL	(1 << 3)
 	int id_irq;
 	int vbus_irq;
 	unsigned long irq_flags;
