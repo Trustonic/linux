@@ -695,11 +695,10 @@ void i2s_enable(struct snd_soc_dai *dai)
 	struct i2s_dai *other = i2s->pri_dai ? : i2s->sec_dai;
 	unsigned long flags;
 
-#ifdef CONFIG_SND_PM_RUNTIME
 	struct platform_device *pdev = i2s->pri_dai ?
 				       i2s->pri_dai->pdev : i2s->pdev;
 	struct s3c_audio_pdata *i2s_pdata = pdev->dev.platform_data;
-#endif
+
 	spin_lock_irqsave(&lock, flags);
 
 	if (is_secondary(i2s) && is_opened(i2s)) {
@@ -723,25 +722,21 @@ void i2s_enable(struct snd_soc_dai *dai)
 	spin_unlock_irqrestore(&lock, flags);
 
 	if (!is_opened(other)) {
-#ifdef CONFIG_SND_PM_RUNTIME
 		pm_runtime_get_sync(&pdev->dev);
-#endif
 		i2s_register_restore(i2s);
 #ifdef CONFIG_SND_SAMSUNG_USE_IDMA
 		clk_enable(i2s->srpclk);
 #endif
 		clk_enable(i2s->clk);
 
-#ifdef CONFIG_SND_PM_RUNTIME
 		if (i2s_pdata->cfg_gpio && i2s_pdata->cfg_gpio(pdev))
 			dev_err(&pdev->dev, "Unable to configure gpio\n");
 
 		if (i2s->quirks & QUIRK_NEED_RSTCLR)
 			writel(CON_RSTCLR, i2s->addr + I2SCON);
-#endif
 	}
 
-#if defined(CONFIG_SND_PM_RUNTIME) && defined(CONFIG_SND_SAMSUNG_ALP)
+#if defined(CONFIG_PM_RUNTIME) && defined(CONFIG_SND_SAMSUNG_ALP)
 	if (is_secondary(i2s))
 		srp_core_reset();
 #endif
@@ -751,14 +746,12 @@ void i2s_disable(struct snd_soc_dai *dai)
 {
 	struct i2s_dai *i2s = to_info(dai);
 	struct i2s_dai *other = i2s->pri_dai ? : i2s->sec_dai;
-	unsigned long flags;
-
-#ifdef CONFIG_SND_PM_RUNTIME
 	struct platform_device *pdev = i2s->pri_dai ?
 				       i2s->pri_dai->pdev : i2s->pdev;
-#endif
+	unsigned long flags;
 
-#if defined(CONFIG_SND_PM_RUNTIME) && defined(CONFIG_SND_SAMSUNG_ALP)
+
+#if defined(CONFIG_PM_RUNTIME) && defined(CONFIG_SND_SAMSUNG_ALP)
 	if (is_secondary(i2s))
 		srp_core_suspend();
 #endif
@@ -795,9 +788,7 @@ void i2s_disable(struct snd_soc_dai *dai)
 		clk_disable(i2s->srpclk);
 #endif
 
-#ifdef CONFIG_SND_PM_RUNTIME
 		pm_runtime_put_sync(&pdev->dev);
-#endif
 	}
 }
 
@@ -1095,14 +1086,10 @@ static int samsung_i2s_dai_probe(struct snd_soc_dai *dai)
 	struct i2s_dai *other = i2s->pri_dai ? : i2s->sec_dai;
 	struct platform_device *pdev = i2s->pri_dai ?
 				       i2s->pri_dai->pdev : i2s->pdev;
-#ifndef CONFIG_SND_PM_RUNTIME
 	struct s3c_audio_pdata *i2s_pdata = pdev->dev.platform_data;
-#endif
 	int ret;
 
-#ifdef CONFIG_SND_PM_RUNTIME
 	pm_runtime_get_sync(&pdev->dev);
-#endif
 
 	if (other && other->clk) /* If this is second dai probe */
 		goto probe_exit;
@@ -1174,7 +1161,6 @@ probe_exit:
 		srp_prepare_pm((void *) dai);
 #endif
 
-#ifndef CONFIG_SND_PM_RUNTIME
 	if (i2s_pdata->cfg_gpio && i2s_pdata->cfg_gpio(pdev)) {
 		dev_err(&pdev->dev, "Unable to configure gpio\n");
 		ret = -EINVAL;
@@ -1183,7 +1169,7 @@ probe_exit:
 		else
 			goto err1;
 	}
-#endif
+
 	if (i2s->quirks & QUIRK_NEED_RSTCLR)
 		writel(CON_RSTCLR, i2s->addr + I2SCON);
 
@@ -1207,9 +1193,7 @@ probe_exit:
 	clk_disable(i2s->srpclk);
 #endif
 	i2s->opencnt = 0;
-#ifdef CONFIG_SND_PM_RUNTIME
 	pm_runtime_put_sync(&pdev->dev);
-#endif
 
 	return 0;
 
