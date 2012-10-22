@@ -1127,9 +1127,7 @@ srp_firmware_request_complete(const struct firmware *vliw, void *context)
 	unsigned long icache_size = srp.pdata->icache_size;
 	unsigned long dmem_size = srp.pdata->dmem_size;
 	unsigned long cmem_size = srp.pdata->cmem_size;
-#ifndef CONFIG_PM_RUNTIME
 	unsigned int reset_type = srp.pdata->type;
-#endif
 
 	if (!vliw) {
 		srp_err("Failed to requset firmware[%s]\n", VLIW_NAME);
@@ -1192,15 +1190,13 @@ srp_firmware_request_complete(const struct firmware *vliw, void *context)
 	srp_get_buf_info();
 	srp_alloc_buf();
 
-#ifndef CONFIG_PM_RUNTIME
 	if (reset_type == SRP_SW_RESET) {
 		i2s_enable(srp.pm_info);
-
+#ifndef CONFIG_PM_RUNTIME
 		srp_core_reset();
-
+#endif
 		i2s_disable(srp.pm_info);
 	}
-#endif
 
 	return;
 
