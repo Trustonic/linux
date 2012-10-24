@@ -732,7 +732,10 @@ static long srp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case SRP_FLUSH:
 		srp_debug("SRP_FLUSH\n");
 		srp_commbox_deinit();
-		srp.initialized = true;
+		srp_flush_ibuf();
+		srp_flush_obuf();
+		srp_set_default_fw();
+		srp_reset();
 		break;
 
 	case SRP_GET_IBUF_INFO:
