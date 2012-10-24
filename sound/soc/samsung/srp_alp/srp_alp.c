@@ -898,9 +898,11 @@ static void srp_get_buf_info(void)
 {
 	struct exynos_srp_buf ibuf = srp.pdata->ibuf;
 	struct exynos_srp_buf obuf = srp.pdata->obuf;
+	bool use_iram = srp.pdata->use_iram;
 
 	/* Get I/O Buffer virtual address */
-	srp.ibuf0 = srp.dmem + ibuf.offset;
+	srp.ibuf0 = use_iram ? srp.iram + ibuf.offset
+			     : srp.dmem + ibuf.offset;
 	srp.ibuf1 = srp.ibuf0 + ibuf.size;
 	srp.obuf0 = srp.dmem + obuf.offset;
 	srp.obuf1 = srp.obuf0 + obuf.size;
@@ -915,7 +917,7 @@ static void srp_get_buf_info(void)
 	srp.wbuf_size = ibuf.size * 4;
 
 	/* Get Data offset */
-	srp.data_offset = (ibuf.size * 2) + obuf.offset;
+	srp.data_offset = (obuf.size * 2) + obuf.offset;
 
 	srp_info("[VA]IBUF0[0x%p], [PA]IBUF0[0x%x]\n",
 						srp.ibuf0, srp.ibuf0_pa);
