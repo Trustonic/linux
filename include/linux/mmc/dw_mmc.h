@@ -234,6 +234,11 @@ struct block_settings {
 	unsigned int	max_seg_size;	/* see blk_queue_max_segment_size */
 };
 
+struct dw_mci_clk {
+	u32	cclkin;
+	u32	sclkin;
+};
+
 /* Board platform data */
 struct dw_mci_board {
 	u32 num_slots;
@@ -305,6 +310,7 @@ struct dw_mci_board {
 	struct dw_mci_dma_ops *dma_ops;
 	struct dma_pdata *data;
 	struct block_settings *blk_settings;
+	struct dw_mci_clk *clk_tbl;
 };
 
 #endif /* LINUX_MMC_DW_MMC_H */

@@ -44,6 +44,17 @@
 #define DWMCI_FIFO_CLK_DELAY_CTRL(x)	(((x) & 0x3) << 16)
 #define DWMCI_RD_DQS_DELAY_CTRL(x)	((x) & 0x3FF)
 
+static struct dw_mci_clk exynos_dwmci_clk_rates[] = {
+	{25 * 1000 * 1000, 100 * 1000 * 1000},
+	{50 * 1000 * 1000, 200 * 1000 * 1000},
+	{50 * 1000 * 1000, 200 * 1000 * 1000},
+	{100 * 1000 * 1000, 400 * 1000 * 1000},
+	{200 * 1000 * 1000, 800 * 1000 * 1000},
+	{100 * 1000 * 1000, 400 * 1000 * 1000},
+	{200 * 1000 * 1000, 800 * 1000 * 1000},
+	{400 * 1000 * 1000, 800 * 1000 * 1000},
+};
+
 static int exynos_dwmci_get_ocr(u32 slot_id)
 {
 	u32 ocr_avail = MMC_VDD_165_195 | MMC_VDD_32_33 | MMC_VDD_33_34;
@@ -64,16 +75,28 @@ static int exynos_dwmci_init(u32 slot_id, irq_handler_t handler, void *data)
 static void exynos_dwmci_set_io_timing(void *data, unsigned char timing)
 {
 	struct dw_mci *host = (struct dw_mci *)data;
+	struct dw_mci_board *pdata = host->pdata;
+	struct dw_mci_clk *clk_tbl = pdata->clk_tbl;
 	u32 clksel, regs;
+	u32 sclkin, cclkin;
+
+	if (timing > MMC_TIMING_MMC_HS200_DDR) {
+		pr_err("%s: timing(%d): not suppored\n", __func__, timing);
+		return;
+	}
+
+	sclkin = clk_tbl[timing].sclkin;
+	cclkin = clk_tbl[timing].cclkin;
+	clksel = __raw_readl(host->regs + DWMCI_CLKSEL);
+
+	if (host->bus_hz != cclkin) {
+		host->bus_hz = cclkin;
+		host->current_speed = 0;
+		clk_set_rate(host->cclk, sclkin);
+	}
 
 	if (timing == MMC_TIMING_MMC_HS200_DDR) {
-		if (host->bus_hz != 400 * 1000 * 1000) {
-			host->bus_hz = 400 * 1000 * 1000;
-			clk_set_rate(host->cclk, 800 * 1000 * 1000);
-		}
-		__raw_writel(host->pdata->ddr200_timing,
-				host->regs + DWMCI_CLKSEL);
-
+		clksel = pdata->ddr200_timing;
 		regs = __raw_readl(host->regs + DWMCI_DDR200_RDDQS_EN);
 		regs |= DWMCI_TXDT_CRC_TIMER_FASTLIMIT(0x12) |
 			DWMCI_TXDT_CRC_TIMER_INITVAL(0x15) |
@@ -86,37 +109,16 @@ static void exynos_dwmci_set_io_timing(void *data, unsigned char timing)
 		__raw_writel(regs, host->regs + DWMCI_DDR200_DLINE_CTRL);
 	} else if (timing == MMC_TIMING_MMC_HS200 ||
 			timing == MMC_TIMING_UHS_SDR104) {
-		if (host->bus_hz != 200 * 1000 * 1000) {
-			host->bus_hz = 200 * 1000 * 1000;
-			clk_set_rate(host->cclk, 800 * 1000 * 1000);
-		}
-		clksel = __raw_readl(host->regs + DWMCI_CLKSEL);
-		clksel = (clksel & 0xfff8ffff) | (host->pdata->clk_drv << 16);
-		__raw_writel(clksel, host->regs + DWMCI_CLKSEL);
+		clksel = (clksel & 0xfff8ffff) | (pdata->clk_drv << 16);
 	} else if (timing == MMC_TIMING_UHS_SDR50) {
-		if (host->bus_hz != 100 * 1000 * 1000) {
-			host->bus_hz = 100 * 1000 * 1000;
-			clk_set_rate(host->cclk, 400 * 1000 * 1000);
-		}
-		clksel = __raw_readl(host->regs + DWMCI_CLKSEL);
-		clksel = (clksel & 0xfff8ffff) | (host->pdata->clk_drv << 16);
-		__raw_writel(clksel, host->regs + DWMCI_CLKSEL);
+		clksel = (clksel & 0xfff8ffff) | (pdata->clk_drv << 16);
 	} else if (timing == MMC_TIMING_UHS_DDR50) {
-		if (host->bus_hz != 100 * 1000 * 1000) {
-			host->bus_hz = 100 * 1000 * 1000;
-			clk_set_rate(host->cclk, 400 * 1000 * 1000);
-			host->current_speed = 0;
-		}
-		__raw_writel(host->pdata->ddr_timing,
-			host->regs + DWMCI_CLKSEL);
+		clksel = pdata->ddr_timing;
 	} else {
-		if (host->bus_hz != 50 * 1000 * 1000) {
-			host->bus_hz = 50 * 1000 * 1000;
-			clk_set_rate(host->cclk, 200 * 1000 * 1000);
-		}
-		__raw_writel(host->pdata->sdr_timing,
-			host->regs + DWMCI_CLKSEL);
+		clksel = pdata->sdr_timing;
 	}
+
+	__raw_writel(clksel, host->regs + DWMCI_CLKSEL);
 }
 
 static struct dw_mci_board exynos4_dwmci_pdata = {
@@ -127,6 +129,7 @@ static struct dw_mci_board exynos4_dwmci_pdata = {
 	.init			= exynos_dwmci_init,
 	.get_bus_wd		= exynos_dwmci_get_bus_wd,
 	.set_io_timing		= exynos_dwmci_set_io_timing,
+	.clk_tbl		= exynos_dwmci_clk_rates,
 };
 
 static u64 exynos_dwmci_dmamask = DMA_BIT_MASK(32);
@@ -170,7 +173,9 @@ struct dw_mci_board exynos5_dwmci##_channel##_def_platdata = {	\
 	.init			= exynos_dwmci_init,		\
 	.get_bus_wd		= exynos_dwmci_get_bus_wd,	\
 	.set_io_timing		= exynos_dwmci_set_io_timing,	\
-	.get_ocr		= exynos_dwmci_get_ocr		\
+	.get_ocr		= exynos_dwmci_get_ocr,		\
+	.cd_type		= DW_MCI_CD_PERMANENT,		\
+	.clk_tbl		= exynos_dwmci_clk_rates,	\
 }
 
 EXYNOS5_DWMCI_DEF_PLATDATA(0);
@@ -234,4 +239,6 @@ void __init exynos_dwmci_set_platdata(struct dw_mci_board *pd, u32 slot_id)
 		npd->set_io_timing = exynos_dwmci_set_io_timing;
 	if (!npd->get_ocr)
 		npd->get_ocr = exynos_dwmci_get_ocr;
+	if (!npd->clk_tbl)
+		npd->clk_tbl = exynos_dwmci_clk_rates;
 }
