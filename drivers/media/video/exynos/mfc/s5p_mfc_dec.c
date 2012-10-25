@@ -1076,6 +1076,8 @@ static int vidioc_g_fmt_vid_cap_mplane(struct file *file, void *priv,
 		   of the movie, the buffer is bigger and
 		   further processing stages should crop to this
 		   rectangle. */
+		s5p_mfc_dec_calc_dpb_size(ctx);
+
 		pix_mp->width = ctx->img_width;
 		pix_mp->height = ctx->img_height;
 		pix_mp->field = V4L2_FIELD_NONE;

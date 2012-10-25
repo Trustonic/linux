@@ -709,8 +709,6 @@ static irqreturn_t s5p_mfc_irq(int irq, void *priv)
 				ctx->img_height = s5p_mfc_get_img_height();
 			}
 
-			s5p_mfc_dec_calc_dpb_size(ctx);
-
 			ctx->dpb_count = s5p_mfc_get_dpb_count();
 			dec->internal_dpb = 0;
 			if (ctx->img_width == 0 || ctx->img_height == 0)
