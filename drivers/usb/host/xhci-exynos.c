@@ -74,9 +74,6 @@ static int exynos_xhci_suspend(struct device *dev)
 
 	retval = xhci_suspend(xhci);
 
-	if (exynos_xhci->core->ops->change_mode)
-		exynos_xhci->core->ops->change_mode(exynos_xhci->core, false);
-
 	pm_runtime_put_sync(dev->parent);
 
 	return retval;
