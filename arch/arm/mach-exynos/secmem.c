@@ -31,9 +31,6 @@
 
 #define SECMEM_DEV_NAME	"s5p-smem"
 struct secmem_crypto_driver_ftn *crypto_driver;
-#if defined(CONFIG_ION)
-extern struct ion_device *ion_exynos;
-#endif
 
 static char *secmem_regions[] = {
 #if defined(CONFIG_SOC_EXYNOS5250)

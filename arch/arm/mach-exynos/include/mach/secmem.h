@@ -24,6 +24,7 @@ struct secchunk_info {
 };
 
 #if defined(CONFIG_ION)
+extern struct ion_device *ion_exynos;
 struct secfd_info {
 	int	fd;
 	ion_phys_addr_t phys;
