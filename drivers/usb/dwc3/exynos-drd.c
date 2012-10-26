@@ -546,6 +546,12 @@ static int exynos_drd_resume(struct device *dev)
 	exynos_drd_phy_set(&drd->core);
 	exynos_drd_init(&drd->core);
 	exynos_drd_switch_reset(drd, 1);
+
+	/* Update runtime PM status and clear runtime_error */
+	pm_runtime_disable(dev);
+	pm_runtime_set_active(dev);
+	pm_runtime_enable(dev);
+
 	return 0;
 }
 #else

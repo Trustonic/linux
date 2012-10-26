@@ -105,6 +105,11 @@ static int exynos_xhci_resume(struct device *dev)
 	xhci = hcd_to_xhci(hcd);
 	retval = xhci_resume(xhci, 0);
 
+	/* Update runtime PM status and clear runtime_error */
+	pm_runtime_disable(dev);
+	pm_runtime_set_active(dev);
+	pm_runtime_enable(dev);
+
 	return retval;
 }
 #else

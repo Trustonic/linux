@@ -271,6 +271,12 @@ static int exynos_drd_switch_start_peripheral(struct usb_otg *otg, int on)
 	if (on) {
 		/* Start device only if host is off */
 		if (!exynos_drd_switch_is_host_off(otg))
+			/*
+			 * REVISIT: if host is not suspended shall we check
+			 * runtime_error flag and clear it, if it is set?
+			 * It will give an additional chance to the host
+			 * to be suspended if runtime error happened.
+			 */
 			return -EAGAIN;
 
 		usb_gadget_vbus_connect(otg->gadget);
