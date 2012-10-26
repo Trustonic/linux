@@ -77,6 +77,8 @@ static int exynos_xhci_suspend(struct device *dev)
 	if (exynos_xhci->core->ops->change_mode)
 		exynos_xhci->core->ops->change_mode(exynos_xhci->core, false);
 
+	pm_runtime_put_sync(dev->parent);
+
 	return retval;
 }
 
@@ -97,6 +99,8 @@ static int exynos_xhci_resume(struct device *dev)
 
 	pm_runtime_resume(dev);
 
+	/* Wake up and initialize DRD core */
+	pm_runtime_get_sync(dev->parent);
 	if (exynos_xhci->core->ops->change_mode)
 		exynos_xhci->core->ops->change_mode(exynos_xhci->core, true);
 
