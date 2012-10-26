@@ -30,6 +30,7 @@
 #include <mach/secmem.h>
 
 #define SECMEM_DEV_NAME	"s5p-smem"
+struct miscdevice secmem;
 struct secmem_crypto_driver_ftn *crypto_driver;
 
 static char *secmem_regions[] = {
@@ -104,6 +105,8 @@ static int secmem_release(struct inode *inode, struct file *file)
 static long secmem_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	struct secmem_info *info = filp->private_data;
+	struct secmem_region region;
+	dma_addr_t dma_addr;
 
 	switch (cmd) {
 	case SECMEM_IOC_CHUNKINFO:
@@ -229,6 +232,55 @@ static long secmem_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			return crypto_driver->release();
 		break;
 	}
+	case SECMEM_IOC_GET_ADDR:
+		if (copy_from_user(&region, (void __user *)arg,
+					sizeof(struct secmem_region)))
+			return -EFAULT;
+
+		if (!region.len) {
+			printk(KERN_ERR "%s: Get secmem address size error. \
+							[size : %ld]\n",
+							__func__, region.len);
+			return -EFAULT;
+		}
+
+		region.virt_addr = kmalloc(region.len, GFP_KERNEL | GFP_DMA);
+		if (!region.virt_addr) {
+			printk(KERN_ERR "%s: Get memory address failed. \
+							[address : %x]\n",
+							__func__,
+							(uint32_t)region.virt_addr);
+			return -EFAULT;
+		}
+		region.phys_addr = virt_to_phys(region.virt_addr);
+
+		dma_map_single(secmem.this_device, region.virt_addr,
+				region.len, DMA_TO_DEVICE);
+
+		if (copy_to_user((void __user *)arg, &region,
+					sizeof(struct secmem_region)))
+			return -EFAULT;
+		break;
+	case SECMEM_IOC_RELEASE_ADDR:
+		if (copy_from_user(&region, (void __user *)arg,
+					sizeof(struct secmem_region)))
+			return -EFAULT;
+
+		if (!region.virt_addr) {
+			printk(KERN_ERR "%s: Get secmem address failed. \
+							[address : %x]\n",
+							__func__,
+							(uint32_t)region.virt_addr);
+			return -EFAULT;
+		}
+
+		dma_addr = virt_to_dma(secmem.this_device, region.virt_addr);
+
+		dma_unmap_single(secmem.this_device, dma_addr,
+				region.len, DMA_TO_DEVICE);
+
+		kfree(region.virt_addr);
+		break;
 	default:
 		return -ENOTTY;
 	}
@@ -254,9 +306,7 @@ static const struct file_operations secmem_fops = {
 	.unlocked_ioctl = secmem_ioctl,
 };
 
-extern struct platform_device exynos5_device_gsc0;
-
-static struct miscdevice secmem = {
+struct miscdevice secmem = {
 	.minor	= MISC_DYNAMIC_MINOR,
 	.name	= SECMEM_DEV_NAME,
 	.fops	= &secmem_fops,

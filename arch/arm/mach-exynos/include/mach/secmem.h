@@ -36,6 +36,12 @@ struct secmem_crypto_driver_ftn {
 	int (*release) (void);
 };
 
+struct secmem_region {
+	char		*virt_addr;
+	unsigned long	phys_addr;
+	unsigned long	len;
+};
+
 #if defined(CONFIG_EXYNOS_CONTENT_PATH_PROTECTION)
 void secmem_crypto_register(struct secmem_crypto_driver_ftn *ftn);
 void secmem_crypto_deregister(void);
