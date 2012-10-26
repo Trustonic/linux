@@ -37,6 +37,39 @@ static int ohci_exynos_init(struct usb_hcd *hcd)
 	return 0;
 }
 
+static void ohci_exynos_stop(struct usb_hcd *hcd)
+{
+	struct ohci_hcd *ohci = hcd_to_ohci(hcd);
+
+	ohci_dump(ohci, 1);
+
+	if (quirk_nec(ohci))
+		flush_work_sync(&ohci->nec_work);
+
+	ohci_usb_reset(ohci);
+	ohci_writel(ohci, OHCI_INTR_MIE, &ohci->regs->intrdisable);
+
+	/* flush those writes */
+	(void) ohci_readl(ohci, &ohci->regs->intrdisable);
+	free_irq(hcd->irq, hcd);
+	hcd->irq = 0;
+
+	if (quirk_zfmicro(ohci))
+		del_timer(&ohci->unlink_watchdog);
+	if (quirk_amdiso(ohci))
+		usb_amd_dev_put();
+
+	remove_debug_files(ohci);
+	ohci_mem_cleanup(ohci);
+	if (ohci->hcca) {
+		dma_free_coherent(hcd->self.controller,
+				sizeof *ohci->hcca,
+				ohci->hcca, ohci->hcca_dma);
+		ohci->hcca = NULL;
+		ohci->hcca_dma = 0;
+	}
+}
+
 static int ohci_exynos_start(struct usb_hcd *hcd)
 {
 	struct ohci_hcd *ohci = hcd_to_ohci(hcd);
@@ -47,7 +80,7 @@ static int ohci_exynos_start(struct usb_hcd *hcd)
 	ret = ohci_run(ohci);
 	if (ret < 0) {
 		err("can't start %s", hcd->self.bus_name);
-		ohci_stop(hcd);
+		ohci_exynos_stop(hcd);
 		return ret;
 	}
 
@@ -131,7 +164,7 @@ static const struct hc_driver exynos_ohci_hc_driver = {
 
 	.reset			= ohci_exynos_init,
 	.start			= ohci_exynos_start,
-	.stop			= ohci_stop,
+	.stop			= ohci_exynos_stop,
 	.shutdown		= ohci_shutdown,
 
 	.get_frame_number	= ohci_get_frame,
