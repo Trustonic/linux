@@ -141,7 +141,7 @@ static int exynos_xhci_runtime_suspend(struct device *dev)
 
 	if (hcd->state != HC_STATE_SUSPENDED ||
 			xhci->shared_hcd->state != HC_STATE_SUSPENDED)
-		return -EINVAL;
+		return -EAGAIN;
 
 	retval = xhci_suspend(xhci);
 
