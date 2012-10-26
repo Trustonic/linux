@@ -54,6 +54,8 @@ struct secmem_info {
 	bool		drm_enabled;
 };
 
+#define SECMEM_IS_PAGE_ALIGNED(addr) (!((addr) & (~PAGE_MASK)))
+
 static int secmem_open(struct inode *inode, struct file *file)
 {
 	struct miscdevice *miscdev = file->private_data;
@@ -99,6 +101,25 @@ static int secmem_release(struct inode *inode, struct file *file)
 	mutex_unlock(&drm_lock);
 
 	kfree(info);
+	return 0;
+}
+
+static int secmem_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	unsigned long size = vma->vm_end - vma->vm_start;
+
+	BUG_ON(!SECMEM_IS_PAGE_ALIGNED(vma->vm_start));
+	BUG_ON(!SECMEM_IS_PAGE_ALIGNED(vma->vm_end));
+
+	vma->vm_flags |= VM_RESERVED;
+	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+
+	if (remap_pfn_range(vma, vma->vm_start, vma->vm_pgoff,
+				size, vma->vm_page_prot)) {
+		printk(KERN_ERR "%s : remap_pfn_range() failed!\n", __func__);
+		return -EAGAIN;
+	}
+
 	return 0;
 }
 
@@ -304,6 +325,7 @@ static const struct file_operations secmem_fops = {
 	.open		= secmem_open,
 	.release	= secmem_release,
 	.unlocked_ioctl = secmem_ioctl,
+	.mmap		= secmem_mmap,
 };
 
 struct miscdevice secmem = {
