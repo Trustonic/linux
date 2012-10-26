@@ -100,6 +100,8 @@ static int exynos_xhci_resume(struct device *dev)
 	pm_runtime_get_sync(dev->parent);
 	if (exynos_xhci->core->ops->change_mode)
 		exynos_xhci->core->ops->change_mode(exynos_xhci->core, true);
+	if (exynos_xhci->core->ops->core_init)
+		exynos_xhci->core->ops->core_init(exynos_xhci->core);
 
 	xhci = hcd_to_xhci(hcd);
 	retval = xhci_resume(xhci, 0);
