@@ -528,9 +528,10 @@ static int exynos_drd_suspend(struct device *dev)
 {
 	struct exynos_drd *drd = dev_get_drvdata(dev);
 
+#ifdef CONFIG_USB_SUSPEND
 	if (pm_runtime_suspended(dev))
 		return 0;
-
+#endif
 	exynos_drd_phy_unset(&drd->core);
 	clk_disable(drd->clk);
 
