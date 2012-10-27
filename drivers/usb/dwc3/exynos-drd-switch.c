@@ -263,7 +263,7 @@ static int exynos_drd_switch_set_host(struct usb_otg *otg, struct usb_bus *host)
 static int exynos_drd_switch_start_peripheral(struct usb_otg *otg, int on)
 {
 	dev_dbg(otg->phy->dev, "%s: turn %s gadget %s\n",
-			__func__, on ? "on" : "off", otg->host->bus_name);
+			__func__, on ? "on" : "off", otg->gadget->name);
 
 	if (!otg->gadget)
 		return -EINVAL;
