@@ -307,7 +307,7 @@ static int udc_enable(struct s3c_udc *dev)
 	return 0;
 }
 
-static int s3c_vbus_enable(struct usb_gadget *gadget, int is_active)
+int s3c_vbus_enable(struct usb_gadget *gadget, int is_active)
 {
 	unsigned long flags;
 	struct s3c_udc *dev = container_of(gadget, struct s3c_udc, gadget);
@@ -332,16 +332,6 @@ static int s3c_vbus_enable(struct usb_gadget *gadget, int is_active)
 		}
 	}
 	spin_unlock_irqrestore(&dev->lock, flags);
-
-	return 0;
-}
-
-static int s3c_vbus_draw(struct usb_gadget *gadget, unsigned mA)
-{
-	struct s3c_udc *dev = container_of(gadget, struct s3c_udc, gadget);
-
-	if (dev->phy)
-		return usb_phy_set_power(dev->phy, mA);
 
 	return 0;
 }
@@ -895,7 +885,6 @@ static const struct usb_gadget_ops s3c_udc_ops = {
 	.set_selfpowered = s3c_set_selfpowered,
 	.pullup = s3c_udc_pullup,
 	.vbus_session = s3c_vbus_enable,
-	.vbus_draw = s3c_vbus_draw,
 	.udc_start = s3c_udc_start,
 	.udc_stop = s3c_udc_stop,
 };
