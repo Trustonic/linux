@@ -1132,16 +1132,20 @@ static int exynos5_check_usb_op(void)
 	unsigned long flags;
 	int ret;
 
-	ret = clk_enable(usb_phy_control.phy_clk);
-	if (ret)
-		return 0;
-
 	local_irq_save(flags);
-	/* Check USB 3.0 DRD power */
+
+	/* Check USB 3.0 DRD power first */
 	if (exynos5_usb_phy30_is_on()) {
 		op = 1;
-		goto done;
+		goto irq_res;
 	}
+
+	ret = clk_enable(usb_phy_control.phy_clk);
+	if (ret) {
+		op = 0;
+		goto irq_res;
+	}
+
 	/*If USB Device is power on,  */
 	if (exynos_usb_device_phy_is_on()) {
 		op = 1;
@@ -1177,8 +1181,9 @@ static int exynos5_check_usb_op(void)
 		usb_phy_control.lpa_entered = 1;
 	}
 done:
-	local_irq_restore(flags);
 	clk_disable(usb_phy_control.phy_clk);
+irq_res:
+	local_irq_restore(flags);
 
 	return op;
 }
