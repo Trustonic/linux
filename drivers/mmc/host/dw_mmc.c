@@ -1126,12 +1126,8 @@ static int dw_mci_get_cd(struct mmc_host *mmc)
 	struct dw_mci *host = slot->host;
 
 	/* Use platform get_cd function, else try onboard card detect */
-	if (brd->quirks & DW_MCI_QUIRK_BROKEN_CARD_DETECTION) {
-		if (host->quirks & DW_MCI_QUIRK_BROKEN_CARD_DETECTION)
-			present = 1;
-		else
-			present = 0;
-	}
+	if (brd->quirks & DW_MCI_QUIRK_BROKEN_CARD_DETECTION)
+		present = 1;
 	else if (brd->get_cd)
 		present = !brd->get_cd(slot->id);
 	else
