@@ -357,6 +357,18 @@ static struct regulator_consumer_supply s5m8767_ldo11_consumer =
 static struct regulator_consumer_supply s5m8767_ldo14_consumer =
 	REGULATOR_SUPPLY("vdd_ldo14", NULL);
 
+static struct regulator_consumer_supply s5m8767_ldo17_consumer =
+	REGULATOR_SUPPLY("5m_core_1.5v", NULL);
+
+static struct regulator_consumer_supply s5m8767_ldo18_consumer =
+	REGULATOR_SUPPLY("cam_io_1.8v", NULL);
+
+static struct regulator_consumer_supply s5m8767_ldo19_consumer =
+	REGULATOR_SUPPLY("vt_cam_1.8v", NULL);
+
+static struct regulator_consumer_supply s5m8767_ldo24_consumer =
+	REGULATOR_SUPPLY("cam_af_2.8v", NULL);
+
 static struct regulator_init_data s5m8767_buck1_data = {
 	.constraints	= {
 		.name		= "vdd_mif range",
@@ -467,6 +479,66 @@ static struct regulator_init_data s5m8767_ldo14_data = {
 	.consumer_supplies	= &s5m8767_ldo14_consumer,
 };
 
+static struct regulator_init_data s5m8767_ldo17_data = {
+	.constraints	= {
+		.name		= "5m_core_1.5v",
+		.min_uV		= 1500000,
+		.max_uV		= 1500000,
+		.apply_uV	= 1,
+		.always_on	= 1,
+		.state_mem	= {
+			.enabled	= 1,
+		},
+	},
+	.num_consumer_supplies	= 1,
+	.consumer_supplies	= &s5m8767_ldo17_consumer,
+};
+
+static struct regulator_init_data s5m8767_ldo18_data = {
+	.constraints	= {
+		.name		= "cam_io_1.8v",
+		.min_uV		= 1800000,
+		.max_uV		= 1800000,
+		.apply_uV	= 1,
+		.always_on	= 1,
+		.state_mem	= {
+			.enabled	= 1,
+		},
+	},
+	.num_consumer_supplies	= 1,
+	.consumer_supplies	= &s5m8767_ldo18_consumer,
+};
+
+static struct regulator_init_data s5m8767_ldo19_data = {
+	.constraints	= {
+		.name		= "vt_cam_1.8v",
+		.min_uV		= 1800000,
+		.max_uV		= 1800000,
+		.apply_uV	= 1,
+		.always_on	= 1,
+		.state_mem	= {
+			.enabled	= 1,
+		},
+	},
+	.num_consumer_supplies	= 1,
+	.consumer_supplies	= &s5m8767_ldo19_consumer,
+};
+
+static struct regulator_init_data s5m8767_ldo24_data = {
+	.constraints	= {
+		.name		= "cam_af_2.8v",
+		.min_uV		= 2800000,
+		.max_uV		= 2800000,
+		.apply_uV	= 1,
+		.always_on	= 1,
+		.state_mem	= {
+			.enabled	= 1,
+		},
+	},
+	.num_consumer_supplies	= 1,
+	.consumer_supplies	= &s5m8767_ldo24_consumer,
+};
+
 static struct sec_regulator_data exynos_regulators[] = {
 	{S5M8767_BUCK1, &s5m8767_buck1_data},
 	{S5M8767_BUCK2, &s5m8767_buck2_data},
@@ -475,6 +547,10 @@ static struct sec_regulator_data exynos_regulators[] = {
 	{S5M8767_LDO4, &s5m8767_ldo4_data},
 	{S5M8767_LDO11, &s5m8767_ldo11_data},
 	{S5M8767_LDO14, &s5m8767_ldo14_data},
+	{S5M8767_LDO17, &s5m8767_ldo17_data},
+	{S5M8767_LDO18, &s5m8767_ldo18_data},
+	{S5M8767_LDO19, &s5m8767_ldo19_data},
+	{S5M8767_LDO24, &s5m8767_ldo24_data},
 };
 
 struct sec_opmode_data s5m8767_opmode_data[S5M8767_REG_MAX] = {
@@ -485,6 +561,10 @@ struct sec_opmode_data s5m8767_opmode_data[S5M8767_REG_MAX] = {
 	[S5M8767_LDO4] = {S5M8767_LDO4, SEC_OPMODE_STANDBY},
 	[S5M8767_LDO11] = {S5M8767_LDO11, SEC_OPMODE_STANDBY},
 	[S5M8767_LDO14] = {S5M8767_LDO14, SEC_OPMODE_STANDBY},
+	[S5M8767_LDO17] = {S5M8767_LDO17, SEC_OPMODE_STANDBY},
+	[S5M8767_LDO18] = {S5M8767_LDO18, SEC_OPMODE_STANDBY},
+	[S5M8767_LDO19] = {S5M8767_LDO19, SEC_OPMODE_STANDBY},
+	[S5M8767_LDO24] = {S5M8767_LDO24, SEC_OPMODE_STANDBY},
 };
 
 static int sec_cfg_irq(void)
