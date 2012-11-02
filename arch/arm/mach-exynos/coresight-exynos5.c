@@ -318,6 +318,11 @@ static int __init cs_exynos5_init(void)
 	int i;
 	int ret;
 
+#if defined(CONFIG_MACH_SMDK5250)
+	/* HACK */
+	return 0;
+#endif
+
 	if (!soc_is_exynos5250())
 		return -ENODEV;
 
