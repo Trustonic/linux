@@ -9,7 +9,8 @@
 
 #include <linux/delay.h>
 #include <linux/gpio.h>
-#include <linux/gpio_event.h>
+#include <linux/gpio_keys.h>
+#include <linux/input.h>
 #include <linux/i2c.h>
 
 #include <plat/gpio-cfg.h>
@@ -18,57 +19,26 @@
 
 #include "board-smdk5250.h"
 
-static struct gpio_event_direct_entry smdk5250_keypad_key_map[] = {
+static struct gpio_keys_button smdk5250_button[] = {
 	{
-		.gpio	= EXYNOS5_GPX0(0),
-		.code	= KEY_POWER,
+		.code		= KEY_POWER,
+		.gpio		= EXYNOS5_GPX0(0),
+		.active_low	= 1,
+		.wakeup		= 1,
 	}
 };
 
-static struct gpio_event_input_info smdk5250_keypad_key_info = {
-	.info.func		= gpio_event_input_func,
-	.info.no_suspend	= true,
-	.debounce_time.tv64	= 5 * NSEC_PER_MSEC,
-	.type			= EV_KEY,
-	.keymap			= smdk5250_keypad_key_map,
-	.keymap_size		= ARRAY_SIZE(smdk5250_keypad_key_map)
+static struct gpio_keys_platform_data smdk5250_gpiokeys_platform_data = {
+	smdk5250_button,
+	ARRAY_SIZE(smdk5250_button),
 };
 
-static struct gpio_event_info *smdk5250_input_info[] = {
-	&smdk5250_keypad_key_info.info,
-};
-
-static struct gpio_event_platform_data smdk5250_input_data = {
-	.names	= {
-		"smdk5250-keypad",
-		NULL,
-	},
-	.info		= smdk5250_input_info,
-	.info_count	= ARRAY_SIZE(smdk5250_input_info),
-};
-
-static struct platform_device smdk5250_input_device = {
-	.name	= GPIO_EVENT_DEV_NAME,
-	.id	= 0,
+static struct platform_device smdk5250_gpio_keys = {
+	.name	= "gpio-keys",
 	.dev	= {
-		.platform_data = &smdk5250_input_data,
+		.platform_data = &smdk5250_gpiokeys_platform_data,
 	},
 };
-
-static void __init exynos5_smdk5250_gpio_power_init(void)
-{
-	int err = 0;
-
-	err = gpio_request_one(EXYNOS5_GPX0(0), 0, "GPX0");
-	if (err) {
-		pr_err("failed to request GPX0 for "
-		       "suspend/resume control\n");
-		return;
-	}
-	s3c_gpio_setpull(EXYNOS5_GPX0(0), S3C_GPIO_PULL_NONE);
-
-	gpio_free(EXYNOS5_GPX0(0));
-}
 
 static void exynos5_smdk5250_touch_init(void)
 {
@@ -116,7 +86,7 @@ struct s3c2410_platform_i2c i2c_data3 __initdata = {
 static struct platform_device *smdk5250_input_devices[] __initdata = {
 	&s3c_device_i2c3,
 	&s3c_device_i2c7,
-	&smdk5250_input_device,
+	&smdk5250_gpio_keys,
 };
 
 void __init exynos5_smdk5250_input_init(void)
@@ -131,7 +101,6 @@ void __init exynos5_smdk5250_input_init(void)
 	s3c_i2c7_set_platdata(NULL);
 	i2c_register_board_info(7, i2c_devs7, ARRAY_SIZE(i2c_devs7));
 
-	exynos5_smdk5250_gpio_power_init();
 	exynos5_smdk5250_touch_init();
 
 	platform_add_devices(smdk5250_input_devices,
