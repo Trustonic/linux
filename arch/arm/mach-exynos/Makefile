@@ -68,6 +68,7 @@ obj-$(CONFIG_MACH_SMDK5250)		+= board-smdk5250-power.o
 obj-$(CONFIG_MACH_SMDK5250)		+= board-smdk5250-spi.o
 obj-$(CONFIG_MACH_SMDK5250)		+= board-smdk5250-display.o
 obj-$(CONFIG_MACH_SMDK5250)		+= board-smdk5250-tvout.o
+obj-$(CONFIG_MACH_SMDK5250)		+= board-smdk5250-camera.o
 
 # Manta board files
 obj-$(CONFIG_MACH_MANTA)		+= board-manta.o
