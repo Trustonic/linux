@@ -37,7 +37,6 @@
 #include <plat/iic.h>
 #include <plat/mipi_csis.h>
 #include <plat/jpeg.h>
-#include <plat/tv-core.h>
 
 #include <mach/exynos_fiq_debugger.h>
 #include <mach/map.h>
@@ -567,31 +566,11 @@ static struct exynos5_fimc_is_sensor_info s5k6a3 = {
 #endif
 #endif
 
-static struct i2c_board_info i2c_devs2[] __initdata = {
-	{
-		I2C_BOARD_INFO("exynos_hdcp", (0x74 >> 1)),
-	},
-	{
-		I2C_BOARD_INFO("exynos_edid", (0xA0 >> 1)),
-	},
-};
-
 /* ADC */
 static struct s3c_adc_platdata smdk5250_adc_data __initdata = {
 	.phy_init       = s3c_adc_phy_init,
 	.phy_exit       = s3c_adc_phy_exit,
 };
-
-#if defined(CONFIG_VIDEO_EXYNOS_TV) && defined(CONFIG_VIDEO_EXYNOS_HDMI)
-static struct s5p_hdmi_platdata hdmi_platdata __initdata = {
-};
-#endif
-
-#if defined(CONFIG_VIDEO_EXYNOS_TV) && defined(CONFIG_VIDEO_EXYNOS_HDMI_CEC)
-static struct s5p_platform_cec hdmi_cec_data __initdata = {
-
-};
-#endif
 
 #ifdef CONFIG_VIDEO_EXYNOS_FIMC_LITE
 static void __init smdk5250_camera_gpio_cfg(void)
@@ -724,7 +703,6 @@ static struct platform_device *smdk5250_devices[] __initdata = {
 	&persistent_trace_device,
 	&s3c_device_rtc,
 	&s3c_device_i2c0,
-	&s3c_device_i2c2,
 	&s3c_device_i2c4,
 	&s3c_device_i2c5,
 	&s3c_device_adc,
@@ -770,20 +748,6 @@ static struct platform_device *smdk5250_devices[] __initdata = {
 	&exynos5_device_rotator,
 #ifdef CONFIG_VIDEO_M5MOLS
 	&m5mols_fixed_voltage,
-#endif
-#ifdef CONFIG_VIDEO_EXYNOS_TV
-#ifdef CONFIG_VIDEO_EXYNOS_HDMI
-	&s5p_device_hdmi,
-#endif
-#ifdef CONFIG_VIDEO_EXYNOS_HDMIPHY
-	&s5p_device_i2c_hdmiphy,
-#endif
-#ifdef CONFIG_VIDEO_EXYNOS_MIXER
-	&s5p_device_mixer,
-#endif
-#ifdef CONFIG_VIDEO_EXYNOS_HDMI_CEC
-	&s5p_device_cec,
-#endif
 #endif
 #ifdef CONFIG_VIDEO_EXYNOS_JPEG
 	&s5p_device_jpeg,
@@ -953,9 +917,6 @@ static void __init exynos_sysmmu_init(void)
 #if defined(CONFIG_VIDEO_EXYNOS_MFC)
 	platform_set_sysmmu(&SYSMMU_PLATDEV(mfc_lr).dev, &s5p_device_mfc.dev);
 #endif
-#if defined(CONFIG_VIDEO_EXYNOS_TV) && defined(CONFIG_VIDEO_EXYNOS_MIXER)
-	platform_set_sysmmu(&SYSMMU_PLATDEV(tv).dev, &s5p_device_mixer.dev);
-#endif
 #ifdef CONFIG_VIDEO_EXYNOS_GSCALER
 	platform_set_sysmmu(&SYSMMU_PLATDEV(gsc0).dev,
 						&exynos5_device_gsc0.dev);
@@ -1022,9 +983,6 @@ static void __init smdk5250_machine_init(void)
 #endif
 
 	s3c_i2c0_set_platdata(NULL);
-	s3c_i2c2_set_platdata(NULL);
-	i2c_register_board_info(2, i2c_devs2, ARRAY_SIZE(i2c_devs2));
-
 	s3c_i2c4_set_platdata(NULL);
 	s3c_i2c5_set_platdata(NULL);
 
@@ -1049,6 +1007,7 @@ static void __init smdk5250_machine_init(void)
 	exynos5_smdk5250_power_init();
 	exynos5_smdk5250_spi_init();
 	exynos5_smdk5250_display_init();
+	exynos5_smdk5250_tvout_init();
 
 #ifdef CONFIG_VIDEO_EXYNOS_MIPI_CSIS
 	s3c_set_platdata(&s5p_mipi_csis0_default_data,
@@ -1116,30 +1075,6 @@ static void __init smdk5250_machine_init(void)
 #endif
 #ifdef CONFIG_VIDEO_EXYNOS_JPEG
 	exynos5_jpeg_setup_clock(&s5p_device_jpeg.dev, 150000000);
-#endif
-#if defined(CONFIG_VIDEO_EXYNOS_TV) && defined(CONFIG_VIDEO_EXYNOS_HDMI)
-	dev_set_name(&s5p_device_hdmi.dev, "exynos5-hdmi");
-	clk_add_alias("hdmi", "s5p-hdmi", "hdmi", &s5p_device_hdmi.dev);
-
-	/* direct HPD to HDMI chip */
-	gpio_request(EXYNOS5_GPX3(7), "hpd-plug");
-	gpio_direction_input(EXYNOS5_GPX3(7));
-	s3c_gpio_cfgpin(EXYNOS5_GPX3(7), S3C_GPIO_SFN(0xf));
-	s3c_gpio_setpull(EXYNOS5_GPX3(7), S3C_GPIO_PULL_NONE);
-
-	/* HDMI CEC */
-	gpio_request(EXYNOS5_GPX3(6), "hdmi-cec");
-	gpio_direction_input(EXYNOS5_GPX3(6));
-	s3c_gpio_cfgpin(EXYNOS5_GPX3(6), S3C_GPIO_SFN(0x3));
-	s3c_gpio_setpull(EXYNOS5_GPX3(6), S3C_GPIO_PULL_NONE);
-
-#if defined(CONFIG_VIDEO_EXYNOS_HDMIPHY)
-	s5p_hdmi_set_platdata(&hdmi_platdata);
-	s5p_i2c_hdmiphy_set_platdata(NULL);
-#endif
-#ifdef CONFIG_VIDEO_EXYNOS_HDMI_CEC
-	s5p_hdmi_cec_set_platdata(&hdmi_cec_data);
-#endif
 #endif
 }
 
