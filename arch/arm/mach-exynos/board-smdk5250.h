@@ -39,6 +39,7 @@ static inline int get_smdk5250_regulator(void)
 		& SMDK5250_REGULATOR_MASK;
 }
 
+void exynos5_smdk5250_mmc_init(void);
 void exynos5_smdk5250_input_init(void);
 void exynos5_smdk5250_usb_init(void);
 void exynos5_smdk5250_power_init(void);

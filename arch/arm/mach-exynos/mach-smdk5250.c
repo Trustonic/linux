@@ -11,7 +11,6 @@
 #include <linux/serial_core.h>
 #include <linux/cma.h>
 #include <linux/gpio.h>
-#include <linux/mmc/host.h>
 #include <linux/delay.h>
 #include <linux/fb.h>
 #include <linux/i2c.h>
@@ -57,7 +56,6 @@
 #include <mach/exynos-ion.h>
 #include <mach/exynos-mfc.h>
 #include <mach/tmu.h>
-#include <mach/dwmci.h>
 #include <mach/spi-clocks.h>
 
 #include <plat/dsim.h>
@@ -832,61 +830,6 @@ static void __init smdk5250_set_camera_platdata(void)
 }
 #endif /* CONFIG_VIDEO_EXYNOS_GSCALER */
 
-static void exynos_dwmci0_cfg_gpio(int width)
-{
-	unsigned int gpio;
-
-	for (gpio = EXYNOS5_GPC0(0); gpio < EXYNOS5_GPC0(2); gpio++) {
-		s3c_gpio_cfgpin(gpio, S3C_GPIO_SFN(2));
-		s3c_gpio_setpull(gpio, S3C_GPIO_PULL_NONE);
-		s5p_gpio_set_drvstr(gpio, S5P_GPIO_DRVSTR_LV4);
-	}
-
-	switch (width) {
-	case 8:
-		for (gpio = EXYNOS5_GPC1(0); gpio <= EXYNOS5_GPC1(3); gpio++) {
-			s3c_gpio_cfgpin(gpio, S3C_GPIO_SFN(2));
-			s3c_gpio_setpull(gpio, S3C_GPIO_PULL_UP);
-			s5p_gpio_set_drvstr(gpio, S5P_GPIO_DRVSTR_LV4);
-		}
-	case 4:
-		for (gpio = EXYNOS5_GPC0(3); gpio <= EXYNOS5_GPC0(6); gpio++) {
-			s3c_gpio_cfgpin(gpio, S3C_GPIO_SFN(2));
-			s3c_gpio_setpull(gpio, S3C_GPIO_PULL_UP);
-			s5p_gpio_set_drvstr(gpio, S5P_GPIO_DRVSTR_LV4);
-		}
-		break;
-	case 1:
-		gpio = EXYNOS5_GPC0(3);
-		s3c_gpio_cfgpin(gpio, S3C_GPIO_SFN(2));
-		s3c_gpio_setpull(gpio, S3C_GPIO_PULL_UP);
-		s5p_gpio_set_drvstr(gpio, S5P_GPIO_DRVSTR_LV4);
-	default:
-		break;
-	}
-}
-
-static struct dw_mci_board exynos_dwmci0_pdata __initdata = {
-	.num_slots		= 1,
-	.quirks			= DW_MCI_QUIRK_BROKEN_CARD_DETECTION |
-				  DW_MCI_QUIRK_HIGHSPEED |
-				  DW_MCI_QUIRK_NO_DETECT_EBIT,
-	.bus_hz			= 200 * 1000 * 1000,
-	.max_bus_hz		= 200 * 1000 * 1000,
-	.caps			= MMC_CAP_UHS_DDR50 | MMC_CAP_1_8V_DDR |
-				  MMC_CAP_8_BIT_DATA | MMC_CAP_CMD23 | MMC_CAP_ERASE,
-	.caps2			= MMC_CAP2_HS200_1_8V_SDR | MMC_CAP2_PACKED_WR,
-	.desc_sz		= 4,
-	.fifo_depth             = 0x80,
-	.detect_delay_ms	= 200,
-	.hclk_name		= "dwmci",
-	.cclk_name		= "sclk_dwmci",
-	.cfg_gpio		= exynos_dwmci0_cfg_gpio,
-	.sdr_timing		= 0x03020001,
-	.ddr_timing		= 0x03030002,
-	.clk_drv		= 0x3,
-};
-
 #ifdef CONFIG_FB_S3C
 
 static void smdk5250_fimd_gpio_setup_24bpp(void)
@@ -1468,7 +1411,6 @@ static struct platform_device *smdk5250_devices[] __initdata = {
 #ifdef CONFIG_VIDEO_M5MOLS
 	&m5mols_fixed_voltage,
 #endif
-	&exynos5_device_dwmci0,
 #ifdef CONFIG_FB_S3C
 #ifdef CONFIG_FB_MIPI_DSIM
 	&smdk5250_mipi_lcd,
@@ -1651,15 +1593,6 @@ static inline void exynos_reserve_mem(void)
 }
 #endif
 
-static void __init smdk5250_dwmci_init(void)
-{
-	exynos_dwmci_set_platdata(&exynos_dwmci0_pdata, 0);
-	dev_set_name(&exynos5_device_dwmci0.dev, "exynos4-sdhci.0");
-	clk_add_alias("dwmci", "dw_mmc.0", "hsmmc", &exynos5_device_dwmci0.dev);
-	clk_add_alias("sclk_dwmci", "dw_mmc.0", "sclk_mmc",
-		      &exynos5_device_dwmci0.dev);
-}
-
 #if defined(CONFIG_VIDEO_EXYNOS_MFC)
 static struct s5p_mfc_platdata smdk5250_mfc_pd = {
 	.clock_rate = 333 * MHZ,
@@ -1825,7 +1758,6 @@ static void __init smdk5250_machine_init(void)
 
 	exynos_sysmmu_init();
 	exynos_ion_set_platdata();
-	smdk5250_dwmci_init();
 
 #ifdef CONFIG_VIDEO_EXYNOS_MFC
 	s5p_mfc_set_platdata(&smdk5250_mfc_pd);
@@ -1869,11 +1801,13 @@ static void __init smdk5250_machine_init(void)
 #ifdef CONFIG_EXYNOS_DEV_TMU
 	exynos_tmu_set_platdata(&smdk5250_tmu_pdata);
 #endif
+	exynos5_smdk5250_mmc_init();
+
+	platform_add_devices(smdk5250_devices, ARRAY_SIZE(smdk5250_devices));
+
 	exynos5_smdk5250_input_init();
 	exynos5_smdk5250_usb_init();
 	exynos5_smdk5250_power_init();
-
-	platform_add_devices(smdk5250_devices, ARRAY_SIZE(smdk5250_devices));
 
 #ifdef CONFIG_FB_S3C
 #if defined(CONFIG_S5P_DP)
