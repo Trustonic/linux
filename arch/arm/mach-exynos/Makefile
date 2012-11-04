@@ -66,6 +66,7 @@ obj-$(CONFIG_MACH_SMDK5250)		+= board-smdk5250-input.o
 obj-$(CONFIG_MACH_SMDK5250)		+= board-smdk5250-usb.o
 obj-$(CONFIG_MACH_SMDK5250)		+= board-smdk5250-power.o
 obj-$(CONFIG_MACH_SMDK5250)		+= board-smdk5250-spi.o
+obj-$(CONFIG_MACH_SMDK5250)		+= board-smdk5250-display.o
 
 # Manta board files
 obj-$(CONFIG_MACH_MANTA)		+= board-manta.o
