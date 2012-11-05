@@ -58,6 +58,19 @@ static DECLARE_WAIT_QUEUE_HEAD(decinfo_wq);
 extern void i2s_enable(struct snd_soc_dai *dai);
 extern void i2s_disable(struct snd_soc_dai *dai);
 
+void srp_pm_control(bool enable)
+{
+	if (!srp.pm_info) {
+		srp_debug("Couldn't ready to control pm.\n");
+		return;
+	}
+
+	if (enable)
+		i2s_enable(srp.pm_info);
+	else
+		i2s_disable(srp.pm_info);
+}
+
 void srp_prepare_pm(void *info)
 {
 	srp.pm_info = info;
@@ -329,7 +342,7 @@ static void srp_commbox_deinit(void)
 {
 	unsigned int reg = 0;
 
-	i2s_enable(srp.pm_info);
+	srp_pm_control(true);
 	srp_wait_for_pending();
 	srp_pending_ctrl(STALL);
 
@@ -529,7 +542,7 @@ static ssize_t srp_write(struct file *file, const char *buffer,
 
 	srp_debug("Write(%d bytes)\n", size);
 
-	i2s_enable(srp.pm_info);
+	srp_pm_control(true);
 	if (srp.pm_suspended) {
 #ifdef CONFIG_PM_RUNTIME
 		if (reset_type == SRP_SW_RESET) {
@@ -611,7 +624,7 @@ static ssize_t srp_read(struct file *file, char *buffer,
 	srp_debug("Entered Get Obuf in PCM function\n");
 
 	if (srp.prepare_for_eos) {
-		i2s_enable(srp.pm_info);
+		srp_pm_control(true);
 		if (srp.pm_suspended) {
 #ifdef CONFIG_PM_RUNTIME
 			if (reset_type == SRP_SW_RESET) {
@@ -1196,11 +1209,11 @@ srp_firmware_request_complete(const struct firmware *vliw, void *context)
 	srp_alloc_buf();
 
 	if (reset_type == SRP_SW_RESET) {
-		i2s_enable(srp.pm_info);
+		srp_pm_control(true);
 #ifndef CONFIG_PM_RUNTIME
 		srp_core_reset();
 #endif
-		i2s_disable(srp.pm_info);
+		srp_pm_control(false);
 	}
 
 	return;
@@ -1243,11 +1256,11 @@ static int srp_suspend(struct platform_device *pdev, pm_message_t state)
 		return 0;
 	}
 
-	i2s_enable(srp.pm_info);
+	srp_pm_control(true);
 
 	srp_core_suspend(SLEEP);
 
-	i2s_disable(srp.pm_info);
+	srp_pm_control(false);
 
 	return 0;
 }
