@@ -69,6 +69,19 @@
 #include "common.h"
 #include "board-smdk5250.h"
 
+static char smdk5250_board_info_string[255];
+
+static void smdk5250_init_hw_rev(void)
+{
+	snprintf(smdk5250_board_info_string, sizeof(smdk5250_board_info_string) - 1,
+		 "SMDK HW revision: %d, CPU EXYNOS5250 Rev%d.%d",
+		 get_smdk5250_rev(),
+		 samsung_rev() >> 4,
+		 samsung_rev() & 0xf);
+	pr_info("%s\n", smdk5250_board_info_string);
+	mach_panic_string = smdk5250_board_info_string;
+}
+
 static struct platform_device ramconsole_device = {
 	.name           = "ram_console",
 	.id             = -1,
@@ -1992,6 +2005,8 @@ static void __init smdk5250_init_early(void)
 
 static void __init smdk5250_machine_init(void)
 {
+	smdk5250_init_hw_rev();
+
 #ifdef CONFIG_EXYNOS_FIQ_DEBUGGER
 	exynos_serial_debug_init(2, 0);
 #endif
