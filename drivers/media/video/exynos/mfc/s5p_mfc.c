@@ -268,6 +268,24 @@ static void s5p_mfc_handle_frame_all_extracted(struct s5p_mfc_ctx *ctx)
 	mfc_debug(2, "After cleanup\n");
 }
 
+static void s5p_mfc_handle_frame_copy_timestamp(struct s5p_mfc_ctx *ctx)
+{
+	struct s5p_mfc_buf *dst_buf, *src_buf;
+	dma_addr_t dec_y_addr = MFC_GET_ADR(DEC_DECODED_Y);
+
+	/* Copy timestamp from consumed src buffer to decoded dst buffer */
+	src_buf = list_entry(ctx->src_queue.next, struct s5p_mfc_buf, list);
+	list_for_each_entry(dst_buf, &ctx->dst_queue, list) {
+		if (s5p_mfc_mem_plane_addr(ctx, &dst_buf->vb, 0) ==
+								dec_y_addr) {
+			memcpy(&dst_buf->vb.v4l2_buf.timestamp,
+					&src_buf->vb.v4l2_buf.timestamp,
+					sizeof(struct timeval));
+			break;
+		}
+	}
+}
+
 static void s5p_mfc_handle_frame_new(struct s5p_mfc_ctx *ctx, unsigned int err)
 {
 	struct s5p_mfc_dec *dec = ctx->dec_priv;
@@ -476,6 +494,10 @@ static void s5p_mfc_handle_frame(struct s5p_mfc_ctx *ctx,
 			s5p_mfc_handle_frame_all_extracted(ctx);
 		}
 	}
+
+	if (dst_frame_status == S5P_FIMV_DEC_STATUS_DECODING_DISPLAY ||
+	    dst_frame_status == S5P_FIMV_DEC_STATUS_DECODING_ONLY)
+		s5p_mfc_handle_frame_copy_timestamp(ctx);
 
 	/* A frame has been decoded and is in the buffer  */
 	if (dst_frame_status == S5P_FIMV_DEC_STATUS_DISPLAY_ONLY ||

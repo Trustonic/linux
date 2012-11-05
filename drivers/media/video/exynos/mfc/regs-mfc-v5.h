@@ -151,6 +151,7 @@
 								a frame */
 #define S5P_FIMV_SI_DISPLAY_STATUS	0x201c /* status of decoded picture */
 #define S5P_FIMV_SI_FRAME_TYPE		0x2020 /* frame type such as skip/I/P/B */
+#define S5P_FIMV_SI_DECODED_Y_ADR	0x2024 /* luma address of decoded pic */
 #define S5P_FIMV_SI_DECODED_STATUS	0x202c /* status of decoded picture */
 #define S5P_FIMV_DEC_CRC_GEN_MASK	0x3
 #define S5P_FIMV_DEC_CRC_GEN_SHIFT	4
