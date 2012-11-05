@@ -15,6 +15,30 @@
 #ifndef __MACH_EXYNOS_BOARD_SMDK5250_H
 #define __MACH_EXYNOS_BOARD_SMDK5250_H
 
+#include <asm/system_info.h>
+
+#define SMDK5250_REV_0_0		0x0
+#define SMDK5250_REV_0_1		0x1
+#define SMDK5250_REV_0_2		0x2
+#define SMDK5250_REV_MASK		0xf
+
+#define SMDK5250_REGULATOR_MAX77686	0x0
+#define SMDK5250_REGULATOR_MAX8997	0x1
+#define SMDK5250_REGULATOR_S5M8767	0x2
+#define SMDK5250_REGULATOR_SHIFT	16
+#define SMDK5250_REGULATOR_MASK		0xf
+
+static inline int get_smdk5250_rev(void)
+{
+	return system_rev & SMDK5250_REV_MASK;
+}
+
+static inline int get_smdk5250_regulator(void)
+{
+	return (system_rev >> SMDK5250_REGULATOR_SHIFT) \
+		& SMDK5250_REGULATOR_MASK;
+}
+
 void exynos5_smdk5250_usb_init(void);
 
 #endif
