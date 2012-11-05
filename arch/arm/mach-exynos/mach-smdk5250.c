@@ -12,8 +12,12 @@
 #include <linux/cma.h>
 #include <linux/gpio.h>
 #include <linux/delay.h>
+#include <linux/err.h>
 #include <linux/i2c.h>
 #include <linux/regulator/machine.h>
+#include <linux/slab.h>
+#include <linux/stat.h>
+#include <linux/sys_soc.h>
 #include <linux/persistent_ram.h>
 #include <linux/clk.h>
 
@@ -21,6 +25,7 @@
 #include <asm/mach/arch.h>
 #include <asm/hardware/gic.h>
 #include <asm/mach-types.h>
+#include <asm/system_info.h>
 
 #include <plat/adc.h>
 #include <plat/clock.h>
@@ -334,6 +339,55 @@ static void __init smdk5250_init_early(void)
 	persistent_ram_early_init(&smdk5250_pr);
 }
 
+static void __init soc_info_populate(struct soc_device_attribute *soc_dev_attr)
+{
+	soc_dev_attr->soc_id = kasprintf(GFP_KERNEL, "%08x%08x\n",
+					 system_serial_high, system_serial_low);
+	soc_dev_attr->machine = kasprintf(GFP_KERNEL, "Exynos 5250\n");
+	soc_dev_attr->family = kasprintf(GFP_KERNEL, "Exynos 5\n");
+	soc_dev_attr->revision = kasprintf(GFP_KERNEL, "%d.%d\n",
+					   samsung_rev() >> 4,
+					   samsung_rev() & 0xf);
+}
+
+static ssize_t smdk5250_get_board_revision(struct device *dev,
+					   struct device_attribute *attr,
+					   char *buf)
+{
+	return sprintf(buf, "%d\n", get_smdk5250_rev());
+}
+
+struct device_attribute smdk5250_soc_attr =
+	__ATTR(board_rev,  S_IRUGO, smdk5250_get_board_revision,  NULL);
+
+static void __init exynos5_smdk5250_sysfs_soc_init(void)
+{
+	struct device *parent;
+	struct soc_device *soc_dev;
+	struct soc_device_attribute *soc_dev_attr;
+
+	soc_dev_attr = kzalloc(sizeof(*soc_dev_attr), GFP_KERNEL);
+	if (!soc_dev_attr) {
+		printk(KERN_ERR "Failed to allocate memory for soc_dev_attr\n");
+		return;
+	}
+
+	soc_info_populate(soc_dev_attr);
+
+	soc_dev = soc_device_register(soc_dev_attr);
+	if (IS_ERR_OR_NULL(soc_dev)) {
+		kfree(soc_dev_attr);
+		printk(KERN_ERR "Failed to register a soc device under /sys\n");
+		return;
+	}
+
+	parent = soc_device_to_device(soc_dev);
+	if (!IS_ERR_OR_NULL(parent))
+		device_create_file(parent, &smdk5250_soc_attr);
+
+	return;  /* Or return parent should you need to use one later */
+}
+
 static void __init smdk5250_machine_init(void)
 {
 	smdk5250_init_hw_rev();
@@ -366,6 +420,8 @@ static void __init smdk5250_machine_init(void)
 	exynos5_smdk5250_media_init();
 	exynos5_smdk5250_tvout_init();
 	exynos5_smdk5250_camera_init();
+
+	exynos5_smdk5250_sysfs_soc_init();
 }
 
 MACHINE_START(SMDK5250, "SMDK5250")
