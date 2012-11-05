@@ -635,6 +635,9 @@ struct s5p_mfc_ctx {
 
 	/* for PPMU monitoring */
 	struct exynos5_bus_int_handle *mfc_int_handle_poll;
+
+	int last_framerate;
+	struct timeval last_timestamp;
 };
 
 #define fh_to_mfc_ctx(x)	\

@@ -78,6 +78,52 @@ static inline void clear_magic(unsigned char *addr)
 }
 #endif
 
+/*
+ * A framerate table determines framerate by the interval(us) of each frame.
+ * Framerate is not accurate, just rough value to seperate overload section.
+ * Base line of each section are selected from 25fps(40000us), 48fps(20833us).
+ *
+ * interval(us) | 0               20833               40000                 |
+ * framerate    |       60fps       |       30fps       |       25fps       |
+ */
+
+#define COL_FRAME_RATE		0
+#define COL_FRAME_INTERVAL	1
+static unsigned long framerate_table[][2] = {
+	{ 25000, 40000 },
+	{ 30000, 20833 },
+	{ 60000, 0 },
+};
+
+static inline unsigned long timeval_diff(struct timeval *to,
+					struct timeval *from)
+{
+	return (from->tv_sec * USEC_PER_SEC + from->tv_usec)
+		- (to->tv_sec * USEC_PER_SEC + to->tv_usec);
+}
+
+static int get_framerate(struct timeval *to, struct timeval *from)
+{
+	int i;
+	unsigned long interval;
+
+	if (timeval_compare(to, from) >= 0)
+		return 0;
+
+	interval = timeval_diff(to, from);
+
+	/* if the interval is too big (2sec), framerate set to 0 */
+	if (interval > (2 * USEC_PER_SEC))
+		return 0;
+
+	for (i = 0; i < ARRAY_SIZE(framerate_table); i++) {
+		if (interval > framerate_table[i][COL_FRAME_INTERVAL])
+			return framerate_table[i][COL_FRAME_RATE];
+	}
+
+	return 0;
+}
+
 void mfc_workqueue_try_run(struct work_struct *work)
 {
 	struct s5p_mfc_dev *dev = container_of(work, struct s5p_mfc_dev,
@@ -383,6 +429,14 @@ static void s5p_mfc_handle_frame_new(struct s5p_mfc_ctx *ctx, unsigned int err)
 
 				dec->immediate_display = 0;
 			}
+
+			ctx->last_framerate =
+				get_framerate(&ctx->last_timestamp,
+					&dst_buf->vb.v4l2_buf.timestamp);
+
+			memcpy(&ctx->last_timestamp,
+				&dst_buf->vb.v4l2_buf.timestamp,
+				sizeof(struct timeval));
 
 			vb2_buffer_done(&dst_buf->vb,
 				s5p_mfc_err_dspl(err) ?
