@@ -22,8 +22,6 @@
 #include <asm/hardware/gic.h>
 #include <asm/mach-types.h>
 
-#include <media/exynos_gscaler.h>
-
 #include <plat/adc.h>
 #include <plat/clock.h>
 #include <plat/cpu.h>
@@ -31,16 +29,11 @@
 #include <plat/gpio-cfg.h>
 #include <plat/devs.h>
 #include <plat/iic.h>
-#include <plat/jpeg.h>
 
 #include <mach/exynos_fiq_debugger.h>
 #include <mach/map.h>
-#include <mach/sysmmu.h>
 #include <mach/exynos-ion.h>
-#include <mach/exynos-mfc.h>
 #include <mach/tmu.h>
-
-#include <plat/fimg2d.h>
 
 #include "common.h"
 #include "board-smdk5250.h"
@@ -119,35 +112,11 @@ static struct s3c2410_uartcfg smdk5250_uartcfgs[] __initdata = {
 	},
 };
 
-#ifdef CONFIG_EXYNOS_MEDIA_DEVICE
-struct platform_device exynos_device_md0 = {
-	.name = "exynos-mdev",
-	.id = 0,
-};
-
-struct platform_device exynos_device_md1 = {
-	.name = "exynos-mdev",
-	.id = 1,
-};
-
-struct platform_device exynos_device_md2 = {
-	.name = "exynos-mdev",
-	.id = 2,
-};
-#endif
-
 /* ADC */
 static struct s3c_adc_platdata smdk5250_adc_data __initdata = {
 	.phy_init       = s3c_adc_phy_init,
 	.phy_exit       = s3c_adc_phy_exit,
 };
-
-#ifdef CONFIG_VIDEO_EXYNOS_FIMG2D
-static struct fimg2d_platdata fimg2d_data __initdata = {
-	.hw_ver		= 0x42,
-	.gate_clkname	= "fimg2d",
-};
-#endif
 
 #ifdef CONFIG_BATTERY_SAMSUNG
 static struct platform_device samsung_device_battery = {
@@ -176,9 +145,6 @@ static struct platform_device *smdk5250_devices[] __initdata = {
 	&s3c_device_i2c5,
 	&s3c_device_adc,
 	&s3c_device_wdt,
-#ifdef CONFIG_VIDEO_EXYNOS_MFC
-	&s5p_device_mfc,
-#endif
 #ifdef CONFIG_ION_EXYNOS
 	&exynos_device_ion,
 #endif
@@ -187,24 +153,6 @@ static struct platform_device *smdk5250_devices[] __initdata = {
 #endif
 #ifdef CONFIG_EXYNOS_DEV_TMU
 	&exynos_device_tmu,
-#endif
-#ifdef CONFIG_EXYNOS_MEDIA_DEVICE
-	&exynos_device_md0,
-	&exynos_device_md1,
-	&exynos_device_md2,
-#endif
-#ifdef CONFIG_VIDEO_EXYNOS_GSCALER
-	&exynos5_device_gsc0,
-	&exynos5_device_gsc1,
-	&exynos5_device_gsc2,
-	&exynos5_device_gsc3,
-#endif
-#ifdef CONFIG_VIDEO_EXYNOS_FIMG2D
-	&s5p_device_fimg2d,
-#endif
-	&exynos5_device_rotator,
-#ifdef CONFIG_VIDEO_EXYNOS_JPEG
-	&s5p_device_jpeg,
 #endif
 #ifdef CONFIG_S5P_DEV_ACE
 	&s5p_device_ace,
@@ -348,12 +296,6 @@ static inline void exynos_reserve_mem(void)
 }
 #endif
 
-#if defined(CONFIG_VIDEO_EXYNOS_MFC)
-static struct s5p_mfc_platdata smdk5250_mfc_pd = {
-	.clock_rate = 333 * MHZ,
-};
-#endif
-
 static void __init smdk5250_map_io(void)
 {
 	clk_xusbxti.rate = 24000000;
@@ -361,32 +303,6 @@ static void __init smdk5250_map_io(void)
 	exynos_init_io(NULL, 0);
 	s3c24xx_init_clocks(clk_xusbxti.rate);
 	s3c24xx_init_uarts(smdk5250_uartcfgs, ARRAY_SIZE(smdk5250_uartcfgs));
-}
-
-static void __init exynos_sysmmu_init(void)
-{
-#ifdef CONFIG_VIDEO_EXYNOS_JPEG
-	platform_set_sysmmu(&SYSMMU_PLATDEV(jpeg).dev, &s5p_device_jpeg.dev);
-#endif
-#if defined(CONFIG_VIDEO_EXYNOS_MFC)
-	platform_set_sysmmu(&SYSMMU_PLATDEV(mfc_lr).dev, &s5p_device_mfc.dev);
-#endif
-#ifdef CONFIG_VIDEO_EXYNOS_GSCALER
-	platform_set_sysmmu(&SYSMMU_PLATDEV(gsc0).dev,
-						&exynos5_device_gsc0.dev);
-	platform_set_sysmmu(&SYSMMU_PLATDEV(gsc1).dev,
-						&exynos5_device_gsc1.dev);
-	platform_set_sysmmu(&SYSMMU_PLATDEV(gsc2).dev,
-						&exynos5_device_gsc2.dev);
-	platform_set_sysmmu(&SYSMMU_PLATDEV(gsc3).dev,
-						&exynos5_device_gsc3.dev);
-#endif
-	platform_set_sysmmu(&SYSMMU_PLATDEV(rot).dev,
-						&exynos5_device_rotator.dev);
-#ifdef CONFIG_VIDEO_EXYNOS_FIMG2D
-	platform_set_sysmmu(&SYSMMU_PLATDEV(2d).dev,
-						&s5p_device_fimg2d.dev);
-#endif
 }
 
 static struct persistent_ram_descriptor smdk5250_prd[] __initdata = {
@@ -432,12 +348,8 @@ static void __init smdk5250_machine_init(void)
 
 	s3c_adc_set_platdata(&smdk5250_adc_data);
 
-	exynos_sysmmu_init();
 	exynos_ion_set_platdata();
 
-#ifdef CONFIG_VIDEO_EXYNOS_MFC
-	s5p_mfc_set_platdata(&smdk5250_mfc_pd);
-#endif
 #ifdef CONFIG_EXYNOS_DEV_TMU
 	exynos_tmu_set_platdata(&smdk5250_tmu_pdata);
 #endif
@@ -451,25 +363,9 @@ static void __init smdk5250_machine_init(void)
 	exynos5_smdk5250_power_init();
 	exynos5_smdk5250_spi_init();
 	exynos5_smdk5250_display_init();
+	exynos5_smdk5250_media_init();
 	exynos5_smdk5250_tvout_init();
 	exynos5_smdk5250_camera_init();
-
-#ifdef CONFIG_VIDEO_EXYNOS_FIMG2D
-	s5p_fimg2d_set_platdata(&fimg2d_data);
-#endif
-#ifdef CONFIG_VIDEO_EXYNOS_GSCALER
-	s3c_set_platdata(&exynos_gsc0_default_data, sizeof(exynos_gsc0_default_data),
-			&exynos5_device_gsc0);
-	s3c_set_platdata(&exynos_gsc1_default_data, sizeof(exynos_gsc1_default_data),
-			&exynos5_device_gsc1);
-	s3c_set_platdata(&exynos_gsc2_default_data, sizeof(exynos_gsc2_default_data),
-			&exynos5_device_gsc2);
-	s3c_set_platdata(&exynos_gsc3_default_data, sizeof(exynos_gsc3_default_data),
-			&exynos5_device_gsc3);
-#endif
-#ifdef CONFIG_VIDEO_EXYNOS_JPEG
-	exynos5_jpeg_setup_clock(&s5p_device_jpeg.dev, 150000000);
-#endif
 }
 
 MACHINE_START(SMDK5250, "SMDK5250")
