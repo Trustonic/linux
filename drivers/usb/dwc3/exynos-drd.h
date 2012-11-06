@@ -369,8 +369,6 @@ struct exynos_drd {
 
 	bool			busy;
 
-	struct list_head	list;
-
 	struct clk		*clk;
 	struct resource		*res;
 	int			irq;
