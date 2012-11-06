@@ -2507,7 +2507,14 @@ static void exynos_ss_udc_init(struct exynos_ss_udc *udc)
 
 static int exynos_ss_udc_enable(struct exynos_ss_udc *udc)
 {
+	struct platform_device *pdev = to_platform_device(udc->dev);
+
 	dev_dbg(udc->dev, "%s\n", __func__);
+
+	if (exynos_drd_try_get(pdev)) {
+		dev_dbg(udc->dev, "%s: cannot get DRD\n", __func__);
+		return -EAGAIN;
+	}
 
 	pm_runtime_get_sync(udc->dev->parent);
 
@@ -2531,6 +2538,7 @@ static int exynos_ss_udc_enable(struct exynos_ss_udc *udc)
 
 static int exynos_ss_udc_disable(struct exynos_ss_udc *udc)
 {
+	struct platform_device *pdev = to_platform_device(udc->dev);
 	int ep;
 
 	exynos_ss_udc_run_stop(udc, 0);
@@ -2544,6 +2552,8 @@ static int exynos_ss_udc_disable(struct exynos_ss_udc *udc)
 	pm_runtime_put_sync(udc->dev->parent);
 
 	EXYNOS_SS_UDC_CABLE_CONNECT(udc, false);
+
+	exynos_drd_put(pdev);
 
 	return 0;
 }
@@ -2559,11 +2569,9 @@ static int exynos_ss_udc_vbus_session(struct usb_gadget *gadget, int is_active)
 					struct exynos_ss_udc, gadget);
 
 	if (!is_active)
-		exynos_ss_udc_disable(udc);
+		return exynos_ss_udc_disable(udc);
 	else
-		exynos_ss_udc_enable(udc);
-
-	return 0;
+		return exynos_ss_udc_enable(udc);
 }
 
 /**

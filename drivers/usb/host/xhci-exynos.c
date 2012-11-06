@@ -81,6 +81,7 @@ static int exynos_xhci_suspend(struct device *dev)
 
 static int exynos_xhci_resume(struct device *dev)
 {
+	struct platform_device	*pdev = to_platform_device(dev);
 	struct exynos_xhci_hcd	*exynos_xhci;
 	struct usb_hcd		*hcd;
 	struct xhci_hcd		*xhci;
@@ -95,6 +96,11 @@ static int exynos_xhci_resume(struct device *dev)
 		return -EINVAL;
 
 	pm_runtime_resume(dev);
+
+	if (exynos_drd_try_get(pdev)) {
+		dev_err(dev, "%s: cannot get DRD\n", __func__);
+		return -EAGAIN;
+	}
 
 	/* Wake up and initialize DRD core */
 	pm_runtime_get_sync(dev->parent);
@@ -121,6 +127,7 @@ static int exynos_xhci_resume(struct device *dev)
 #ifdef CONFIG_USB_SUSPEND
 static int exynos_xhci_runtime_suspend(struct device *dev)
 {
+	struct platform_device	*pdev = to_platform_device(dev);
 	struct exynos_xhci_hcd	*exynos_xhci;
 	struct usb_hcd		*hcd;
 	struct xhci_hcd		*xhci;
@@ -146,11 +153,14 @@ static int exynos_xhci_runtime_suspend(struct device *dev)
 
 	pm_runtime_put_sync(exynos_xhci->dev->parent);
 
+	exynos_drd_put(pdev);
+
 	return retval;
 }
 
 static int exynos_xhci_runtime_resume(struct device *dev)
 {
+	struct platform_device	*pdev = to_platform_device(dev);
 	struct exynos_xhci_hcd	*exynos_xhci;
 	struct usb_hcd		*hcd;
 	struct xhci_hcd		*xhci;
@@ -168,6 +178,12 @@ static int exynos_xhci_runtime_resume(struct device *dev)
 
 	if (dev->power.is_suspended)
 		return 0;
+
+	/* Userspace may try to access host when DRD is in B-Dev mode */
+	if (exynos_drd_try_get(pdev)) {
+		dev_dbg(dev, "%s: cannot get DRD\n", __func__);
+		return -EAGAIN;
+	}
 
 	pm_runtime_get_sync(exynos_xhci->dev->parent);
 
@@ -356,6 +372,13 @@ static int __devinit exynos_xhci_probe(struct platform_device *pdev)
 		goto put_hcd;
 	}
 	hcd->regs -= EXYNOS_USB3_XHCI_REG_START;
+
+	err = exynos_drd_try_get(pdev);
+	if (err) {
+		/* REVISIT: what shall we do if UDC is already running */
+		dev_err(dev, "Failed to access DRD\n");
+		goto put_hcd;
+	}
 
 	/* Wake up and initialize DRD core */
 	pm_runtime_get_sync(dev->parent);

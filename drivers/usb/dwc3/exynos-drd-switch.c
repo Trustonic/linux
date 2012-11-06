@@ -187,6 +187,18 @@ static int exynos_drd_switch_start_host(struct usb_otg *otg, int on)
 	xhci_dev = hcd->self.controller;
 
 	if (on) {
+		/*
+		 * Clear runtime_error flag. The flag could be
+		 * set when user space accessed the host while DRD
+		 * was in B-Dev mode.
+		 */
+		pm_runtime_disable(xhci_dev);
+		if (pm_runtime_status_suspended(xhci_dev))
+			pm_runtime_set_suspended(xhci_dev);
+		else
+			pm_runtime_set_active(xhci_dev);
+		pm_runtime_enable(xhci_dev);
+
 		ret = pm_runtime_get_sync(xhci_dev);
 		if (ret < 0) {
 			dev_dbg(otg->phy->dev, "%s: host resume failed (%d)\n",
@@ -262,6 +274,8 @@ static int exynos_drd_switch_set_host(struct usb_otg *otg, struct usb_bus *host)
  */
 static int exynos_drd_switch_start_peripheral(struct usb_otg *otg, int on)
 {
+	int ret;
+
 	dev_dbg(otg->phy->dev, "%s: turn %s gadget %s\n",
 			__func__, on ? "on" : "off", otg->gadget->name);
 
@@ -279,14 +293,17 @@ static int exynos_drd_switch_start_peripheral(struct usb_otg *otg, int on)
 			 */
 			return -EAGAIN;
 
-		usb_gadget_vbus_connect(otg->gadget);
-		/* TODO: handle return value here */
+		ret = usb_gadget_vbus_connect(otg->gadget);
+		if (ret < 0)
+			dev_dbg(otg->phy->dev,
+				"%s: peripheral start failed (%d)\n",
+				__func__, ret);
 	} else {
-		usb_gadget_vbus_disconnect(otg->gadget);
-		/* TODO: handle return value here */
+		ret = usb_gadget_vbus_disconnect(otg->gadget);
+		/* Currently always return 0 */
 	}
 
-	return 0;
+	return ret;
 }
 
 /**
