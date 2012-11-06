@@ -1086,11 +1086,9 @@ static int vidioc_g_fmt_vid_cap_mplane(struct file *file, void *priv,
 		   outputs the decoded frame */
 		pix_mp->pixelformat = ctx->dst_fmt->fourcc;
 		pix_mp->plane_fmt[0].bytesperline = ctx->buf_width;
-		pix_mp->plane_fmt[0].sizeimage =
-			ctx->buf_width * ctx->buf_height;
+		pix_mp->plane_fmt[0].sizeimage = ctx->luma_size;
 		pix_mp->plane_fmt[1].bytesperline = ctx->buf_width;
-		pix_mp->plane_fmt[1].sizeimage =
-			ctx->buf_width * (ctx->buf_height >> 1);
+		pix_mp->plane_fmt[1].sizeimage = ctx->chroma_size;
 	}
 
 	mfc_debug_leave();
