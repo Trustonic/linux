@@ -365,6 +365,10 @@ struct exynos_drd {
 	struct device		*dev;
 	struct dwc3_exynos_data	*pdata;
 
+	spinlock_t		lock;
+
+	bool			busy;
+
 	struct list_head	list;
 
 	struct clk		*clk;

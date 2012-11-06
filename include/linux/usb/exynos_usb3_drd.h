@@ -56,6 +56,8 @@ struct exynos_drd_core {
 };
 
 struct exynos_drd_core *exynos_drd_bind(struct platform_device *child);
+int exynos_drd_try_get(struct platform_device *child);
+void exynos_drd_put(struct platform_device *child);
 int exynos_drd_switch_id_event(struct platform_device *pdev, int state);
 int exynos_drd_switch_vbus_event(struct platform_device *pdev, bool vbus_active);
 #endif /* __LINUX_USB_EXYNOS_USB3_DRD_H */

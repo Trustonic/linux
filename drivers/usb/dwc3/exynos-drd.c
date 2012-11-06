@@ -22,6 +22,7 @@
 #include <linux/clk.h>
 #include <linux/pm_runtime.h>
 #include <linux/io.h>
+#include <linux/spinlock.h>
 #include <linux/usb/exynos_usb3_drd.h>
 #include <linux/platform_data/dwc3-exynos.h>
 
@@ -288,6 +289,34 @@ static struct exynos_drd_core_ops core_ops = {
 	.ack_evntcount	= exynos_drd_ack_evntcount,
 };
 
+void exynos_drd_put(struct platform_device *child)
+{
+	struct device *dev = child->dev.parent;
+	struct platform_device *pdev = to_platform_device(dev);
+	struct exynos_drd *drd = platform_get_drvdata(pdev);
+
+	spin_lock(&drd->lock);
+	drd->busy = false;
+	spin_unlock(&drd->lock);
+}
+
+int exynos_drd_try_get(struct platform_device *child)
+{
+	struct device *dev = child->dev.parent;
+	struct platform_device *pdev = to_platform_device(dev);
+	struct exynos_drd *drd = platform_get_drvdata(pdev);
+	int ret = 0;
+
+	spin_lock(&drd->lock);
+	if (!drd->busy)
+		drd->busy = true;
+	else
+		ret = -EBUSY;
+	spin_unlock(&drd->lock);
+
+	return ret;
+}
+
 struct exynos_drd_core *exynos_drd_bind(struct platform_device *child)
 {
 	struct device *dev = child->dev.parent;
@@ -412,6 +441,8 @@ static int __devinit exynos_drd_probe(struct platform_device *pdev)
 	drd->pdata = pdata;
 	drd->core.ops = &core_ops;
 
+	spin_lock_init(&drd->lock);
+
 	drd->res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!drd->res) {
 		dev_err(dev, "cannot find register resource 0\n");
@@ -535,6 +566,8 @@ static int exynos_drd_resume(struct device *dev)
 	clk_enable(drd->clk);
 	exynos_drd_phy_set(&drd->core);
 	exynos_drd_init(&drd->core);
+	/* We are starting from scratch */
+	drd->busy = false;
 	exynos_drd_switch_reset(drd, 1);
 
 	/* Update runtime PM status and clear runtime_error */
