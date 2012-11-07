@@ -548,7 +548,7 @@ static int exynos_drd_suspend(struct device *dev)
 {
 	struct exynos_drd *drd = dev_get_drvdata(dev);
 
-#ifdef CONFIG_USB_SUSPEND
+#ifdef CONFIG_PM_RUNTIME
 	if (pm_runtime_suspended(dev))
 		return 0;
 #endif
@@ -582,7 +582,7 @@ static int exynos_drd_resume(struct device *dev)
 #define exynos_drd_resume NULL
 #endif /* CONFIG_PM */
 
-#ifdef CONFIG_USB_SUSPEND
+#ifdef CONFIG_PM_RUNTIME
 static int exynos_drd_runtime_suspend(struct device *dev)
 {
 	struct exynos_drd *drd = dev_get_drvdata(dev);
