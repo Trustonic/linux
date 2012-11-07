@@ -17,9 +17,15 @@
 #include "srp_alp/srp_alp.h"
 bool srp_enabled_status(void) {return 1;}
 extern unsigned int srp_get_idma_addr(void);
+extern void srp_prepare_pm(void *info);
+extern void srp_core_reset(void);
+extern void srp_core_suspend(int num);
 #else
 bool srp_enabled_status(void) {return 0;}
 unsigned int srp_get_idma_addr(void) {return 0;}
+void srp_prepare_pm(void *info) {return;}
+void srp_core_reset(void) {return;}
+void srp_core_suspend(int num) {return;}
 #endif
 
 #endif /* __SND_SOC_SAMSUNG_SRP_TYPE_H */

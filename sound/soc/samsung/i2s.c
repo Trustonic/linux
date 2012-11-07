@@ -32,6 +32,7 @@
 #include "i2s.h"
 #include "i2s-regs.h"
 #include "srp-type.h"
+#include "srp_alp/srp_alp.h"
 
 #define msecs_to_loops(t) (loops_per_jiffy / 1000 * HZ * t)
 

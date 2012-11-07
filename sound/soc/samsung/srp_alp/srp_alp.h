@@ -155,7 +155,4 @@ enum {
 	SLEEP,
 };
 
-extern void srp_core_reset(void);
-extern void srp_core_suspend(int num);
-extern void srp_prepare_pm(void *info);
 #endif /* __SRP_ALP_H */
