@@ -876,7 +876,7 @@ static void dw_mci_setup_bus(struct dw_mci_slot *slot, int force)
 	u32 div, actual_speed;
 	bool reset_div = false;
 
-	if ((slot->clock != host->current_speed) || force) {
+	if (slot->clock && ((slot->clock != host->current_speed) || force)) {
 		do {
 			div = host->bus_hz / slot->clock;
 			if ((host->bus_hz % slot->clock) &&
