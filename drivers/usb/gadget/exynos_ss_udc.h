@@ -27,7 +27,8 @@
 #define EP0_SS_MPS	512
 #define EP_SS_MPS	1024
 
-#define EXYNOS_USB3_EPS	9
+/* Number of USB endpoints: EP0 + 10xEPin + 10xEPout */
+#define EXYNOS_USB3_EPS	(1 + 10 + 10)
 
 /* Has to be multiple of four */
 #define EXYNOS_USB3_EVENT_BUFF_WSIZE	256
