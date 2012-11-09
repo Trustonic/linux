@@ -46,7 +46,7 @@ static void exynos_ss_udc_complete_request(struct exynos_ss_udc *udc,
 static void exynos_ss_udc_start_req(struct exynos_ss_udc *udc,
 				    struct exynos_ss_udc_ep *udc_ep,
 				    struct exynos_ss_udc_req *udc_req,
-				    bool continuing);
+				    bool send_zlp);
 static void exynos_ss_udc_ep_activate(struct exynos_ss_udc *udc,
 				      struct exynos_ss_udc_ep *udc_ep);
 static void exynos_ss_udc_ep_deactivate(struct exynos_ss_udc *udc,
@@ -637,7 +637,7 @@ static struct usb_ep_ops exynos_ss_udc_ep_ops = {
  * @udc: The device state.
  * @udc_ep: The endpoint to process a request for.
  * @udc_req: The request being started.
- * @continuing: True if we are doing more for the current request.
+ * @send_zlp: True if we are sending ZLP.
  *
  * Start the given request running by setting the TRB appropriately,
  * and issuing Start Transfer endpoint command.
@@ -645,7 +645,7 @@ static struct usb_ep_ops exynos_ss_udc_ep_ops = {
 static void exynos_ss_udc_start_req(struct exynos_ss_udc *udc,
 				    struct exynos_ss_udc_ep *udc_ep,
 				    struct exynos_ss_udc_req *udc_req,
-				    bool continuing)
+				    bool send_zlp)
 {
 	struct exynos_ss_udc_ep_command epcmd = {{0}, };
 	struct usb_request *ureq = &udc_req->req;
@@ -666,7 +666,7 @@ static void exynos_ss_udc_start_req(struct exynos_ss_udc *udc,
 	udc_ep->req = udc_req;
 
 	/* Get type of TRB */
-	if (epnum == 0 && !continuing)
+	if (epnum == 0)
 		switch (udc->ep0_state) {
 		case EP0_SETUP_PHASE:
 			trb_type = CONTROL_SETUP;
@@ -692,7 +692,10 @@ static void exynos_ss_udc_start_req(struct exynos_ss_udc *udc,
 		trb_type = NORMAL;
 
 	/* Get transfer length */
-	xfer_length = ureq->length & EXYNOS_USB3_TRB_BUFSIZ_MASK;
+	if (send_zlp)
+		xfer_length = 0;
+	else
+		xfer_length = ureq->length & EXYNOS_USB3_TRB_BUFSIZ_MASK;
 
 	/* Fill TRB */
 	udc_ep->trb->buff_ptr_low = (u32) ureq->dma;
@@ -710,12 +713,17 @@ static void exynos_ss_udc_start_req(struct exynos_ss_udc *udc,
 	epcmd.cmdflags = EXYNOS_USB3_DEPCMDx_CmdAct;
 
 	res = exynos_ss_udc_issue_epcmd(udc, &epcmd);
-	if (res < 0)
+	if (res < 0) {
 		dev_err(udc->dev, "Failed to start transfer\n");
+	} else {
+		u32 depcmd;
 
-	udc_ep->tri = (readl(udc->regs + EXYNOS_USB3_DEPCMD(epcmd.ep)) >>
-				EXYNOS_USB3_DEPCMDx_EventParam_SHIFT) &
+		depcmd = readl(udc->regs + EXYNOS_USB3_DEPCMD(epcmd.ep));
+		udc_ep->tri = (depcmd >> EXYNOS_USB3_DEPCMDx_EventParam_SHIFT) &
 				EXYNOS_USB3_DEPCMDx_XferRscIdx_LIMIT;
+
+		udc_ep->sent_zlp = send_zlp;
+	}
 }
 
 /**
@@ -1530,6 +1538,7 @@ static void exynos_ss_udc_complete_request(struct exynos_ss_udc *udc,
 
 	udc_ep->req = NULL;
 	udc_ep->tri = 0;
+	udc_ep->sent_zlp = 0;
 	list_del_init(&udc_req->queue);
 
 	if (udc_req->req.buf != udc->ctrl_buff &&
@@ -1679,6 +1688,12 @@ static void exynos_ss_udc_xfer_complete(struct exynos_ss_udc *udc,
 	if (udc_ep->trb->param2 & EXYNOS_USB3_TRB_HWO)
 		dev_err(udc->dev, "%s: HWO bit set\n", __func__);
 
+	/* Finish ZLP handling for IN tranzactions */
+	if (udc_ep->dir_in && udc_ep->sent_zlp) {
+		dev_dbg(udc->dev, "%s: ZLP completed\n", __func__);
+		goto sent_zlp;
+	}
+
 	size_left = udc_ep->trb->param1 & EXYNOS_USB3_TRB_BUFSIZ_MASK;
 
 	if (udc_ep->dir_in) {
@@ -1692,6 +1707,29 @@ static void exynos_ss_udc_xfer_complete(struct exynos_ss_udc *udc,
 	}
 
 	udc_req->req.actual += udc_req->req.length - size_left;
+
+	/*
+	 * Check if dealing with Maximum Packet Size (MPS) IN transfer.
+	 * When sent data is a multiple MPS size, after last MPS sized
+	 * packet send IN ZLP packet to inform the host that no more data
+	 * is available.
+	 * The state of req->zero member is checked to be sure that the
+	 * number of bytes to send is smaller than expected from host.
+	 * Check req->length to NOT send another ZLP when the current one
+	 * is under completion (the one for which this completion has been
+	 * called).
+	 */
+	if (udc_ep->dir_in && req->zero) {
+		if (req->length && req->length == req->actual &&
+		    !(req->length % udc_ep->ep.maxpacket)) {
+			dev_dbg(udc->dev, "%s: send ZLP to complete transfer\n",
+					  __func__);
+			exynos_ss_udc_start_req(udc, udc_ep, udc_req, true);
+			return;
+		}
+	}
+
+sent_zlp:
 
 	if (udc_ep->epnum == 0) {
 		switch (udc->ep0_state) {

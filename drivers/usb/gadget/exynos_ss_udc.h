@@ -411,6 +411,7 @@ struct exynos_ss_udc_ep {
 	unsigned int		enabled:1;
 	unsigned int		wedged:1;
 	unsigned int		not_ready:1;
+	unsigned int		sent_zlp:1;
 
 	char			name[10];
 };
