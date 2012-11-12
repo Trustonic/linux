@@ -99,7 +99,7 @@ static int poll_bit_clear(void __iomem *ptr, u32 val, int timeout)
 static struct exynos_ss_udc_ep *ep_from_windex(struct exynos_ss_udc *udc,
 					       u32 windex)
 {
-	struct exynos_ss_udc_ep *ep = &udc->eps[windex & 0x7F];
+	struct exynos_ss_udc_ep *udc_ep = &udc->eps[windex & 0x7F];
 	int dir = (windex & USB_DIR_IN) ? 1 : 0;
 	int idx = windex & 0x7F;
 
@@ -109,10 +109,10 @@ static struct exynos_ss_udc_ep *ep_from_windex(struct exynos_ss_udc *udc,
 	if (idx > EXYNOS_USB3_EPS)
 		return NULL;
 
-	if (idx && ep->dir_in != dir)
+	if (idx && udc_ep->dir_in != dir)
 		return NULL;
 
-	return ep;
+	return udc_ep;
 }
 
 /**
@@ -1378,7 +1378,7 @@ static int exynos_ss_udc_process_set_address(struct exynos_ss_udc *udc,
 static void exynos_ss_udc_process_control(struct exynos_ss_udc *udc,
 					  struct usb_ctrlrequest *ctrl)
 {
-	struct exynos_ss_udc_ep *ep0 = &udc->eps[0];
+	struct exynos_ss_udc_ep *udc_ep0 = &udc->eps[0];
 	int ret = 0;
 
 	dev_dbg(udc->dev, "ctrl Req=%02x, Type=%02x, V=%04x, L=%04x\n",
@@ -1388,13 +1388,13 @@ static void exynos_ss_udc_process_control(struct exynos_ss_udc *udc,
 	/* record the direction of the request, for later use when enquing
 	 * packets onto EP0. */
 
-	ep0->dir_in = (ctrl->bRequestType & USB_DIR_IN) ? 1 : 0;
-	dev_dbg(udc->dev, "ctrl: dir_in=%d\n", ep0->dir_in);
+	udc_ep0->dir_in = (ctrl->bRequestType & USB_DIR_IN) ? 1 : 0;
+	dev_dbg(udc->dev, "ctrl: dir_in=%d\n", udc_ep0->dir_in);
 
 	/* if we've no data with this request, then the last part of the
 	 * transaction is going to implicitly be IN. */
 	if (ctrl->wLength == 0) {
-		ep0->dir_in = 1;
+		udc_ep0->dir_in = 1;
 		udc->ep0_three_stage = 0;
 		udc->ep0_state = EP0_WAIT_NRDY;
 	} else
@@ -1446,7 +1446,7 @@ static void exynos_ss_udc_process_control(struct exynos_ss_udc *udc,
 	 */
 
 	if (ret < 0) {
-		dev_dbg(udc->dev, "ep0 stall (dir=%d)\n", ep0->dir_in);
+		dev_dbg(udc->dev, "ep0 stall (dir=%d)\n", udc_ep0->dir_in);
 		exynos_ss_udc_ep0_restart(udc);
 	}
 }
@@ -1597,10 +1597,10 @@ static void exynos_ss_udc_complete_request_lock(struct exynos_ss_udc *udc,
  */
 static void exynos_ss_udc_ep0_restart(struct exynos_ss_udc *udc)
 {
-	struct exynos_ss_udc_ep *ep0 = &udc->eps[0];
+	struct exynos_ss_udc_ep *udc_ep0 = &udc->eps[0];
 
-	exynos_ss_udc_ep_sethalt(&ep0->ep, 1);
-	exynos_ss_udc_kill_all_requests(udc, ep0, -ECONNRESET);
+	exynos_ss_udc_ep_sethalt(&udc_ep0->ep, 1);
+	exynos_ss_udc_kill_all_requests(udc, udc_ep0, -ECONNRESET);
 	udc->ep0_state = EP0_SETUP_PHASE;
 	exynos_ss_udc_enqueue_setup(udc);
 }
@@ -1938,7 +1938,7 @@ static void exynos_ss_udc_irq_connectdone(struct exynos_ss_udc *udc)
 static void exynos_ss_udc_irq_usbrst(struct exynos_ss_udc *udc)
 {
 	struct exynos_ss_udc_ep_command epcmd = {{0}, };
-	struct exynos_ss_udc_ep *ep;
+	struct exynos_ss_udc_ep *udc_ep;
 	int res;
 	int epnum;
 
@@ -1970,12 +1970,12 @@ static void exynos_ss_udc_irq_usbrst(struct exynos_ss_udc *udc)
 	   non-EP0 endpoints */
 	for (epnum = 1; epnum < EXYNOS_USB3_EPS; epnum++) {
 
-		ep = &udc->eps[epnum];
+		udc_ep = &udc->eps[epnum];
 
-		epcmd.ep = get_phys_epnum(ep);
+		epcmd.ep = get_phys_epnum(udc_ep);
 
-		if (ep->tri) {
-			epcmd.cmdflags = (ep->tri <<
+		if (udc_ep->tri) {
+			epcmd.cmdflags = (udc_ep->tri <<
 				EXYNOS_USB3_DEPCMDx_CommandParam_SHIFT) |
 				EXYNOS_USB3_DEPCMDx_HiPri_ForceRM |
 				EXYNOS_USB3_DEPCMDx_CmdIOC |
@@ -1984,16 +1984,16 @@ static void exynos_ss_udc_irq_usbrst(struct exynos_ss_udc *udc)
 			res = exynos_ss_udc_issue_epcmd(udc, &epcmd);
 			if (res < 0) {
 				dev_err(udc->dev, "Failed to end transfer\n");
-				ep->not_ready = 1;
+				udc_ep->not_ready = 1;
 			}
 
-			ep->tri = 0;
+			udc_ep->tri = 0;
 		}
 
-		exynos_ss_udc_kill_all_requests(udc, ep, -ECONNRESET);
+		exynos_ss_udc_kill_all_requests(udc, udc_ep, -ECONNRESET);
 
-		if (ep->halted)
-			exynos_ss_udc_ep_sethalt(&ep->ep, 0);
+		if (udc_ep->halted)
+			exynos_ss_udc_ep_sethalt(&udc_ep->ep, 0);
 	}
 
 	/* Set device address to 0 */
