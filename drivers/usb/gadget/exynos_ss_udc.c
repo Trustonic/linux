@@ -1706,7 +1706,7 @@ static void exynos_ss_udc_xfer_complete(struct exynos_ss_udc *udc,
 
 	}
 
-	udc_req->req.actual += udc_req->req.length - size_left;
+	req->actual += req->length - size_left;
 
 	/*
 	 * Check if dealing with Maximum Packet Size (MPS) IN transfer.
