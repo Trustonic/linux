@@ -120,17 +120,6 @@ struct mmc_blk_data {
 
 static DEFINE_MUTEX(open_lock);
 
-enum mmc_blk_status {
-	MMC_BLK_SUCCESS = 0,
-	MMC_BLK_PARTIAL,
-	MMC_BLK_CMD_ERR,
-	MMC_BLK_RETRY,
-	MMC_BLK_ABORT,
-	MMC_BLK_DATA_ERR,
-	MMC_BLK_ECC_ERR,
-	MMC_BLK_NOMEDIUM,
-};
-
 enum {
 	MMC_PACKED_N_IDX = -1,
 	MMC_PACKED_N_ZERO,
@@ -1318,6 +1307,7 @@ static void mmc_blk_rw_rq_prep(struct mmc_queue_req *mqrq,
 
 	mqrq->mmc_active.mrq = &brq->mrq;
 	mqrq->mmc_active.err_check = mmc_blk_err_check;
+	mqrq->mmc_active.mrq->context_info = &mq->context_info;
 
 	mmc_queue_bounce_pre(mqrq);
 }
@@ -1465,6 +1455,7 @@ static void mmc_blk_packed_rrq_prep(struct mmc_queue_req *mqrq,
 	brq->data.sg_len = mmc_queue_map_sg(mq, mqrq);
 
 	mqrq->mmc_active.mrq = &brq->mrq;
+	mqrq->mmc_active.mrq->context_info = &mq->context_info;
 	mqrq->mmc_active.__mrq = NULL;
 	mqrq->mmc_active.__cond = true;
 	mqrq->mmc_active.err_check = mmc_blk_packed_err_check;
@@ -1566,6 +1557,7 @@ static void mmc_blk_packed_hdr_wrq_prep(struct mmc_queue_req *mqrq,
 	brq->data.sg_len = mmc_queue_map_sg(mq, __mqrq);
 
 	__mqrq->mmc_active.mrq = &brq->mrq;
+	__mqrq->mmc_active.mrq->context_info = &mq->context_info;
 
 	if (rq_data_dir(req) == READ)
 		__mqrq->mmc_active.err_check = mmc_blk_err_check;
@@ -1770,12 +1762,13 @@ static int mmc_blk_issue_rw_rq(struct mmc_queue *mq, struct request *rqc)
 		} else
 			areq = NULL;
 
-		areq = mmc_start_req(card->host, areq, (int *) &status);
+		areq = mmc_start_req(card->host, areq, (int *)&status);
 		if (!areq) {
 			if (mq->mqrq_cur->packed_cmd == MMC_PACKED_READ)
 				goto snd_packed_rd;
-			else
-				return 0;
+			if (status == MMC_BLK_NEW_REQUEST)
+				mq->flags |= MMC_QUEUE_NEW_REQUEST;
+			return 0;
 		}
 
 		mq_rq = container_of(areq, struct mmc_queue_req, mmc_active);
@@ -1785,6 +1778,8 @@ static int mmc_blk_issue_rw_rq(struct mmc_queue *mq, struct request *rqc)
 		mmc_queue_bounce_post(mq_rq);
 
 		switch (status) {
+		case MMC_BLK_NEW_REQUEST:
+			BUG(); /* should never get here */
 		case MMC_BLK_SUCCESS:
 		case MMC_BLK_PARTIAL:
 			/*
@@ -1951,6 +1946,8 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 		goto out;
 	}
 
+	mq->flags &= ~MMC_QUEUE_NEW_REQUEST;
+
 	if (req && req->cmd_flags & REQ_DISCARD) {
 		/* complete ongoing async transfer before issuing discard */
 		if (card->host->areq)
@@ -1966,9 +1963,10 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 	}
 
 out:
-	if (!req)
+	if (!req && !(mq->flags & MMC_QUEUE_NEW_REQUEST))
 		/* release host only when there are no more requests */
 		mmc_release_host(card->host);
+
 	return ret;
 }
 

@@ -22,7 +22,6 @@
 
 #define MMC_QUEUE_BOUNCESZ	65536
 
-#define MMC_QUEUE_SUSPENDED	(1 << 0)
 
 /*
  * Prepare a MMC request. This just filters out odd stuff.
@@ -63,11 +62,30 @@ static int mmc_queue_thread(void *d)
 		set_current_state(TASK_INTERRUPTIBLE);
 		req = blk_fetch_request(q);
 		mq->mqrq_cur->req = req;
+		if (!req && mq->mqrq_prev->req &&
+			!(mq->mqrq_prev->req->cmd_flags & REQ_FLUSH) &&
+			!(mq->mqrq_prev->req->cmd_flags & REQ_DISCARD)) {
+			mq->context_info.is_waiting_last_req = true;
+		}
 		spin_unlock_irq(q->queue_lock);
 
 		if (req || mq->mqrq_prev->req) {
 			set_current_state(TASK_RUNNING);
 			mq->issue_fn(mq, req);
+			if (mq->flags & MMC_QUEUE_NEW_REQUEST) {
+				mq->flags &= ~MMC_QUEUE_NEW_REQUEST;
+				continue; /* fetch again */
+			}
+
+			/*
+			 * Current request becomes previous request
+			 * and vice versa.
+			 */
+			mq->mqrq_prev->brq.mrq.data = NULL;
+			mq->mqrq_prev->req = NULL;
+			tmp = mq->mqrq_prev;
+			mq->mqrq_prev = mq->mqrq_cur;
+			mq->mqrq_cur = tmp;
 		} else {
 			if (kthread_should_stop()) {
 				set_current_state(TASK_RUNNING);
@@ -77,13 +95,6 @@ static int mmc_queue_thread(void *d)
 			schedule();
 			down(&mq->thread_sem);
 		}
-
-		/* Current request becomes previous request and vice versa. */
-		mq->mqrq_prev->brq.mrq.data = NULL;
-		mq->mqrq_prev->req = NULL;
-		tmp = mq->mqrq_prev;
-		mq->mqrq_prev = mq->mqrq_cur;
-		mq->mqrq_cur = tmp;
 	} while (1);
 	up(&mq->thread_sem);
 
@@ -100,6 +111,7 @@ static void mmc_request(struct request_queue *q)
 {
 	struct mmc_queue *mq = q->queuedata;
 	struct request *req;
+	unsigned long flags;
 
 	if (!mq) {
 		while ((req = blk_fetch_request(q)) != NULL) {
@@ -108,8 +120,19 @@ static void mmc_request(struct request_queue *q)
 		}
 		return;
 	}
-
-	if (!mq->mqrq_cur->req && !mq->mqrq_prev->req)
+	if (!mq->mqrq_cur->req && mq->mqrq_prev->req) {
+		/*
+		 * New MMC request arrived when MMC thread may be
+		 * blocked on the previous request to be complete
+		 * with no current request fetched
+		 */
+		spin_lock_irqsave(&mq->context_info.lock, flags);
+		if (mq->context_info.is_waiting_last_req) {
+			mq->context_info.is_new_req = true;
+			wake_up_interruptible(&mq->context_info.wait);
+		}
+		spin_unlock_irqrestore(&mq->context_info.lock, flags);
+	} else if (!mq->mqrq_cur->req && !mq->mqrq_prev->req)
 		wake_up_process(mq->thread);
 }
 
@@ -294,6 +317,11 @@ int mmc_init_queue(struct mmc_queue *mq, struct mmc_card *card,
 	}
 
 	sema_init(&mq->thread_sem, 1);
+	spin_lock_init(&mq->context_info.lock);
+	mq->context_info.is_new_req = false;
+	mq->context_info.is_done_rcv = false;
+	mq->context_info.is_waiting_last_req = false;
+	init_waitqueue_head(&mq->context_info.wait);
 
 	mq->thread = kthread_run(mmc_queue_thread, mq, "mmcqd/%d%s",
 		host->index, subname ? subname : "");

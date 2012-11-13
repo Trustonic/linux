@@ -48,6 +48,8 @@ struct mmc_queue {
 	struct mmc_card		*card;
 	struct task_struct	*thread;
 	struct semaphore	thread_sem;
+#define MMC_QUEUE_SUSPENDED	(1 << 0)
+#define MMC_QUEUE_NEW_REQUEST	(1 << 1)
 	unsigned int		flags;
 	int			(*issue_fn)(struct mmc_queue *, struct request *);
 	void			*data;
@@ -56,6 +58,7 @@ struct mmc_queue {
 	struct mmc_queue_req	*mqrq_cur;
 	struct mmc_queue_req	*mqrq_prev;
 	struct mmc_queue_req	*mqrq_hdr;
+	struct mmc_context_info	context_info;
 };
 
 extern int mmc_init_queue(struct mmc_queue *, struct mmc_card *, spinlock_t *,
