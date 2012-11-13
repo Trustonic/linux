@@ -841,6 +841,12 @@ static int srp_open(struct inode *inode, struct file *file)
 	srp_info("Opened!\n");
 
 	mutex_lock(&srp_mutex);
+	if (!srp.is_loaded) {
+		srp_err("Not loaded srp firmware.\n");
+		mutex_unlock(&srp_mutex);
+		return -ENXIO;
+	}
+
 	if (srp.is_opened) {
 		srp_err("Already opened.\n");
 		mutex_unlock(&srp_mutex);
@@ -1250,6 +1256,11 @@ static struct miscdevice srp_miscdev = {
 static int srp_suspend(struct platform_device *pdev, pm_message_t state)
 {
 	srp_info("Suspend\n");
+
+	if (!srp.is_loaded) {
+		srp_info("Not loaded srp firmware.\n");
+		return 0;
+	}
 
 	if (srp.pm_suspended) {
 		srp_info("Already suspended!\n");
