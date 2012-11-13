@@ -498,6 +498,7 @@ struct s5p_mfc_dec {
 	int is_packedpb;
 	int slice_enable;
 	int mv_count;
+	int is_interlaced;
 
 	int crc_enable;
 	int crc_luma0;

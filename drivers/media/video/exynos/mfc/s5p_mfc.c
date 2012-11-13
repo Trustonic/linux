@@ -716,6 +716,10 @@ static irqreturn_t s5p_mfc_irq(int irq, void *priv)
 			else
 				ctx->state = MFCINST_HEAD_PARSED;
 
+			if (ctx->state == MFCINST_HEAD_PARSED)
+				dec->is_interlaced =
+					s5p_mfc_is_interlace_picture();
+
 			if ((ctx->codec_mode == S5P_FIMV_CODEC_H264_DEC ||
 				ctx->codec_mode == S5P_FIMV_CODEC_H264_MVC_DEC) &&
 					!list_empty(&ctx->src_queue)) {

@@ -1057,6 +1057,7 @@ static int vidioc_g_fmt_vid_cap_mplane(struct file *file, void *priv,
 						struct v4l2_format *f)
 {
 	struct s5p_mfc_ctx *ctx = fh_to_mfc_ctx(file->private_data);
+	struct s5p_mfc_dec *dec = ctx->dec_priv;
 	struct v4l2_pix_format_mplane *pix_mp = &f->fmt.pix_mp;
 
 	mfc_debug_enter();
@@ -1080,8 +1081,13 @@ static int vidioc_g_fmt_vid_cap_mplane(struct file *file, void *priv,
 
 		pix_mp->width = ctx->img_width;
 		pix_mp->height = ctx->img_height;
-		pix_mp->field = V4L2_FIELD_NONE;
 		pix_mp->num_planes = 2;
+
+		if (dec->is_interlaced)
+			pix_mp->field = V4L2_FIELD_INTERLACED;
+		else
+			pix_mp->field = V4L2_FIELD_NONE;
+
 		/* Set pixelformat to the format in which MFC
 		   outputs the decoded frame */
 		pix_mp->pixelformat = ctx->dst_fmt->fourcc;
@@ -2338,6 +2344,7 @@ int s5p_mfc_init_dec_ctx(struct s5p_mfc_ctx *ctx)
 
 	dec->display_delay = -1;
 	dec->is_packedpb = 0;
+	dec->is_interlaced = 0;
 
 	/* Init videobuf2 queue for OUTPUT */
 	ctx->vq_src.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
