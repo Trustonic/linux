@@ -670,6 +670,8 @@ struct s5p_mfc_fmt {
 	u32 num_planes;
 };
 
+int get_framerate(struct timeval *to, struct timeval *from);
+
 #if defined(CONFIG_EXYNOS_MFC_V5)
 #include "regs-mfc-v5.h"
 #include "s5p_mfc_opr_v5.h"

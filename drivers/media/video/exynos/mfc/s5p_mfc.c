@@ -81,10 +81,11 @@ static inline void clear_magic(unsigned char *addr)
 /*
  * A framerate table determines framerate by the interval(us) of each frame.
  * Framerate is not accurate, just rough value to seperate overload section.
- * Base line of each section are selected from 25fps(40000us), 48fps(20833us).
+ * Base line of each section are selected from 25fps(40000us), 48fps(20833us)
+ * and 100fps(10000us).
  *
- * interval(us) | 0               20833               40000                 |
- * framerate    |       60fps       |       30fps       |       25fps       |
+ * interval(us) | 0           10000         20833         40000           |
+ * framerate    |     120fps    |    60fps    |    30fps    |    25fps    |
  */
 
 #define COL_FRAME_RATE		0
@@ -92,7 +93,8 @@ static inline void clear_magic(unsigned char *addr)
 static unsigned long framerate_table[][2] = {
 	{ 25000, 40000 },
 	{ 30000, 20833 },
-	{ 60000, 0 },
+	{ 60000, 10000 },
+	{ 120000, 0 },
 };
 
 static inline unsigned long timeval_diff(struct timeval *to,
@@ -102,7 +104,7 @@ static inline unsigned long timeval_diff(struct timeval *to,
 		- (to->tv_sec * USEC_PER_SEC + to->tv_usec);
 }
 
-static int get_framerate(struct timeval *to, struct timeval *from)
+int get_framerate(struct timeval *to, struct timeval *from)
 {
 	int i;
 	unsigned long interval;
