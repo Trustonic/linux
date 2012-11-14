@@ -2775,8 +2775,21 @@ static int __devinit exynos_ss_udc_probe(struct platform_device *pdev)
 	}
 
 	udc->irq = ret;
+
+	/*
+	 * Here we request IRQ and ensure it will be disabled if neither host
+	 * nor udc use DRD. It allows to avoid 'Unbalanced enable for IRQ' when
+	 * the driver tries to resume DRD and enable not-disabled irq on
+	 * vbus_connect event.
+	 *
+	 * Note: during probing the driver doesn't access any registers so we
+	 * put_sync DRD immediately after requesting IRQ.
+	 */
+	pm_runtime_get_sync(dev->parent);
 	ret = devm_request_irq(dev, udc->irq, exynos_ss_udc_irq,
 			       IRQF_SHARED, dev_name(dev), udc);
+	pm_runtime_put_sync(dev->parent);
+
 	if (ret < 0) {
 		dev_err(dev, "cannot claim IRQ\n");
 		return ret;
