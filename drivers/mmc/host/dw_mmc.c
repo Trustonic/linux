@@ -1131,7 +1131,7 @@ static int dw_mci_get_cd(struct mmc_host *mmc)
 	else if (brd->get_cd)
 		present = !brd->get_cd(slot->id);
 	else
-		present = (mci_readl(slot->host, CDETECT) & (1 << slot->id))
+		present = (mci_readl(host, CDETECT) & (1 << slot->id))
 			== 0 ? 1 : 0;
 
 	if (present)
