@@ -21,6 +21,7 @@
 #include <linux/persistent_ram.h>
 #include <linux/clk.h>
 #include <linux/io.h>
+#include <linux/ion.h>
 
 #include <asm/mach/arch.h>
 #include <asm/hardware/gic.h>
@@ -305,6 +306,7 @@ static void __init exynos_reserve_mem(void)
 		"s5p-mfc-v6/a=b1;";
 
 	exynos_cma_region_reserve(regions, regions_secure, 0, map);
+	ion_reserve(&exynos_ion_pdata);
 }
 #else /* !CONFIG_CMA*/
 static inline void exynos_reserve_mem(void)
@@ -412,8 +414,6 @@ static void __init smdk5250_machine_init(void)
 	s3c_i2c5_set_platdata(NULL);
 
 	s3c_adc_set_platdata(&smdk5250_adc_data);
-
-	exynos_ion_set_platdata();
 
 #ifdef CONFIG_EXYNOS_DEV_TMU
 	exynos_tmu_set_platdata(&smdk5250_tmu_pdata);
