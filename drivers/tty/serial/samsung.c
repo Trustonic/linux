@@ -270,7 +270,7 @@ static void callback_uart_rx_dma(void *data)
 
 	/* Error check after DMA transfer */
 	if (uerstat != 0) {
-		printk(KERN_ERR "UART Rx DMA Error(0x%x)!!!\n",uerstat);
+		printk(KERN_ERR "UART Rx DMA Error(0x%x)!!!\n", uerstat);
 
 		if (uerstat & S3C2410_UERSTAT_BREAK) {
 			dbg("break!\n");
