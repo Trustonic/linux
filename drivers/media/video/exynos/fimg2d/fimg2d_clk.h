@@ -21,6 +21,5 @@ void fimg2d_clk_on(struct fimg2d_control *ctrl);
 void fimg2d_clk_off(struct fimg2d_control *ctrl);
 void fimg2d_clk_save(struct fimg2d_control *ctrl);
 void fimg2d_clk_restore(struct fimg2d_control *ctrl);
-void fimg2d_clk_dump(struct fimg2d_control *ctrl);
 
 #endif /* __FIMG2D_CLK_H__ */

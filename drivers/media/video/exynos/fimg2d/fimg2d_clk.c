@@ -41,29 +41,6 @@ void fimg2d_clk_off(struct fimg2d_control *ctrl)
 	fimg2d_debug("clock disable\n");
 }
 
-void fimg2d_clk_dump(struct fimg2d_control *ctrl)
-{
-	struct fimg2d_platdata *pdata;
-	struct clk *sclk, *pclk;
-
-	pdata = to_fimg2d_plat(ctrl->dev);
-
-	if (ip_is_g2d_4p()) {
-		sclk = clk_get(ctrl->dev, pdata->clkname);
-		pclk = clk_get(NULL, "pclk_acp");
-
-		fimg2d_info("%s(%lu) pclk_acp(%lu)\n",
-				pdata->clkname,
-				clk_get_rate(sclk), clk_get_rate(pclk));
-	} else {
-		aclk = clk_get(NULL, "aclk_acp");
-		pclk = clk_get(NULL, "pclk_acp");
-
-		fimg2d_info("aclk_acp(%lu) pclk_acp(%lu)\n",
-				clk_get_rate(sclk), clk_get_rate(pclk));
-	}
-}
-
 int fimg2d_clk_setup(struct fimg2d_control *ctrl)
 {
 	struct fimg2d_platdata *pdata;
@@ -73,8 +50,11 @@ int fimg2d_clk_setup(struct fimg2d_control *ctrl)
 	sclk = parent = NULL;
 	pdata = to_fimg2d_plat(ctrl->dev);
 
-	if (ip_is_g2d_4p()) {
-		/* clock for setting parent and rate */
+	if (ip_is_g2d_5g()) {
+		fimg2d_info("aclk_acp(%lu) pclk_acp(%lu)\n",
+				clk_get_rate(clk_get(NULL, "aclk_acp")),
+				clk_get_rate(clk_get(NULL, "pclk_acp")));
+	} else {
 		parent = clk_get(ctrl->dev, pdata->parent_clkname);
 		if (IS_ERR(parent)) {
 			fimg2d_err("failed to get parent clk\n");
@@ -97,10 +77,6 @@ int fimg2d_clk_setup(struct fimg2d_control *ctrl)
 		clk_set_rate(sclk, pdata->clkrate);
 		fimg2d_info("clkrate: %ld parent clkrate: %ld\n",
 				clk_get_rate(sclk), clk_get_rate(parent));
-	} else {
-		fimg2d_debug("aclk_acp(%lu) pclk_acp(%lu)\n",
-				clk_get_rate(clk_get(NULL, "aclk_acp")),
-				clk_get_rate(clk_get(NULL, "pclk_acp")));
 	}
 
 	/* clock for gating */

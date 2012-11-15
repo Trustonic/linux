@@ -113,7 +113,6 @@ static int fimg2d_sysmmu_fault_handler(struct device *dev,
 	fimg2d_dump_command(cmd);
 
 next:
-	fimg2d_clk_dump(ctrl);
 	ctrl->dump(ctrl);
 
 	BUG();
