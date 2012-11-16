@@ -664,8 +664,47 @@ static int i2s_hw_params(struct snd_pcm_substream *substream,
 	return 0;
 }
 
-static void i2s_register_save(struct i2s_dai *i2s)
+static void audss_reg_save(struct snd_soc_dai *dai)
 {
+	struct i2s_dai *i2s = to_info(dai);
+
+	if ((i2s->pdev->id != 0) && (i2s->pdev->id != SAMSUNG_I2S_SECOFF))
+		return;
+
+	i2s->suspend_audss_clksrc = readl(i2s->audss_base +
+					  EXYNOS_CLKSRC_AUDSS_OFFSET);
+	i2s->suspend_audss_clkdiv = readl(i2s->audss_base +
+					  EXYNOS_CLKDIV_AUDSS_OFFSET);
+	i2s->suspend_audss_clkgate = readl(i2s->audss_base +
+					   EXYNOS_CLKGATE_AUDSS_OFFSET);
+
+	dev_dbg(&i2s->pdev->dev, "Registers of Audio Subsystem are saved\n");
+
+	return;
+}
+
+static void audss_reg_restore(struct snd_soc_dai *dai)
+{
+	struct i2s_dai *i2s = to_info(dai);
+
+	if ((i2s->pdev->id != 0) && (i2s->pdev->id != SAMSUNG_I2S_SECOFF))
+		return;
+
+	writel(i2s->suspend_audss_clkgate,
+	       i2s->audss_base + EXYNOS_CLKGATE_AUDSS_OFFSET);
+	writel(i2s->suspend_audss_clkdiv,
+	       i2s->audss_base + EXYNOS_CLKDIV_AUDSS_OFFSET);
+	writel(i2s->suspend_audss_clksrc,
+	       i2s->audss_base + EXYNOS_CLKSRC_AUDSS_OFFSET);
+
+	dev_dbg(&i2s->pdev->dev, "Registers of Audio Subsystem are restored\n");
+
+	return;
+}
+
+static void i2s_reg_save(struct snd_soc_dai *dai)
+{
+	struct i2s_dai *i2s = to_info(dai);
 	u32 n, offset;
 
 	i2s->suspend_i2smod = readl(i2s->addr + I2SMOD);
@@ -674,26 +713,29 @@ static void i2s_register_save(struct i2s_dai *i2s)
 	if ((i2s->pdev->id == 0) || (i2s->pdev->id == SAMSUNG_I2S_SECOFF)) {
 		for (n = 0, offset = I2SAHB; offset <= I2SSTR1; offset += 4)
 			i2s->suspend_i2sahb[n++] = readl(i2s->addr + offset);
-		i2s->suspend_audss_clksrc = readl(i2s->audss_base + EXYNOS_CLKSRC_AUDSS_OFFSET);
-		i2s->suspend_audss_clkdiv = readl(i2s->audss_base + EXYNOS_CLKDIV_AUDSS_OFFSET);
-		i2s->suspend_audss_clkgate = readl(i2s->audss_base + EXYNOS_CLKGATE_AUDSS_OFFSET);
 	}
+
+	dev_dbg(&i2s->pdev->dev, "Registers of I2S are saved\n");
+
+	return;
 }
 
-static void i2s_register_restore(struct i2s_dai *i2s)
+static void i2s_reg_restore(struct snd_soc_dai *dai)
 {
+	struct i2s_dai *i2s = to_info(dai);
 	u32 n, offset;
 
-	writel(i2s->suspend_i2scon, i2s->addr + I2SCON);
 	writel(i2s->suspend_i2smod, i2s->addr + I2SMOD);
+	writel(i2s->suspend_i2scon, i2s->addr + I2SCON);
 	writel(i2s->suspend_i2spsr, i2s->addr + I2SPSR);
 	if ((i2s->pdev->id == 0) || (i2s->pdev->id == SAMSUNG_I2S_SECOFF)) {
 		for (n = 0, offset = I2SAHB; offset <= I2SSTR1; offset += 4)
 			writel(i2s->suspend_i2sahb[n++], i2s->addr + offset);
-		writel(i2s->suspend_audss_clkgate, i2s->audss_base + EXYNOS_CLKGATE_AUDSS_OFFSET);
-		writel(i2s->suspend_audss_clkdiv, i2s->audss_base + EXYNOS_CLKDIV_AUDSS_OFFSET);
-		writel(i2s->suspend_audss_clksrc, i2s->audss_base + EXYNOS_CLKSRC_AUDSS_OFFSET);
 	}
+
+	dev_dbg(&i2s->pdev->dev, "Registers of I2S are restored\n");
+
+	return;
 }
 
 void i2s_enable(struct snd_soc_dai *dai)
@@ -730,11 +772,12 @@ void i2s_enable(struct snd_soc_dai *dai)
 
 	if (!is_opened(other)) {
 		pm_runtime_get_sync(&pdev->dev);
-		i2s_register_restore(i2s);
+		audss_reg_restore(dai);
 #ifdef CONFIG_SND_SAMSUNG_USE_IDMA
 		clk_enable(i2s->srpclk);
 #endif
 		clk_enable(i2s->clk);
+		i2s_reg_restore(dai);
 
 		if (i2s_pdata->cfg_gpio && i2s_pdata->cfg_gpio(pdev))
 			dev_err(&pdev->dev, "Unable to configure gpio\n");
@@ -789,7 +832,7 @@ void i2s_disable(struct snd_soc_dai *dai)
 		i2s_set_sysclk(dai, SAMSUNG_I2S_CDCLK,
 				0, SND_SOC_CLOCK_IN);
 
-		i2s_register_save(i2s);
+		i2s_reg_save(dai);
 		clk_disable(i2s->clk);
 #ifdef CONFIG_SND_SAMSUNG_USE_IDMA
 		if (srp_enabled_status())
@@ -797,6 +840,7 @@ void i2s_disable(struct snd_soc_dai *dai)
 
 		clk_disable(i2s->srpclk);
 #endif
+		audss_reg_save(dai);
 
 		pm_runtime_put_sync(&pdev->dev);
 	}
@@ -1193,11 +1237,12 @@ probe_exit:
 		i2s_set_sysclk(dai, SAMSUNG_I2S_CDCLK,
 				0, SND_SOC_CLOCK_IN);
 
-	i2s_register_save(i2s);
+	i2s_reg_save(dai);
 	clk_disable(i2s->clk);
 #ifdef CONFIG_SND_SAMSUNG_USE_IDMA
 	clk_disable(i2s->srpclk);
 #endif
+	audss_reg_save(dai);
 	i2s->opencnt = 0;
 	pm_runtime_put_sync(&pdev->dev);
 
