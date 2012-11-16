@@ -1325,6 +1325,8 @@ static void s3c_ep0_setup(struct s3c_udc *dev)
 		DEBUG_SETUP("============================================\n");
 		DEBUG_SETUP("%s: USB_REQ_SET_CONFIGURATION (%d)\n",
 				__func__, usb_ctrl->wValue);
+		/* After SET_CONFIGURATION, packet can be send by set_alt() */
+		set_conf_done = 1;
 
 		if (usb_ctrl->bRequestType == USB_RECIP_DEVICE) {
 			reset_available = 1;

@@ -24,7 +24,6 @@
 #include <linux/clk.h>
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
-#include <linux/usb/otg.h>
 #include <plat/regs-otg.h>
 #include <plat/usb-phy.h>
 #include <plat/udc-hs.h>
@@ -142,7 +141,8 @@ static void reconfig_usbd(void);
 static void set_max_pktsize(struct s3c_udc *dev, enum usb_device_speed speed);
 static void nuke(struct s3c_ep *ep, int status);
 static int s3c_udc_set_halt(struct usb_ep *_ep, int value);
-static void s3c_udc_update_soft_flag(void);
+static void s3c_udc_soft_connect(void);
+static void s3c_udc_soft_disconnect(void);
 
 static struct usb_ep_ops s3c_ep_ops = {
 	.enable = s3c_ep_enable,
@@ -230,6 +230,7 @@ static void udc_disable(struct s3c_udc *dev)
 {
 	struct platform_device *pdev = dev->dev;
 	struct s3c_hsotg_plat *pdata = pdev->dev.platform_data;
+	u32 utemp;
 	DEBUG_SETUP("%s: %p\n", __func__, dev);
 
 	disable_irq(dev->irq);
@@ -242,9 +243,12 @@ static void udc_disable(struct s3c_udc *dev)
 	/* Mask the core interrupt */
 	__raw_writel(0, dev->regs + S3C_UDC_OTG_GINTMSK);
 
-	if (dev->phy)
-		usb_phy_shutdown(dev->phy);
-	else if (pdata && pdata->phy_exit)
+	/* Put the OTG device core in the disconnected state.*/
+	utemp = __raw_readl(dev->regs + S3C_UDC_OTG_DCTL);
+	utemp |= SOFT_DISCONNECT;
+	__raw_writel(utemp, dev->regs + S3C_UDC_OTG_DCTL);
+	udelay(20);
+	if (pdata && pdata->phy_exit)
 		pdata->phy_exit(pdev, S5P_USB_PHY_DEVICE);
 	clk_disable(dev->clk);
 }
@@ -293,9 +297,7 @@ static int udc_enable(struct s3c_udc *dev)
 
 	enable_irq(dev->irq);
 	clk_enable(dev->clk);
-	if (dev->phy)
-		usb_phy_init(dev->phy);
-	else if (pdata->phy_init)
+	if (pdata->phy_init)
 		pdata->phy_init(pdev, S5P_USB_PHY_DEVICE);
 	reconfig_usbd();
 
@@ -312,26 +314,16 @@ int s3c_vbus_enable(struct usb_gadget *gadget, int is_active)
 	unsigned long flags;
 	struct s3c_udc *dev = container_of(gadget, struct s3c_udc, gadget);
 
-	spin_lock_irqsave(&dev->lock, flags);
-	if (dev->udc_enabled != is_active) {
-		dev->udc_enabled = is_active;
-
-		if (!is_active) {
-			s3c_udc_update_soft_flag();
-			spin_unlock_irqrestore(&dev->lock, flags);
-			udc_disable(dev);
-			spin_lock_irqsave(&dev->lock, flags);
-		} else {
-			udc_reinit(dev);
-			spin_unlock_irqrestore(&dev->lock, flags);
-
-			udc_enable(dev);
-
-			spin_lock_irqsave(&dev->lock, flags);
-			s3c_udc_update_soft_flag();
-		}
+	if (!is_active) {
+		spin_lock_irqsave(&dev->lock, flags);
+		stop_activity(dev, dev->driver);
+		spin_unlock_irqrestore(&dev->lock, flags);
+		udc_disable(dev);
+	} else {
+		udc_reinit(dev);
+		udc_enable(dev);
+		s3c_udc_soft_connect();
 	}
-	spin_unlock_irqrestore(&dev->lock, flags);
 
 	return 0;
 }
@@ -361,6 +353,9 @@ static int s3c_udc_start(struct usb_gadget *gadget,
 
 	printk(KERN_INFO "bound driver '%s'\n",
 			driver->driver.name);
+	if (is_nonswitch())
+		udc_enable(dev);
+
 	return 0;
 }
 
@@ -839,7 +834,7 @@ static int s3c_udc_wakeup(struct usb_gadget *_gadget)
 static int s3c_set_selfpowered(struct usb_gadget *_gadget, int is_on)
 {
 	struct s3c_udc *dev = container_of(_gadget, struct s3c_udc, gadget);
-	unsigned long   flags;
+	unsigned long	flags;
 
 	spin_lock_irqsave(&dev->lock, flags);
 	dev->selfpowered = (is_on != 0);
@@ -847,35 +842,39 @@ static int s3c_set_selfpowered(struct usb_gadget *_gadget, int is_on)
 	return 0;
 }
 
-static void s3c_udc_update_soft_flag(void)
+static void s3c_udc_soft_connect(void)
 {
 	struct s3c_udc *dev = the_controller;
-	u32 val;
+	u32 uTemp;
 
-	if (dev->udc_enabled && dev->soft_connected) {
-		val = __raw_readl(dev->regs + S3C_UDC_OTG_DCTL);
-		val &= ~SOFT_DISCONNECT;
-		__raw_writel(val, dev->regs + S3C_UDC_OTG_DCTL);
-	} else {
-		val = __raw_readl(dev->regs + S3C_UDC_OTG_DCTL);
-		if (!(val & SOFT_DISCONNECT)) {
-			val |= SOFT_DISCONNECT;
-			__raw_writel(val, dev->regs + S3C_UDC_OTG_DCTL);
-			stop_activity(dev, dev->driver);
-		}
-	}
+	DEBUG("[%s]\n", __func__);
+	uTemp = __raw_readl(dev->regs + S3C_UDC_OTG_DCTL);
+	uTemp = uTemp & ~SOFT_DISCONNECT;
+	__raw_writel(uTemp, dev->regs + S3C_UDC_OTG_DCTL);
+}
+
+static void s3c_udc_soft_disconnect(void)
+{
+	struct s3c_udc *dev = the_controller;
+	u32 uTemp;
+	unsigned long flags;
+
+	DEBUG("[%s]\n", __func__);
+	uTemp = __raw_readl(dev->regs + S3C_UDC_OTG_DCTL);
+	uTemp |= SOFT_DISCONNECT;
+	__raw_writel(uTemp, dev->regs + S3C_UDC_OTG_DCTL);
+
+	spin_lock_irqsave(&dev->lock, flags);
+	stop_activity(dev, dev->driver);
+	spin_unlock_irqrestore(&dev->lock, flags);
 }
 
 static int s3c_udc_pullup(struct usb_gadget *gadget, int is_on)
 {
-	struct s3c_udc *dev = the_controller;
-	unsigned long flags;
-
-	spin_lock_irqsave(&dev->lock, flags);
-	dev->soft_connected = is_on;
-	s3c_udc_update_soft_flag();
-	spin_unlock_irqrestore(&dev->lock, flags);
-
+	if (is_on)
+		s3c_udc_soft_connect();
+	else
+		s3c_udc_soft_disconnect();
 	return 0;
 }
 
@@ -1148,7 +1147,6 @@ static int s3c_udc_probe(struct platform_device *pdev)
 	struct resource *res;
 	unsigned int irq;
 	int retval;
-	u32 tmp;
 
 	DEBUG("%s: %p\n", __func__, pdev);
 
@@ -1221,10 +1219,6 @@ static int s3c_udc_probe(struct platform_device *pdev)
 	/* Mask any interrupt left unmasked by the bootloader */
 	__raw_writel(0, dev->regs + S3C_UDC_OTG_GINTMSK);
 
-	/* Stay disconnected until vbus_session is called */
-	tmp = __raw_readl(dev->regs + S3C_UDC_OTG_DCTL);
-	__raw_writel(tmp | SOFT_DISCONNECT, dev->regs + S3C_UDC_OTG_DCTL);
-
 	/* irq setup after old hardware state is cleaned up */
 	irq = platform_get_irq(pdev, 0);
 	retval =
@@ -1253,9 +1247,6 @@ static int s3c_udc_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "failed to add gadget to udc list\n");
 		goto err_add_udc;
 	}
-
-	if (dev->phy)
-		otg_set_peripheral(dev->phy->otg, &dev->gadget);
 
 	create_proc_files();
 
@@ -1289,8 +1280,6 @@ static int s3c_udc_remove(struct platform_device *pdev)
 	usb_del_gadget_udc(&dev->gadget);
 	device_unregister(&dev->gadget.dev);
 
-	if (dev->phy)
-		usb_put_transceiver(dev->phy);
 	clk_put(dev->clk);
 	if (dev->ep0_data)
 		dma_free_coherent(&pdev->dev,
@@ -1335,7 +1324,7 @@ static int s3c_udc_suspend(struct platform_device *pdev, pm_message_t state)
 		if (dev->driver->disconnect)
 			dev->driver->disconnect(&dev->gadget);
 
-		if (!dev->phy)
+		if (is_nonswitch())
 			udc_disable(dev);
 	}
 
@@ -1347,10 +1336,10 @@ static int s3c_udc_resume(struct platform_device *pdev)
 	struct s3c_udc *dev = the_controller;
 
 	if (dev->driver) {
-		if (!dev->phy) {
-			udc_reinit(dev);
+		udc_reinit(dev);
+		if (is_nonswitch())
 			udc_enable(dev);
-		}
+		s3c_udc_soft_connect();
 
 		if (dev->driver->resume)
 			dev->driver->resume(&dev->gadget);
