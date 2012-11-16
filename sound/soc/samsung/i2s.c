@@ -93,7 +93,7 @@ struct i2s_dai {
 	u32	suspend_i2smod;
 	u32	suspend_i2scon;
 	u32	suspend_i2spsr;
-	u32	suspend_i2sahb;
+	u32	suspend_i2sahb[((I2SSTR1 - I2SAHB) >> 2) + 1];
 
 	u32	suspend_audss_clksrc;
 	u32	suspend_audss_clkdiv;
@@ -666,11 +666,14 @@ static int i2s_hw_params(struct snd_pcm_substream *substream,
 
 static void i2s_register_save(struct i2s_dai *i2s)
 {
+	u32 n, offset;
+
 	i2s->suspend_i2smod = readl(i2s->addr + I2SMOD);
 	i2s->suspend_i2scon = readl(i2s->addr + I2SCON);
 	i2s->suspend_i2spsr = readl(i2s->addr + I2SPSR);
 	if ((i2s->pdev->id == 0) || (i2s->pdev->id == SAMSUNG_I2S_SECOFF)) {
-		i2s->suspend_i2sahb = readl(i2s->addr + I2SAHB);
+		for (n = 0, offset = I2SAHB; offset <= I2SSTR1; offset += 4)
+			i2s->suspend_i2sahb[n++] = readl(i2s->addr + offset);
 		i2s->suspend_audss_clksrc = readl(i2s->audss_base + EXYNOS_CLKSRC_AUDSS_OFFSET);
 		i2s->suspend_audss_clkdiv = readl(i2s->audss_base + EXYNOS_CLKDIV_AUDSS_OFFSET);
 		i2s->suspend_audss_clkgate = readl(i2s->audss_base + EXYNOS_CLKGATE_AUDSS_OFFSET);
@@ -679,11 +682,14 @@ static void i2s_register_save(struct i2s_dai *i2s)
 
 static void i2s_register_restore(struct i2s_dai *i2s)
 {
+	u32 n, offset;
+
 	writel(i2s->suspend_i2scon, i2s->addr + I2SCON);
 	writel(i2s->suspend_i2smod, i2s->addr + I2SMOD);
 	writel(i2s->suspend_i2spsr, i2s->addr + I2SPSR);
 	if ((i2s->pdev->id == 0) || (i2s->pdev->id == SAMSUNG_I2S_SECOFF)) {
-		writel(i2s->suspend_i2sahb, i2s->addr + I2SAHB);
+		for (n = 0, offset = I2SAHB; offset <= I2SSTR1; offset += 4)
+			writel(i2s->suspend_i2sahb[n++], i2s->addr + offset);
 		writel(i2s->suspend_audss_clkgate, i2s->audss_base + EXYNOS_CLKGATE_AUDSS_OFFSET);
 		writel(i2s->suspend_audss_clkdiv, i2s->audss_base + EXYNOS_CLKDIV_AUDSS_OFFSET);
 		writel(i2s->suspend_audss_clksrc, i2s->audss_base + EXYNOS_CLKSRC_AUDSS_OFFSET);
