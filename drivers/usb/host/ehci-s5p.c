@@ -166,8 +166,6 @@ static int __devinit s5p_ehci_probe(struct platform_device *pdev)
 			goto fail;
 	}
 
-	clk_disable(s5p_ehci->clk);
-
 	return 0;
 
 fail:
