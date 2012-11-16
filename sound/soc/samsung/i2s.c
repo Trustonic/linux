@@ -737,8 +737,8 @@ void i2s_enable(struct snd_soc_dai *dai)
 			writel(CON_RSTCLR, i2s->addr + I2SCON);
 	}
 
-#if defined(CONFIG_PM_RUNTIME) && defined(CONFIG_SND_SAMSUNG_ALP)
-	if (is_secondary(i2s))
+#if defined(CONFIG_PM_RUNTIME)
+	if (is_secondary(i2s) && srp_enabled_status())
 		srp_core_reset();
 #endif
 }
@@ -752,8 +752,8 @@ void i2s_disable(struct snd_soc_dai *dai)
 	unsigned long flags;
 
 
-#if defined(CONFIG_PM_RUNTIME) && defined(CONFIG_SND_SAMSUNG_ALP)
-	if (is_secondary(i2s))
+#if defined(CONFIG_PM_RUNTIME)
+	if (is_secondary(i2s) && srp_enabled_status())
 		srp_core_suspend(RUNTIME);
 #endif
 	spin_lock_irqsave(&lock, flags);
@@ -1143,8 +1143,10 @@ probe_exit:
 		other->srpclk = i2s->srpclk;
 #endif
 		if (is_secondary(i2s)) {
-			if (srp_enabled_status())
+			if (srp_enabled_status()) {
 				i2s->idma_playback.dma_addr = srp_get_idma_addr();
+				srp_prepare_pm((void *) dai);
+			}
 
 			idma_reg_addr_init(i2s->addr,
 					   i2s->idma_playback.dma_addr);
@@ -1155,11 +1157,6 @@ probe_exit:
 	clk_enable(i2s->srpclk);
 #endif
 	clk_enable(i2s->clk);
-
-#ifdef CONFIG_SND_SAMSUNG_ALP
-	if (is_secondary(i2s))
-		srp_prepare_pm((void *) dai);
-#endif
 
 	if (i2s_pdata->cfg_gpio && i2s_pdata->cfg_gpio(pdev)) {
 		dev_err(&pdev->dev, "Unable to configure gpio\n");
