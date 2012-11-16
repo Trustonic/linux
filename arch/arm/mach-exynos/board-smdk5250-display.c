@@ -354,10 +354,10 @@ static struct s3c_fb_platdata smdk5250_lcd1_pdata __initdata = {
 	.vidcon1	= VIDCON1_INV_VCLK,
 #elif defined(CONFIG_S5P_DP)
 	.vidcon1	= 0,
-#endif
-	.setup_gpio	= smdk5250_fimd_gpio_setup_24bpp,
 	.backlight_off	= smdk5250_backlight_off,
 	.lcd_off	= smdk5250_lcd_off,
+#endif
+	.setup_gpio	= smdk5250_fimd_gpio_setup_24bpp,
 };
 
 #ifdef CONFIG_FB_MIPI_DSIM
