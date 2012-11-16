@@ -1141,14 +1141,13 @@ probe_exit:
 #ifdef CONFIG_SND_SAMSUNG_USE_IDMA
 		other->srpclk = i2s->srpclk;
 #endif
-	}
+		if (is_secondary(i2s)) {
+			if (srp_enabled_status())
+				i2s->idma_playback.dma_addr = srp_get_idma_addr();
 
-	if ((i2s->quirks & QUIRK_SEC_DAI) && !is_secondary(i2s)) {
-		if (srp_enabled_status())
-			other->idma_playback.dma_addr = srp_get_idma_addr();
-
-		idma_reg_addr_init(i2s->addr,
-				   other->idma_playback.dma_addr);
+			idma_reg_addr_init(i2s->addr,
+					   i2s->idma_playback.dma_addr);
+		}
 	}
 
 #ifdef CONFIG_SND_SAMSUNG_USE_IDMA
