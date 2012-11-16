@@ -13,7 +13,6 @@
 
 #include <linux/clk.h>
 #include <linux/platform_device.h>
-#include <linux/usb/otg.h>
 #include <mach/ohci.h>
 #include <plat/usb-phy.h>
 
@@ -21,7 +20,6 @@ struct exynos_ohci_hcd {
 	struct device *dev;
 	struct usb_hcd *hcd;
 	struct clk *clk;
-	struct usb_phy *phy;
 };
 
 static int ohci_exynos_init(struct usb_hcd *hcd)
@@ -115,7 +113,6 @@ static int __devinit exynos_ohci_probe(struct platform_device *pdev)
 
 	exynos_ohci->hcd = hcd;
 	exynos_ohci->clk = clk_get(&pdev->dev, "usbhost");
-	exynos_ohci->phy = usb_get_transceiver();
 
 	if (IS_ERR(exynos_ohci->clk)) {
 		dev_err(&pdev->dev, "Failed to get usbhost clock\n");
@@ -150,9 +147,7 @@ static int __devinit exynos_ohci_probe(struct platform_device *pdev)
 		goto fail;
 	}
 
-	if (exynos_ohci->phy)
-		usb_phy_init(exynos_ohci->phy);
-	else if (pdata->phy_init)
+	if (pdata->phy_init)
 		pdata->phy_init(pdev, S5P_USB_PHY_HOST);
 
 	ohci = hcd_to_ohci(hcd);
@@ -163,9 +158,6 @@ static int __devinit exynos_ohci_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Failed to add USB HCD\n");
 		goto fail;
 	}
-
-	if (exynos_ohci->phy)
-		otg_set_host(exynos_ohci->phy->otg, &hcd->self);
 
 	platform_set_drvdata(pdev, exynos_ohci);
 
@@ -180,8 +172,6 @@ fail_clken:
 fail_clk:
 	usb_put_hcd(hcd);
 fail_hcd:
-	if (exynos_ohci->phy)
-		usb_put_transceiver(exynos_ohci->phy);
 	kfree(exynos_ohci);
 	return err;
 }
@@ -194,9 +184,7 @@ static int __devexit exynos_ohci_remove(struct platform_device *pdev)
 
 	usb_remove_hcd(hcd);
 
-	if (exynos_ohci->phy)
-		usb_put_transceiver(exynos_ohci->phy);
-	else if (pdata && pdata->phy_exit)
+	if (pdata && pdata->phy_exit)
 		pdata->phy_exit(pdev, S5P_USB_PHY_HOST);
 
 	iounmap(hcd->regs);
@@ -233,9 +221,6 @@ static int exynos_ohci_suspend(struct device *dev)
 	unsigned long flags;
 	int rc = 0;
 
-	if (exynos_ohci->phy)
-		return 0;
-
 	/*
 	 * Root hub was already suspended. Disable irq emission and
 	 * mark HW unaccessible, bail out if RH has been resumed. Use
@@ -265,9 +250,6 @@ static int exynos_ohci_resume(struct device *dev)
 	struct usb_hcd *hcd = exynos_ohci->hcd;
 	struct platform_device *pdev = to_platform_device(dev);
 	struct exynos4_ohci_platdata *pdata = pdev->dev.platform_data;
-
-	if (exynos_ohci->phy)
-		return 0;
 
 	if (pdata && pdata->phy_init)
 		pdata->phy_init(pdev, S5P_USB_PHY_HOST);
