@@ -36,6 +36,10 @@
 #define DWMCI_BUSY_CHK_CLK_STOP_EN		BIT(2)
 #define DWMCI_RXDATA_START_BIT_SEL		BIT(1)
 #define DWMCI_RDDQS_EN				BIT(0)
+#define DWMCI_DDR200_RDDQS_EN_DEF	DWMCI_TXDT_CRC_TIMER_FASTLIMIT(0x12) | \
+					DWMCI_TXDT_CRC_TIMER_INITVAL(0x15)
+#define DWMCI_DDR200_DLINE_CTRL_DEF	DWMCI_FIFO_CLK_DELAY_CTRL(0x2) | \
+					DWMCI_RD_DQS_DELAY_CTRL(0x40)
 
 /* DDR200 Async FIFO Control */
 #define DWMCI_ASYNC_FIFO_RESET		BIT(0)
@@ -77,7 +81,7 @@ static void exynos_dwmci_set_io_timing(void *data, unsigned char timing)
 	struct dw_mci *host = (struct dw_mci *)data;
 	struct dw_mci_board *pdata = host->pdata;
 	struct dw_mci_clk *clk_tbl = pdata->clk_tbl;
-	u32 clksel, regs;
+	u32 clksel, rddqs, dline;
 	u32 sclkin, cclkin;
 
 	if (timing > MMC_TIMING_MMC_HS200_DDR) {
@@ -87,6 +91,8 @@ static void exynos_dwmci_set_io_timing(void *data, unsigned char timing)
 
 	sclkin = clk_tbl[timing].sclkin;
 	cclkin = clk_tbl[timing].cclkin;
+	rddqs = DWMCI_DDR200_RDDQS_EN_DEF;
+	dline = DWMCI_DDR200_DLINE_CTRL_DEF;
 	clksel = __raw_readl(host->regs + DWMCI_CLKSEL);
 
 	if (host->bus_hz != cclkin) {
@@ -97,16 +103,8 @@ static void exynos_dwmci_set_io_timing(void *data, unsigned char timing)
 
 	if (timing == MMC_TIMING_MMC_HS200_DDR) {
 		clksel = pdata->ddr200_timing;
-		regs = __raw_readl(host->regs + DWMCI_DDR200_RDDQS_EN);
-		regs |= DWMCI_TXDT_CRC_TIMER_FASTLIMIT(0x12) |
-			DWMCI_TXDT_CRC_TIMER_INITVAL(0x15) |
-			DWMCI_RDDQS_EN;
-		__raw_writel(regs, host->regs + DWMCI_DDR200_RDDQS_EN);
-
-		regs = __raw_readl(host->regs + DWMCI_DDR200_DLINE_CTRL);
-		regs |= DWMCI_FIFO_CLK_DELAY_CTRL(0x2) |
-			DWMCI_RD_DQS_DELAY_CTRL(90);
-		__raw_writel(regs, host->regs + DWMCI_DDR200_DLINE_CTRL);
+		rddqs |= DWMCI_RDDQS_EN;
+		dline |= DWMCI_RD_DQS_DELAY_CTRL(90);
 	} else if (timing == MMC_TIMING_MMC_HS200 ||
 			timing == MMC_TIMING_UHS_SDR104) {
 		clksel = (clksel & 0xfff8ffff) | (pdata->clk_drv << 16);
@@ -119,6 +117,8 @@ static void exynos_dwmci_set_io_timing(void *data, unsigned char timing)
 	}
 
 	__raw_writel(clksel, host->regs + DWMCI_CLKSEL);
+	__raw_writel(rddqs, host->regs + DWMCI_DDR200_RDDQS_EN);
+	__raw_writel(dline, host->regs + DWMCI_DDR200_DLINE_CTRL);
 }
 
 static struct dw_mci_board exynos4_dwmci_pdata = {
