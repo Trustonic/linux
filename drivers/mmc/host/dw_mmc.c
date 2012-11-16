@@ -1420,6 +1420,12 @@ static void dw_mci_tasklet_func(unsigned long priv)
 	state = host->state;
 	data = host->data;
 
+	if (host->cmd_status & SDMMC_INT_HLE) {
+		clear_bit(EVENT_CMD_COMPLETE, &host->pending_events);
+		dev_err(&host->dev, "hardware locked write error\n");
+		goto unlock;
+	}
+
 	do {
 		prev_state = state;
 
@@ -2035,6 +2041,13 @@ static irqreturn_t dw_mci_interrupt(int irq, void *dev_id)
 
 		if (!pending)
 			break;
+
+		if (pending & SDMMC_INT_HLE) {
+			mci_writel(host, RINTSTS, SDMMC_INT_HLE);
+			host->cmd_status = pending;
+			tasklet_schedule(&host->tasklet);
+			ret = IRQ_HANDLED;
+		}
 
 		if (pending & DW_MCI_CMD_ERROR_FLAGS) {
 			mci_writel(host, RINTSTS, DW_MCI_CMD_ERROR_FLAGS);
