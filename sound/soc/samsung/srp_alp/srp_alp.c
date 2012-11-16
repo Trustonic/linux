@@ -90,7 +90,7 @@ static void srp_obuf_elapsed(void)
 	srp.obuf_next = srp.obuf_next ? 0 : 1;
 }
 
-static void srp_wait_for_pending(void)
+void srp_wait_for_pending(void)
 {
 	unsigned long deadline = jiffies + HZ / 10;
 

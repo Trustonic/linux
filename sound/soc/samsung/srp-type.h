@@ -20,12 +20,14 @@ extern unsigned int srp_get_idma_addr(void);
 extern void srp_prepare_pm(void *info);
 extern void srp_core_reset(void);
 extern void srp_core_suspend(int num);
+extern void srp_wait_for_pending(void);
 #else
 bool srp_enabled_status(void) {return 0;}
 unsigned int srp_get_idma_addr(void) {return 0;}
 void srp_prepare_pm(void *info) {return;}
 void srp_core_reset(void) {return;}
 void srp_core_suspend(int num) {return;}
+void srp_wait_for_pending(void) {return;}
 #endif
 
 #endif /* __SND_SOC_SAMSUNG_SRP_TYPE_H */

@@ -786,6 +786,9 @@ void i2s_disable(struct snd_soc_dai *dai)
 		i2s_register_save(i2s);
 		clk_disable(i2s->clk);
 #ifdef CONFIG_SND_SAMSUNG_USE_IDMA
+		if (srp_enabled_status())
+			srp_wait_for_pending();
+
 		clk_disable(i2s->srpclk);
 #endif
 
