@@ -448,10 +448,13 @@ static int i2s_set_sysclk(struct snd_soc_dai *dai,
 	case SAMSUNG_I2S_RCLKSRC_0: /* clock corrsponding to IISMOD[10] := 0 */
 	case SAMSUNG_I2S_RCLKSRC_1: /* clock corrsponding to IISMOD[10] := 1 */
 		if ((i2s->quirks & QUIRK_NO_MUXPSR)
-				|| (clk_id == SAMSUNG_I2S_RCLKSRC_0))
+				|| (clk_id == SAMSUNG_I2S_RCLKSRC_0)) {
 			clk_id = 0;
-		else
+			mod &= ~MOD_IMS_SYSMUX;
+		} else {
 			clk_id = 1;
+			mod |= MOD_IMS_SYSMUX;
+		}
 
 		if (!any_active(i2s)) {
 			if (i2s->op_clk) {
@@ -478,11 +481,6 @@ static int i2s_set_sysclk(struct snd_soc_dai *dai,
 			i2s->rclk_srcrate = other->rclk_srcrate;
 			return 0;
 		}
-
-		if (clk_id == 0)
-			mod &= ~MOD_IMS_SYSMUX;
-		else
-			mod |= MOD_IMS_SYSMUX;
 		break;
 
 	default:
