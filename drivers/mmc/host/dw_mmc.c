@@ -833,6 +833,24 @@ static void dw_mci_submit_data(struct dw_mci *host, struct mmc_data *data)
 	}
 }
 
+static bool dw_mci_wait_data_busy(struct dw_mci *host)
+{
+	u32 status;
+	unsigned long timeout = jiffies + msecs_to_jiffies(1000);
+
+	do {
+		status = mci_readl(host, STATUS);
+		if (!(status & SDMMC_DATA_BUSY))
+			return true;
+
+		usleep_range(10, 20);
+	} while (time_before(jiffies, timeout));
+
+	dev_err(&host->dev, "Data[0]: data is busy\n");
+
+	return false;
+}
+
 static void dw_mci_setup_bus(struct dw_mci_slot *slot, int force)
 {
 	struct dw_mci *host = slot->host;
@@ -996,29 +1014,18 @@ static void dw_mci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 {
 	struct dw_mci_slot *slot = mmc_priv(mmc);
 	struct dw_mci *host = slot->host;
-	int timeout = 100000; /* ~ 1 - 2 sec */
-	u32 status;
 
 	WARN_ON(slot->mrq);
 
-	do {
-		if (mrq->cmd->opcode == MMC_STOP_TRANSMISSION)
-			break;
-
-		status = mci_readl(host, STATUS);
-		if (!(status & BIT(9)))
-			break;
-
-		if (!timeout--) {
-			printk(KERN_ERR "%s: Data0: Never released\n",
-					mmc_hostname(mmc));
-			mrq->cmd->error = -ENOTRECOVERABLE;
-			mmc_request_done(mmc, mrq);
-			return;
+	if (mrq->cmd->opcode != MMC_STOP_TRANSMISSION) {
+		if (!dw_mci_wait_data_busy(host)) {
+			if (mrq->cmd->opcode != MMC_SEND_STATUS) {
+				mrq->cmd->error = -ENOTRECOVERABLE;
+				mmc_request_done(mmc, mrq);
+				return;
+			}
 		}
-
-		usleep_range(10, 20);
-	} while(1);
+	}
 
 	/*
 	 * The check for card presence and queueing of the request must be

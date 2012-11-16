@@ -131,6 +131,7 @@
 /* Status register defines */
 #define SDMMC_STATUS_DMA_REQ 		BIT(31)
 #define SDMMC_GET_FCNT(x)		(((x)>>17) & 0x1FFF)
+#define SDMMC_DATA_BUSY			BIT(9)
 /* Internal DMAC interrupt defines */
 #define SDMMC_IDMAC_INT_AI		BIT(9)
 #define SDMMC_IDMAC_INT_NI		BIT(8)
