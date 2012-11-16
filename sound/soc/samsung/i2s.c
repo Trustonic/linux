@@ -738,6 +738,15 @@ static void i2s_reg_restore(struct snd_soc_dai *dai)
 	return;
 }
 
+static void pm_runtime_ctl(struct i2s_dai *i2s, bool enabled)
+{
+	struct platform_device *pdev = NULL;
+
+	pdev = is_secondary(i2s) ? i2s->pri_dai->pdev : i2s->pdev;
+	enabled ? pm_runtime_get_sync(&pdev->dev)
+		: pm_runtime_put_sync(&pdev->dev);
+}
+
 void i2s_enable(struct snd_soc_dai *dai)
 {
 	struct i2s_dai *i2s = to_info(dai);
@@ -771,7 +780,7 @@ void i2s_enable(struct snd_soc_dai *dai)
 	spin_unlock_irqrestore(&lock, flags);
 
 	if (!is_opened(other)) {
-		pm_runtime_get_sync(&pdev->dev);
+		pm_runtime_ctl(i2s, true);
 		audss_reg_restore(dai);
 #ifdef CONFIG_SND_SAMSUNG_USE_IDMA
 		clk_enable(i2s->srpclk);
@@ -796,8 +805,6 @@ void i2s_disable(struct snd_soc_dai *dai)
 {
 	struct i2s_dai *i2s = to_info(dai);
 	struct i2s_dai *other = i2s->pri_dai ? : i2s->sec_dai;
-	struct platform_device *pdev = i2s->pri_dai ?
-				       i2s->pri_dai->pdev : i2s->pdev;
 	unsigned long flags;
 
 
@@ -841,8 +848,7 @@ void i2s_disable(struct snd_soc_dai *dai)
 		clk_disable(i2s->srpclk);
 #endif
 		audss_reg_save(dai);
-
-		pm_runtime_put_sync(&pdev->dev);
+		pm_runtime_ctl(i2s, false);
 	}
 }
 
@@ -1143,8 +1149,6 @@ static int samsung_i2s_dai_probe(struct snd_soc_dai *dai)
 	struct s3c_audio_pdata *i2s_pdata = pdev->dev.platform_data;
 	int ret;
 
-	pm_runtime_get_sync(&pdev->dev);
-
 	if (other && other->clk) /* If this is second dai probe */
 		goto probe_exit;
 
@@ -1179,6 +1183,8 @@ static int samsung_i2s_dai_probe(struct snd_soc_dai *dai)
 #endif
 
 probe_exit:
+	pm_runtime_ctl(i2s, true);
+
 	/* Set clock hierarchy for audio subsystem */
 	ret = clk_set_heirachy(i2s);
 	if (ret) {
@@ -1244,7 +1250,7 @@ probe_exit:
 #endif
 	audss_reg_save(dai);
 	i2s->opencnt = 0;
-	pm_runtime_put_sync(&pdev->dev);
+	pm_runtime_ctl(i2s, false);
 
 	return 0;
 
