@@ -455,20 +455,11 @@ static int i2s_set_sysclk(struct snd_soc_dai *dai,
 
 		if (!any_active(i2s)) {
 			if (i2s->op_clk) {
-				if ((clk_id && !(mod & MOD_IMS_SYSMUX)) ||
-					(!clk_id && (mod & MOD_IMS_SYSMUX))) {
-					clk_disable(i2s->op_clk);
-					clk_put(i2s->op_clk);
-				} else {
-					i2s->rclk_srcrate =
-						clk_get_rate(i2s->op_clk);
-					return 0;
-				}
+				i2s->rclk_srcrate = clk_get_rate(i2s->op_clk);
+				break;
 			}
 
-			i2s->op_clk = clk_get(&i2s->pdev->dev,
-						i2s->src_clk[clk_id]);
-			clk_enable(i2s->op_clk);
+			i2s->op_clk = clk_id ? i2s->mout_i2s : i2s->dout_bus;
 			i2s->rclk_srcrate = clk_get_rate(i2s->op_clk);
 
 			/* Over-ride the other's */
@@ -552,10 +543,7 @@ static int i2s_set_fmt(struct snd_soc_dai *dai,
 		tmp |= MOD_SLAVE;
 		break;
 	case SND_SOC_DAIFMT_CBS_CFS:
-		/* Set default source clock in Master mode */
-		if (i2s->rclk_srcrate == 0)
-			i2s_set_sysclk(dai, SAMSUNG_I2S_RCLKSRC_0,
-							0, SND_SOC_CLOCK_IN);
+		tmp &= ~MOD_SLAVE;
 		break;
 	default:
 		dev_err(&i2s->pdev->dev, "master/slave format not supported\n");
