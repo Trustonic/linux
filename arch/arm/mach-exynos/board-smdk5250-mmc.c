@@ -18,6 +18,11 @@
 
 #include "board-smdk5250.h"
 
+static int exynos_dwmci0_get_bus_wd(u32 slot_id)
+{
+	return 8;
+}
+
 static void exynos_dwmci0_cfg_gpio(int width)
 {
 	unsigned int gpio;
@@ -68,6 +73,7 @@ static struct dw_mci_board exynos_dwmci0_pdata __initdata = {
 	.hclk_name		= "dwmci",
 	.cclk_name		= "sclk_dwmci",
 	.cfg_gpio		= exynos_dwmci0_cfg_gpio,
+	.get_bus_wd		= exynos_dwmci0_get_bus_wd,
 	.sdr_timing		= 0x03020001,
 	.ddr_timing		= 0x03030002,
 	.clk_drv		= 0x3,
