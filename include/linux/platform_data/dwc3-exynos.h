@@ -32,6 +32,8 @@ struct dwc3_exynos_data {
 #define FORCE_PM_PERIPHERAL	(1 << 2)
 /* Initialize ID state to 1; useful when ID sensing isn't available */
 #define FORCE_INIT_PERIPHERAL	(1 << 3)
+/* Do not create udc and xhci child devices */
+#define DUMMY_DRD		(1 << 4)
 	int id_irq;
 	int vbus_irq;
 	unsigned long irq_flags;

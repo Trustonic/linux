@@ -488,6 +488,11 @@ static int __devinit exynos_drd_probe(struct platform_device *pdev)
 	exynos_drd_init(&drd->core);
 	exynos_drd_phy_set(&drd->core);
 
+	if (pdata->quirks & DUMMY_DRD) {
+		dev_info(dev, "dummy\n");
+		goto done;
+	}
+
 	ret = exynos_drd_switch_init(drd);
 	if (ret < 0)
 		goto err_sw;
@@ -500,6 +505,7 @@ static int __devinit exynos_drd_probe(struct platform_device *pdev)
 	if (ret < 0)
 		goto err_xhci;
 
+done:
 	pm_runtime_set_active(dev);
 	pm_runtime_enable(dev);
 
