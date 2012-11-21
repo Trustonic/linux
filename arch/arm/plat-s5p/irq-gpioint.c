@@ -47,23 +47,24 @@ static int s5p_gpioint_set_type(struct irq_data *d, unsigned int type)
 {
 	struct irq_chip_generic *gc = irq_data_get_irq_chip_data(d);
 	struct irq_chip_type *ct = gc->chip_types;
+	unsigned int type_s5p = 0;
 	unsigned int shift = (d->irq - gc->irq_base) << 2;
 
 	switch (type) {
 	case IRQ_TYPE_EDGE_RISING:
-		type = S5P_IRQ_TYPE_EDGE_RISING;
+		type_s5p = S5P_IRQ_TYPE_EDGE_RISING;
 		break;
 	case IRQ_TYPE_EDGE_FALLING:
-		type = S5P_IRQ_TYPE_EDGE_FALLING;
+		type_s5p = S5P_IRQ_TYPE_EDGE_FALLING;
 		break;
 	case IRQ_TYPE_EDGE_BOTH:
-		type = S5P_IRQ_TYPE_EDGE_BOTH;
+		type_s5p = S5P_IRQ_TYPE_EDGE_BOTH;
 		break;
 	case IRQ_TYPE_LEVEL_HIGH:
-		type = S5P_IRQ_TYPE_LEVEL_HIGH;
+		type_s5p = S5P_IRQ_TYPE_LEVEL_HIGH;
 		break;
 	case IRQ_TYPE_LEVEL_LOW:
-		type = S5P_IRQ_TYPE_LEVEL_LOW;
+		type_s5p = S5P_IRQ_TYPE_LEVEL_LOW;
 		break;
 	case IRQ_TYPE_NONE:
 	default:
@@ -72,7 +73,7 @@ static int s5p_gpioint_set_type(struct irq_data *d, unsigned int type)
 	}
 
 	gc->type_cache &= ~(0x7 << shift);
-	gc->type_cache |= type << shift;
+	gc->type_cache |= type_s5p << shift;
 	writel(gc->type_cache, gc->reg_base + ct->regs.type);
 
 	if (type & IRQ_TYPE_EDGE_BOTH)
