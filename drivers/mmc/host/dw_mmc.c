@@ -263,6 +263,19 @@ static void dw_mci_set_timeout(struct dw_mci *host)
 	mci_writel(host, TMOUT, 0xffffffff);
 }
 
+static inline bool dw_mci_stop_abort_cmd(struct mmc_command *cmd)
+{
+	u32 op = cmd->opcode;
+
+	if ((op == MMC_STOP_TRANSMISSION) ||
+	    (op == MMC_GO_IDLE_STATE) ||
+	    (op == MMC_GO_INACTIVE_STATE) ||
+	    ((op == SD_IO_RW_EXTENDED) && (cmd->arg & 0x80000000) &&
+	     ((cmd->arg >> 9) & 0xff) == SDIO_CCCR_ABORT))
+		return true;
+	return false;
+}
+
 static u32 dw_mci_prepare_command(struct mmc_host *mmc, struct mmc_command *cmd)
 {
 	struct mmc_data	*data;
@@ -1019,29 +1032,22 @@ static void dw_mci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 
 	WARN_ON(slot->mrq);
 
-	if (mrq->cmd->opcode != MMC_STOP_TRANSMISSION) {
-		if (!dw_mci_wait_data_busy(host)) {
-			if (mrq->cmd->opcode != MMC_SEND_STATUS) {
-				mrq->cmd->error = -ENOTRECOVERABLE;
-				mmc_request_done(mmc, mrq);
-				return;
-			}
-		}
-	}
-
-	/*
-	 * The check for card presence and queueing of the request must be
-	 * atomic, otherwise the card could be removed in between and the
-	 * request wouldn't fail until another card was inserted.
-	 */
-	spin_lock_bh(&host->lock);
-
 	if (!test_bit(DW_MMC_CARD_PRESENT, &slot->flags)) {
-		spin_unlock_bh(&host->lock);
 		mrq->cmd->error = -ENOMEDIUM;
 		mmc_request_done(mmc, mrq);
 		return;
 	}
+
+	if (!dw_mci_stop_abort_cmd(mrq->cmd) &&
+			mrq->cmd->opcode != MMC_SEND_STATUS) {
+		if (!dw_mci_wait_data_busy(host)) {
+				mrq->cmd->error = -ENOTRECOVERABLE;
+				mmc_request_done(mmc, mrq);
+				return;
+		}
+	}
+
+	spin_lock_bh(&host->lock);
 
 	dw_mci_queue_request(host, slot, mrq);
 
