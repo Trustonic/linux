@@ -495,14 +495,29 @@ static inline struct exynos_ss_udc_ep *our_ep(struct usb_ep *ep)
 	return container_of(ep, struct exynos_ss_udc_ep, ep);
 }
 
+static inline int epindex_to_epnum(int epindex, int *epdir)
+{
+	if (epdir)
+		*epdir = epindex % 2;
+
+	return epindex;
+}
+
+static inline int epnum_to_epindex(int epnum)
+{
+	return epnum;
+}
+
+#define EP0INDEX	epnum_to_epindex(0)
+
+static inline int phys_to_epnum(int phys_epnum)
+{
+	return phys_epnum >> 1;
+}
+
 static inline int get_phys_epnum(struct exynos_ss_udc_ep *udc_ep)
 {
 	return udc_ep->epnum * 2 + udc_ep->dir_in;
-}
-
-static inline int get_usb_epnum(int index)
-{
-	return index >> 1;
 }
 
 #endif /* __EXYNOS_SS_UDC_H__ */

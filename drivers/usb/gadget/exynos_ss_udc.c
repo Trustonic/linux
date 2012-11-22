@@ -88,6 +88,17 @@ static int poll_bit_clear(void __iomem *ptr, u32 val, int timeout)
 	return -ETIME;
 }
 
+static struct exynos_ss_udc_ep *get_udc_ep(struct exynos_ss_udc *udc,
+					   int phys_epnum)
+{
+	int epnum, epindex;
+
+	epnum = phys_to_epnum(phys_epnum);
+	epindex = epnum_to_epindex(epnum);
+
+	return &udc->eps[epindex];
+}
+
 /**
  * ep_from_windex - convert control wIndex value to endpoint
  * @udc: The device state.
@@ -99,17 +110,18 @@ static int poll_bit_clear(void __iomem *ptr, u32 val, int timeout)
 static struct exynos_ss_udc_ep *ep_from_windex(struct exynos_ss_udc *udc,
 					       u32 windex)
 {
-	struct exynos_ss_udc_ep *udc_ep = &udc->eps[windex & 0x7F];
 	int dir = (windex & USB_DIR_IN) ? 1 : 0;
-	int idx = windex & 0x7F;
+	int epnum = windex & 0x7F;
+	int epindex = epnum_to_epindex(epnum);
+	struct exynos_ss_udc_ep *udc_ep = &udc->eps[epindex];
 
 	if (windex >= 0x100)
 		return NULL;
 
-	if (idx > EXYNOS_USB3_EPS)
+	if (epindex >= EXYNOS_USB3_EPS)
 		return NULL;
 
-	if (idx && udc_ep->dir_in != dir)
+	if (epnum && udc_ep->dir_in != dir)
 		return NULL;
 
 	return udc_ep;
@@ -556,7 +568,7 @@ static int exynos_ss_udc_ep_sethalt(struct usb_ep *ep, int value)
 	struct exynos_ss_udc *udc = udc_ep->parent;
 	struct exynos_ss_udc_ep_command epcmd = {{0}, };
 	int epnum = udc_ep->epnum;
-	int index = get_phys_epnum(udc_ep);
+	int phys_epnum = get_phys_epnum(udc_ep);
 	unsigned long irqflags;
 	int res;
 
@@ -574,7 +586,7 @@ static int exynos_ss_udc_ep_sethalt(struct usb_ep *ep, int value)
 		/* Only OUT direction can be stalled */
 		epcmd.ep = 0;
 	else
-		epcmd.ep = index;
+		epcmd.ep = phys_epnum;
 
 	if (value)
 		epcmd.cmdtyp = EXYNOS_USB3_DEPCMDx_CmdTyp_DEPSSTALL;
@@ -748,7 +760,7 @@ static void exynos_ss_udc_enqueue_status(struct exynos_ss_udc *udc)
 		return;
 	}
 
-	ret = exynos_ss_udc_ep_queue(&udc->eps[0].ep, req, GFP_ATOMIC);
+	ret = exynos_ss_udc_ep_queue(&udc->eps[EP0INDEX].ep, req, GFP_ATOMIC);
 	if (ret < 0)
 		dev_err(udc->dev, "%s: failed queue (%d)\n", __func__, ret);
 }
@@ -786,7 +798,7 @@ static int exynos_ss_udc_enqueue_data(struct exynos_ss_udc *udc,
 		return -EAGAIN;
 	}
 
-	ret = exynos_ss_udc_ep_queue(&udc->eps[0].ep, req, GFP_ATOMIC);
+	ret = exynos_ss_udc_ep_queue(&udc->eps[EP0INDEX].ep, req, GFP_ATOMIC);
 	if (ret < 0) {
 		dev_err(udc->dev, "%s: failed to enqueue data request (%d)\n",
 				   __func__, ret);
@@ -807,6 +819,7 @@ static void exynos_ss_udc_enqueue_setup(struct exynos_ss_udc *udc)
 {
 	struct usb_request *req = udc->ctrl_req;
 	struct exynos_ss_udc_req *udc_req = our_req(req);
+	int ep0index = EP0INDEX;
 	int ret;
 
 	dev_dbg(udc->dev, "%s: queueing setup request\n", __func__);
@@ -821,9 +834,9 @@ static void exynos_ss_udc_enqueue_setup(struct exynos_ss_udc *udc)
 		return;
 	}
 
-	udc->eps[0].dir_in = 0;
+	udc->eps[ep0index].dir_in = 0;
 
-	ret = exynos_ss_udc_ep_queue(&udc->eps[0].ep, req, GFP_ATOMIC);
+	ret = exynos_ss_udc_ep_queue(&udc->eps[ep0index].ep, req, GFP_ATOMIC);
 	if (ret < 0)
 		dev_err(udc->dev, "%s: failed queue (%d)\n", __func__, ret);
 }
@@ -1254,7 +1267,7 @@ static int exynos_ss_udc_process_set_feature(struct exynos_ss_udc *udc,
 static int exynos_ss_udc_process_get_status(struct exynos_ss_udc *udc,
 					    struct usb_ctrlrequest *ctrl)
 {
-	struct exynos_ss_udc_ep *udc_ep0 = &udc->eps[0];
+	struct exynos_ss_udc_ep *udc_ep0 = &udc->eps[EP0INDEX];
 	struct exynos_ss_udc_ep *udc_ep;
 	u8 *reply = udc->ep0_buff;
 	u32 reg;
@@ -1378,7 +1391,7 @@ static int exynos_ss_udc_process_set_address(struct exynos_ss_udc *udc,
 static void exynos_ss_udc_process_control(struct exynos_ss_udc *udc,
 					  struct usb_ctrlrequest *ctrl)
 {
-	struct exynos_ss_udc_ep *udc_ep0 = &udc->eps[0];
+	struct exynos_ss_udc_ep *udc_ep0 = &udc->eps[EP0INDEX];
 	int ret = 0;
 
 	dev_dbg(udc->dev, "ctrl Req=%02x, Type=%02x, V=%04x, L=%04x\n",
@@ -1597,7 +1610,7 @@ static void exynos_ss_udc_complete_request_lock(struct exynos_ss_udc *udc,
  */
 static void exynos_ss_udc_ep0_restart(struct exynos_ss_udc *udc)
 {
-	struct exynos_ss_udc_ep *udc_ep0 = &udc->eps[0];
+	struct exynos_ss_udc_ep *udc_ep0 = &udc->eps[EP0INDEX];
 
 	exynos_ss_udc_ep_sethalt(&udc_ep0->ep, 1);
 	exynos_ss_udc_kill_all_requests(udc, udc_ep0, -ECONNRESET);
@@ -1768,8 +1781,8 @@ static void exynos_ss_udc_xfer_notready(struct exynos_ss_udc *udc,
 					struct exynos_ss_udc_ep *udc_ep,
 					u32 event)
 {
-	int index = (event & EXYNOS_USB3_DEPEVT_EPNUM_MASK) >> 1;
-	int direction = index & 1;
+	int phys_epnum = (event & EXYNOS_USB3_DEPEVT_EPNUM_MASK) >> 1;
+	int direction = phys_epnum & 1;
 	u32 status = event & EXYNOS_USB3_DEPEVT_EventStatus_CTL_MASK;
 
 	dev_dbg(udc->dev, "%s: ep%d%s\n", __func__, udc_ep->epnum,
@@ -1851,7 +1864,7 @@ static void exynos_ss_udc_irq_connectdone(struct exynos_ss_udc *udc)
 	struct exynos_ss_udc_ep_command epcmd = {{0}, };
 	u32 reg, speed;
 	int mps0, mps;
-	int i;
+	int epindex;
 	int res;
 
 	dev_dbg(udc->dev, "%s\n", __func__);
@@ -1905,9 +1918,14 @@ static void exynos_ss_udc_irq_connectdone(struct exynos_ss_udc *udc)
 			udc->core->ops->phy30_suspend(udc->core, 1);
 	}
 
-	udc->eps[0].ep.maxpacket = mps0;
-	for (i = 1; i < EXYNOS_USB3_EPS; i++)
-		udc->eps[i].ep.maxpacket = mps;
+	for (epindex = 0; epindex < EXYNOS_USB3_EPS; epindex++) {
+		int epnum = epindex_to_epnum(epindex, NULL);
+
+		if (unlikely(epnum == 0))
+			udc->eps[epindex].ep.maxpacket = mps0;
+		else
+			udc->eps[epindex].ep.maxpacket = mps;
+	}
 
 	epcmd.ep = 0;
 	epcmd.param0 = EXYNOS_USB3_DEPCMDPAR0x_MPS(mps0);
@@ -1940,7 +1958,7 @@ static void exynos_ss_udc_irq_usbrst(struct exynos_ss_udc *udc)
 	struct exynos_ss_udc_ep_command epcmd = {{0}, };
 	struct exynos_ss_udc_ep *udc_ep;
 	int res;
-	int epnum;
+	int epindex;
 
 	dev_dbg(udc->dev, "%s\n", __func__);
 #ifdef CONFIG_USB_G_ANDROID
@@ -1968,9 +1986,13 @@ static void exynos_ss_udc_irq_usbrst(struct exynos_ss_udc *udc)
 
 	/* End transfer, kill all requests and clear STALL on the
 	   non-EP0 endpoints */
-	for (epnum = 1; epnum < EXYNOS_USB3_EPS; epnum++) {
+	for (epindex = 0; epindex < EXYNOS_USB3_EPS; epindex++) {
+		int epnum = epindex_to_epnum(epindex, NULL);
 
-		udc_ep = &udc->eps[epnum];
+		if (unlikely(epnum == 0))
+			continue;
+
+		udc_ep = &udc->eps[epindex];
 
 		epcmd.ep = get_phys_epnum(udc_ep);
 
@@ -2054,9 +2076,9 @@ static void exynos_ss_udc_irq_ulstchng(struct exynos_ss_udc *udc, u32 event)
  */
 static void exynos_ss_udc_handle_depevt(struct exynos_ss_udc *udc, u32 event)
 {
-	int index = (event & EXYNOS_USB3_DEPEVT_EPNUM_MASK) >> 1;
-	int epnum = get_usb_epnum(index);
-	struct exynos_ss_udc_ep *udc_ep = &udc->eps[epnum];
+	int phys_epnum = (event & EXYNOS_USB3_DEPEVT_EPNUM_MASK) >> 1;
+	struct exynos_ss_udc_ep *udc_ep = get_udc_ep(udc, phys_epnum);
+	int epnum = udc_ep->epnum;
 
 	switch (event & EXYNOS_USB3_DEPEVT_EVENT_MASK) {
 	case EXYNOS_USB3_DEPEVT_EVENT_XferNotReady:
@@ -2203,7 +2225,7 @@ static irqreturn_t exynos_ss_udc_irq(int irq, void *pw)
  * exynos_ss_udc_initep - initialize a single endpoint
  * @udc: The device state.
  * @udc_ep: The endpoint being initialised.
- * @epnum: The endpoint number.
+ * @epindex: The endpoint structure index.
  *
  * Initialise the given endpoint (as part of the probe and device state
  * creation) to give to the gadget driver. Setup the endpoint name, any
@@ -2211,20 +2233,20 @@ static irqreturn_t exynos_ss_udc_irq(int irq, void *pw)
  */
 static int __devinit exynos_ss_udc_initep(struct exynos_ss_udc *udc,
 					  struct exynos_ss_udc_ep *udc_ep,
-					  int epnum)
+					  int epindex)
 {
+	int epnum, epdir;
 	char *dir;
+
+	epnum = epindex_to_epnum(epindex, &epdir);
+
+	udc_ep->epnum = epnum;
+	udc_ep->dir_in = !!epdir;
 
 	if (epnum == 0)
 		dir = "";
-	else if ((epnum % 2) == 0) {
-		dir = "out";
-	} else {
-		dir = "in";
-		udc_ep->dir_in = 1;
-	}
-
-	udc_ep->epnum = epnum;
+	else
+		dir = udc_ep->dir_in ? "in" : "out";
 
 	snprintf(udc_ep->name, sizeof(udc_ep->name), "ep%d%s", epnum, dir);
 
@@ -2477,14 +2499,14 @@ static void exynos_ss_udc_ep_deactivate(struct exynos_ss_udc *udc,
 					struct exynos_ss_udc_ep *udc_ep)
 {
 	struct exynos_ss_udc_ep_command epcmd = {{0}, };
-	int index = get_phys_epnum(udc_ep);
+	int phys_epnum = get_phys_epnum(udc_ep);
 
 	udc->eps_enabled = false;
 
 	if (udc_ep->tri && !udc_ep->not_ready) {
 		int res;
 
-		epcmd.ep = get_phys_epnum(udc_ep);
+		epcmd.ep = phys_epnum;
 		epcmd.cmdtyp = EXYNOS_USB3_DEPCMDx_CmdTyp_DEPENDXFER;
 		epcmd.cmdflags = (udc_ep->tri <<
 			EXYNOS_USB3_DEPCMDx_CommandParam_SHIFT) |
@@ -2501,7 +2523,7 @@ static void exynos_ss_udc_ep_deactivate(struct exynos_ss_udc *udc,
 		udc_ep->tri = 0;
 	}
 
-	__bic32(udc->regs + EXYNOS_USB3_DALEPENA, 1 << index);
+	__bic32(udc->regs + EXYNOS_USB3_DALEPENA, 1 << phys_epnum);
 }
 
 /**
@@ -2562,7 +2584,7 @@ static int exynos_ss_udc_enable(struct exynos_ss_udc *udc)
 	exynos_ss_udc_corereset(udc);
 	exynos_ss_udc_init(udc);
 
-	udc->eps[0].enabled = 1;
+	udc->eps[EP0INDEX].enabled = 1;
 	udc->ep0_state = EP0_SETUP_PHASE;
 	exynos_ss_udc_enqueue_setup(udc);
 
@@ -2575,12 +2597,12 @@ static int exynos_ss_udc_enable(struct exynos_ss_udc *udc)
 static int exynos_ss_udc_disable(struct exynos_ss_udc *udc)
 {
 	struct platform_device *pdev = to_platform_device(udc->dev);
-	int ep;
+	int epindex;
 
 	exynos_ss_udc_run_stop(udc, 0);
 	/* all endpoints should be shutdown */
-	for (ep = 0; ep < EXYNOS_USB3_EPS; ep++)
-		exynos_ss_udc_ep_disable(&udc->eps[ep].ep);
+	for (epindex = 0; epindex < EXYNOS_USB3_EPS; epindex++)
+		exynos_ss_udc_ep_disable(&udc->eps[epindex].ep);
 
 	call_gadget(udc, disconnect);
 	udc->gadget.speed = USB_SPEED_UNKNOWN;
@@ -2697,7 +2719,7 @@ static int __devinit exynos_ss_udc_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct exynos_ss_udc *udc;
 	struct resource *res;
-	int epnum;
+	int epindex;
 	int ret;
 
 	if (!pdata) {
@@ -2808,11 +2830,13 @@ static int __devinit exynos_ss_udc_probe(struct platform_device *pdev)
 	/* setup endpoint information */
 
 	INIT_LIST_HEAD(&udc->gadget.ep_list);
-	udc->gadget.ep0 = &udc->eps[0].ep;
+
+	epindex = EP0INDEX;
+	udc->gadget.ep0 = &udc->eps[epindex].ep;
 
 	/* initialise the endpoints now the core has been initialised */
-	for (epnum = 0; epnum < EXYNOS_USB3_EPS; epnum++) {
-		ret = exynos_ss_udc_initep(udc, &udc->eps[epnum], epnum);
+	for (epindex = 0; epindex < EXYNOS_USB3_EPS; epindex++) {
+		ret = exynos_ss_udc_initep(udc, &udc->eps[epindex], epindex);
 		if (ret < 0) {
 			dev_err(dev, "cannot get memory for TRB\n");
 			return ret;
