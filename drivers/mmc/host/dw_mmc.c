@@ -289,7 +289,7 @@ static u32 dw_mci_prepare_command(struct mmc_host *mmc, struct mmc_command *cmd)
 
 	if (cmdr == MMC_STOP_TRANSMISSION)
 		cmdr |= SDMMC_CMD_STOP;
-	else
+	else if (cmdr != MMC_SEND_STATUS)
 		cmdr |= SDMMC_CMD_PRV_DAT_WAIT;
 
 	if ((cmd->opcode == 52) && (argr == 0x06)) {
