@@ -96,7 +96,6 @@ static int exynos_ohci_suspend(struct device *dev)
 	struct platform_device *pdev = to_platform_device(dev);
 	struct exynos4_ohci_platdata *pdata = pdev->dev.platform_data;
 	unsigned long flags;
-	int rc = 0;
 
 	/*
 	 * Root hub was already suspended. Disable irq emission and
@@ -107,19 +106,18 @@ static int exynos_ohci_suspend(struct device *dev)
 	spin_lock_irqsave(&ohci->lock, flags);
 	if (ohci->rh_state != OHCI_RH_SUSPENDED &&
 			ohci->rh_state != OHCI_RH_HALTED) {
-		rc = -EINVAL;
-		goto fail;
+		spin_unlock_irqrestore(&ohci->lock, flags);
+		return -EINVAL;
 	}
 
 	clear_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags);
 
+	spin_unlock_irqrestore(&ohci->lock, flags);
+
 	if (pdata && pdata->phy_exit)
 		pdata->phy_exit(pdev, S5P_USB_PHY_HOST);
 
-fail:
-	spin_unlock_irqrestore(&ohci->lock, flags);
-
-	return rc;
+	return 0;
 }
 
 static int exynos_ohci_resume(struct device *dev)
