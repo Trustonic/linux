@@ -124,7 +124,9 @@ int mmc_io_rw_extended(struct mmc_card *card, int write, unsigned fn,
 	struct mmc_request mrq = {NULL};
 	struct mmc_command cmd = {0};
 	struct mmc_data data = {0};
-	struct scatterlist sg;
+	struct scatterlist *sg_ptr;
+	unsigned int nents, left_size, i;
+	unsigned int seg_size = card->host->max_seg_size;
 
 	BUG_ON(!card);
 	BUG_ON(fn > 7);
@@ -152,10 +154,21 @@ int mmc_io_rw_extended(struct mmc_card *card, int write, unsigned fn,
 	/* Code in host drivers/fwk assumes that "blocks" always is >=1 */
 	data.blocks = blocks ? blocks : 1;
 	data.flags = write ? MMC_DATA_WRITE : MMC_DATA_READ;
-	data.sg = &sg;
-	data.sg_len = 1;
 
-	sg_init_one(&sg, buf, data.blksz * data.blocks);
+	left_size = data.blksz * data.blocks;
+	nents = (left_size - 1) / seg_size + 1;
+
+	sg_ptr = card->host->sgl;
+	data.sg = sg_ptr;
+	data.sg_len = nents;
+	sg_init_table(sg_ptr, nents);
+
+	for_each_sg(data.sg, sg_ptr, data.sg_len, i) {
+		sg_set_page(sg_ptr, virt_to_page(buf + (i * seg_size)),
+				min(seg_size, left_size),
+				offset_in_page(buf + (i * seg_size)));
+		left_size = left_size - seg_size;
+	}
 
 	mmc_set_data_timeout(&data, card);
 
