@@ -57,6 +57,7 @@ static int exynos_ss_udc_stop(struct usb_gadget *gadget,
 			      struct usb_gadget_driver *driver);
 
 static const char driver_name[] = "exynos-ss-udc";
+static const char *ep_types[] = {"iso", "bulk", "int"};
 
 static int poll_bit_set(void __iomem *ptr, u32 val, int timeout)
 {
@@ -91,10 +92,11 @@ static int poll_bit_clear(void __iomem *ptr, u32 val, int timeout)
 static struct exynos_ss_udc_ep *get_udc_ep(struct exynos_ss_udc *udc,
 					   int phys_epnum)
 {
-	int epnum, epindex;
+	int dir_in, epnum, epindex;
 
+	dir_in = phys_epnum % 2;
 	epnum = phys_to_epnum(phys_epnum);
-	epindex = epnum_to_epindex(epnum);
+	epindex = epnum_to_epindex(epnum, dir_in);
 
 	return &udc->eps[epindex];
 }
@@ -112,7 +114,7 @@ static struct exynos_ss_udc_ep *ep_from_windex(struct exynos_ss_udc *udc,
 {
 	int dir = (windex & USB_DIR_IN) ? 1 : 0;
 	int epnum = windex & 0x7F;
-	int epindex = epnum_to_epindex(epnum);
+	int epindex = epnum_to_epindex(epnum, dir);
 	struct exynos_ss_udc_ep *udc_ep = &udc->eps[epindex];
 
 	if (windex >= 0x100)
@@ -2236,19 +2238,34 @@ static int __devinit exynos_ss_udc_initep(struct exynos_ss_udc *udc,
 					  int epindex)
 {
 	int epnum, epdir;
-	char *dir;
+	const char *dir, *type;
 
 	epnum = epindex_to_epnum(epindex, &epdir);
 
 	udc_ep->epnum = epnum;
 	udc_ep->dir_in = !!epdir;
 
-	if (epnum == 0)
-		dir = "";
-	else
-		dir = udc_ep->dir_in ? "in" : "out";
+	/*
+	 * Generate endpoint name using scheme:
+	 * ep   ep   ep   ep   ep   ep   ep   ep   ep   ...
+	 * 0    1    1    2    2    3    3    4    4    ...
+	 *      in   out  in   out  in   out  in   out  ...
+	 *      -    -    -    -    -    -    -    -    ...
+	 *      bulk bulk int  int  iso  iso  bulk bulk ...
+	 */
 
-	snprintf(udc_ep->name, sizeof(udc_ep->name), "ep%d%s", epnum, dir);
+	if (epnum == 0) {
+		dir = "";
+		type = "";
+	} else {
+		dir = udc_ep->dir_in ? "in" : "out";
+		type = ep_types[epnum % 3];
+	}
+
+	snprintf(udc_ep->name, sizeof(udc_ep->name), "ep%d%s%s%s",
+			epnum, dir, epnum ? "-" : "", type);
+
+	dev_dbg(udc->dev, "%s: %s\n", __func__, udc_ep->name);
 
 	INIT_LIST_HEAD(&udc_ep->queue);
 	INIT_LIST_HEAD(&udc_ep->cmd_queue);

@@ -414,7 +414,7 @@ struct exynos_ss_udc_ep {
 	unsigned int		not_ready:1;
 	unsigned int		sent_zlp:1;
 
-	char			name[10];
+	char			name[13];
 };
 
 /**
@@ -497,18 +497,27 @@ static inline struct exynos_ss_udc_ep *our_ep(struct usb_ep *ep)
 
 static inline int epindex_to_epnum(int epindex, int *epdir)
 {
+	int dir_in = epindex % 2;
+
 	if (epdir)
-		*epdir = epindex % 2;
+		*epdir = dir_in;
 
-	return epindex;
+	/*
+	 * Endpoint structures with indexes [EPINDEXodd] (e.g. 5) and
+	 * [EPINDEXodd + 1] (e.g. 6) will map to the same USB endpoint
+	 * number (3 = (5 + 1) / 2 = (6 + 0) / 2), but directions will
+	 * be different (3in and 3out).
+	 */
+	return (epindex + dir_in) / 2;
 }
 
-static inline int epnum_to_epindex(int epnum)
+static inline int epnum_to_epindex(int epnum, int dir_in)
 {
-	return epnum;
+	/* EP0 is special case */
+	return epnum ? (epnum * 2 - dir_in) : 0;
 }
 
-#define EP0INDEX	epnum_to_epindex(0)
+#define EP0INDEX	epnum_to_epindex(0, 0)
 
 static inline int phys_to_epnum(int phys_epnum)
 {
