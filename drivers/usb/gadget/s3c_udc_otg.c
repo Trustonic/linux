@@ -216,7 +216,7 @@ udc_proc_read(char *page, char **start, off_t off, int count,
  */
 static inline bool is_nonswitch(void)
 {
-#ifdef CONFIG_USB_GADGET_SWITCH
+#if defined(CONFIG_USB_GADGET_SWITCH) || defined(CONFIG_USB_EXYNOS_SWITCH)
 	return false;
 #else
 	return true;
