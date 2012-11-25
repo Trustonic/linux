@@ -299,8 +299,7 @@ static struct dw_mci_board exynos_wlan_pdata __initdata = {
 	.cd_type                = DW_MCI_CD_EXTERNAL,
 	.quirks			= DW_MCI_QUIRK_HIGHSPEED |
 				  DW_MCI_QUIRK_IDMAC_DTO,
-	.bus_hz			= 50 * 1000 * 1000,
-	.max_bus_hz		= 200 * 1000 * 1000,
+	.bus_hz			= 200 * 1000 * 1000,
 	.caps			= MMC_CAP_UHS_SDR104 |
 				  MMC_CAP_4_BIT_DATA | MMC_CAP_SD_HIGHSPEED,
 	.caps2			= MMC_CAP2_BROKEN_VOLTAGE,
