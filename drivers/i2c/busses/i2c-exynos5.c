@@ -604,7 +604,7 @@ static int exynos5_i2c_suspend_noirq(struct device *dev)
 	return 0;
 }
 
-static int exynos5_i2c_resume(struct device *dev)
+static int exynos5_i2c_resume_noirq(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct exynos5_i2c *i2c = platform_get_drvdata(pdev);
@@ -621,7 +621,7 @@ static int exynos5_i2c_resume(struct device *dev)
 
 static const struct dev_pm_ops exynos5_i2c_dev_pm_ops = {
 	.suspend_noirq = exynos5_i2c_suspend_noirq,
-	.resume = exynos5_i2c_resume,
+	.resume_noirq = exynos5_i2c_resume_noirq,
 };
 
 #define EXYNOS5_DEV_PM_OPS (&exynos5_i2c_dev_pm_ops)
