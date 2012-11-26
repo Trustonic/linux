@@ -20,8 +20,8 @@
 #include <linux/sys_soc.h>
 #include <linux/persistent_ram.h>
 #include <linux/clk.h>
+#include <linux/io.h>
 
-#include <asm/io.h>
 #include <asm/mach/arch.h>
 #include <asm/hardware/gic.h>
 #include <asm/mach-types.h>
@@ -47,7 +47,8 @@ static char smdk5250_board_info_string[255];
 
 static void smdk5250_init_hw_rev(void)
 {
-	snprintf(smdk5250_board_info_string, sizeof(smdk5250_board_info_string) - 1,
+	snprintf(smdk5250_board_info_string,
+		 sizeof(smdk5250_board_info_string) - 1,
 		 "SMDK HW revision: %d, CPU EXYNOS5250 Rev%d.%d",
 		 get_smdk5250_rev(),
 		 samsung_rev() >> 4,
