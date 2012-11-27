@@ -367,8 +367,8 @@ static int exynos_ss_udc_ep_enable(struct usb_ep *ep,
 	spin_lock_irqsave(&udc_ep->lock, flags);
 
 	/* update the endpoint state */
-	udc_ep->ep.maxpacket = le16_to_cpu(desc->wMaxPacketSize);
-	udc_ep->type = desc->bmAttributes & USB_ENDPOINT_XFERTYPE_MASK;
+	udc_ep->ep.maxpacket = usb_endpoint_maxp(desc);
+	udc_ep->type = usb_endpoint_type(desc);
 
 	switch (udc_ep->type) {
 	case USB_ENDPOINT_XFER_ISOC:
