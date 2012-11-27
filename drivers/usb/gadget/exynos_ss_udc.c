@@ -2425,10 +2425,12 @@ static void exynos_ss_udc_ep0_activate(struct exynos_ss_udc *udc)
 static void exynos_ss_udc_ep_activate(struct exynos_ss_udc *udc,
 				      struct exynos_ss_udc_ep *udc_ep)
 {
+	const struct usb_endpoint_descriptor *desc = udc_ep->ep.desc;
 	struct exynos_ss_udc_ep_command ep_command;
 	struct exynos_ss_udc_ep_command *epcmd = &ep_command;
 	int epnum = udc_ep->epnum;
 	int maxburst = udc_ep->ep.maxburst;
+	int binterval_m1;
 	int res;
 
 	if (!udc->eps_enabled) {
@@ -2456,6 +2458,15 @@ static void exynos_ss_udc_ep_activate(struct exynos_ss_udc *udc,
 		}
 	}
 
+	/*
+	 * Databook says: when the core is operating in Full-Speed mode,
+	 * bInterval_m1 field must be set to 0.
+	 */
+	if (udc->gadget.speed == USB_SPEED_FULL || !desc->bInterval)
+		binterval_m1 = 0;
+	else
+		binterval_m1 = desc->bInterval - 1;
+
 	epcmd->ep = get_phys_epnum(udc_ep);
 	epcmd->param0 = EXYNOS_USB3_DEPCMDPAR0x_EPType(udc_ep->type) |
 			EXYNOS_USB3_DEPCMDPAR0x_MPS(udc_ep->ep.maxpacket) |
@@ -2464,6 +2475,7 @@ static void exynos_ss_udc_ep_activate(struct exynos_ss_udc *udc,
 		epcmd->param0 |= EXYNOS_USB3_DEPCMDPAR0x_FIFONum(epnum);
 	epcmd->param1 = EXYNOS_USB3_DEPCMDPAR1x_EpNum(epnum) |
 			(udc_ep->dir_in ? EXYNOS_USB3_DEPCMDPAR1x_EpDir : 0) |
+			EXYNOS_USB3_DEPCMDPAR1x_bInterval_m1(binterval_m1) |
 			EXYNOS_USB3_DEPCMDPAR1x_XferNRdyEn |
 			EXYNOS_USB3_DEPCMDPAR1x_XferCmplEn;
 	epcmd->cmdtyp = EXYNOS_USB3_DEPCMDx_CmdTyp_DEPCFG;
