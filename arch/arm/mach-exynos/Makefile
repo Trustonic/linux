@@ -94,6 +94,7 @@ obj-$(CONFIG_MACH_MANTA)		+= board-manta-connector.o
 
 obj-y					+= dev-uart.o
 obj-$(CONFIG_ARCH_EXYNOS)		+= dev-audio.o
+obj-$(CONFIG_EXYNOS5_DEV_AHCI)		+= dev-ahci-exynos5.o
 obj-$(CONFIG_EXYNOS4_DEV_AHCI)		+= dev-ahci.o
 obj-$(CONFIG_EXYNOS_DEV_DWMCI)		+= dev-dwmci.o
 obj-$(CONFIG_EXYNOS4_DEV_FIMC_IS)	+= dev-fimc-is.o

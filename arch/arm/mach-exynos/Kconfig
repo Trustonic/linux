@@ -99,6 +99,11 @@ config EXYNOS_DEV_DMA
 	help
 	  Compile in amba device definitions for DMA controller
 
+config EXYNOS5_DEV_AHCI
+	bool
+	help
+	  Compile in platform device definitions for AHCI SATA3.0
+
 config EXYNOS4_DEV_AHCI
 	bool
 	help
