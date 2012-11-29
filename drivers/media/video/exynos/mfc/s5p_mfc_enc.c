@@ -2139,9 +2139,11 @@ static int vidioc_streamon(struct file *file, void *priv,
 		ret = vb2_streamon(&ctx->vq_dst, type);
 
 		if (!ret) {
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 			ctx->mfc_int_handle_poll = exynos5_bus_int_poll();
 			if (!ctx->mfc_int_handle_poll)
 				mfc_err("Failed to request INT poll()\n");
+#endif
 		}
 	}
 	mfc_debug(2, "ctx->src_queue_cnt = %d ctx->state = %d "
@@ -2167,10 +2169,12 @@ static int vidioc_streamoff(struct file *file, void *priv,
 		ret = vb2_streamoff(&ctx->vq_dst, type);
 
 		if (!ret) {
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 			if (ctx->mfc_int_handle_poll) {
 				exynos5_bus_int_put(ctx->mfc_int_handle_poll);
 				ctx->mfc_int_handle_poll = NULL;
 			}
+#endif
 		}
 	}
 	mfc_debug_leave();
