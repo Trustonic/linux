@@ -154,7 +154,9 @@ int __init exynos5250_cpufreq_init(struct exynos_dvfs_info *info)
 	if (IS_ERR(fout_apll))
 		goto err_fout_apll;
 
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 	mif_bus_freq = exynos5_bus_mif_min(0);
+#endif
 
 	info->mpll_freq_khz = rate;
 	/* 1000Mhz */
