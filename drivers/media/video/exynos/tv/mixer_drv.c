@@ -633,9 +633,11 @@ static int mxr_runtime_resume(struct device *dev)
 	clk_enable(res->sclk_mixer);
 #endif
 
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 	mdev->mif_handle = exynos5_bus_mif_min(800000);
 	if (!mdev->mif_handle)
 		dev_err(dev, "failed to request min_freq for mif\n");
+#endif
 
 	/* enable system mmu for tv. It must be enabled after enabling
 	 * mixer's clock. Because of system mmu limitation. */
@@ -658,10 +660,12 @@ static int mxr_runtime_suspend(struct device *dev)
 	 * mixer's clock. Because of system mmu limitation. */
 	mdev->vb2->suspend(mdev->alloc_ctx);
 
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 	if (mdev->mif_handle) {
 		exynos5_bus_mif_put(mdev->mif_handle);
 		mdev->mif_handle = NULL;
 	}
+#endif
 
 	/* turn clocks off */
 #if defined(CONFIG_CPU_EXYNOS4210)
@@ -1471,8 +1475,10 @@ static int __devexit mxr_remove(struct platform_device *pdev)
 	mxr_release_video(mdev);
 	mxr_release_resources(mdev);
 
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 	if (mdev->mif_handle)
 		exynos5_bus_mif_put(mdev->mif_handle);
+#endif
 
 	kfree(mdev);
 
