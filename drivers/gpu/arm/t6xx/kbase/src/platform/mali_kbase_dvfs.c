@@ -326,7 +326,9 @@ int kbase_platform_dvfs_init(struct kbase_device *kbdev)
 	mutex_init(&mali_set_clock_lock);
 	mutex_init(&mali_enable_clock_lock);
 
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 	mem_freq_req = exynos5_bus_mif_min(0);
+#endif
 
 	/*add a error handling here*/
 	spin_lock_irqsave(&mali_dvfs_spinlock, flags);
