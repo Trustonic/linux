@@ -3702,6 +3702,7 @@ static int __devinit s3c_fb_probe(struct platform_device *pdev)
 	}
 #endif
 
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 	if (!sfb->fb_mif_handle) {
 		sfb->fb_mif_handle = exynos5_bus_mif_min(300000);
 		if (!sfb->fb_mif_handle)
@@ -3713,6 +3714,7 @@ static int __devinit s3c_fb_probe(struct platform_device *pdev)
 		if (!sfb->fb_int_handle)
 			dev_err(sfb->dev, "failed to request min_freq for int \n");
 	}
+#endif
 
 	s3c_fb_activate_window_dma(sfb, default_win);
 	s3c_fb_activate_window(sfb, default_win);
@@ -3734,10 +3736,12 @@ static int __devinit s3c_fb_probe(struct platform_device *pdev)
 	return 0;
 
 err_fb:
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 	if (sfb->fb_mif_handle)
 		exynos5_bus_mif_put(sfb->fb_mif_handle);
 	if (sfb->fb_int_handle)
 		exynos5_bus_int_put(sfb->fb_int_handle);
+#endif
 	iovmm_deactivate(&s5p_device_fimd1.dev);
 
 err_iovmm:
@@ -3819,10 +3823,12 @@ static int __devexit s3c_fb_remove(struct platform_device *pdev)
 	pm_runtime_put_sync(sfb->dev);
 	pm_runtime_disable(sfb->dev);
 
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 	if (sfb->fb_mif_handle)
 		exynos5_bus_mif_put(sfb->fb_mif_handle);
 	if (sfb->fb_int_handle)
 		exynos5_bus_int_put(sfb->fb_int_handle);
+#endif
 
 	return 0;
 }
@@ -3987,6 +3993,7 @@ static int s3c_fb_runtime_suspend(struct device *dev)
 
 	clk_disable(sfb->bus_clk);
 
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 	if (sfb->fb_mif_handle) {
 		if(exynos5_bus_mif_put(sfb->fb_mif_handle))
 			dev_err(sfb->dev, "failed to free min_freq for mif \n");
@@ -3998,6 +4005,7 @@ static int s3c_fb_runtime_suspend(struct device *dev)
 			dev_err(sfb->dev, "failed to free min_freq for int \n");
 		sfb->fb_int_handle = NULL;
 	}
+#endif
 
 	return 0;
 }
@@ -4008,6 +4016,7 @@ static int s3c_fb_runtime_resume(struct device *dev)
 	struct s3c_fb *sfb = platform_get_drvdata(pdev);
 	struct s3c_fb_platdata *pd = sfb->pdata;
 
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 	if (!sfb->fb_mif_handle) {
 		sfb->fb_mif_handle = exynos5_bus_mif_min(300000);
 		if (!sfb->fb_mif_handle)
@@ -4019,6 +4028,7 @@ static int s3c_fb_runtime_resume(struct device *dev)
 		if (!sfb->fb_int_handle)
 			dev_err(sfb->dev, "failed to request min_freq for int \n");
 	}
+#endif
 
 	clk_enable(sfb->bus_clk);
 
