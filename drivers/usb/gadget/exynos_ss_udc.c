@@ -499,6 +499,15 @@ static int exynos_ss_udc_ep_queue(struct usb_ep *ep,
 			  req->length, req->buf, req->no_interrupt,
 			  req->zero, req->short_not_ok);
 
+	if (udc_ep->epnum == 0 && udc->ep0_state == EP0_WAIT_NRDY)
+		/*
+		 * Status Stage will be handled by XferNotReady event
+		 *
+		 * REVISIT: status request may have specific 'complete'
+		 * function, which will never be called in this case.
+		 */
+		return 0;
+
 	/* initialise status of the request */
 	INIT_LIST_HEAD(&udc_req->queue);
 
@@ -855,8 +864,6 @@ static int exynos_ss_udc_process_set_config(struct exynos_ss_udc *udc,
 	u16 config = le16_to_cpu(ctrl->wValue);
 
 	dev_dbg(udc->dev, "%s\n", __func__);
-
-	udc->ep0_state = EP0_STATUS_PHASE;
 
 	switch (udc->state) {
 	case USB_STATE_ADDRESS:
@@ -1448,9 +1455,6 @@ static void exynos_ss_udc_process_control(struct exynos_ss_udc *udc,
 	/* as a fallback, try delivering it to the driver to deal with */
 
 	if (ret == 0 && udc->driver) {
-		if (udc->ep0_three_stage == 0)
-			udc->ep0_state = EP0_STATUS_PHASE;
-
 		ret = udc->driver->setup(&udc->gadget, ctrl);
 		if (ret < 0)
 			dev_dbg(udc->dev, "driver->setup() ret %d\n", ret);
