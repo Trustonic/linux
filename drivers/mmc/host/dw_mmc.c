@@ -258,6 +258,46 @@ err:
 }
 #endif /* defined(CONFIG_DEBUG_FS) */
 
+void dw_mci_reg_dump(struct dw_mci *host)
+{
+	dev_err(&host->dev, ": ============== REGISTER DUMP ==============\n");
+	dev_err(&host->dev, ": CTRL:	0x%08x\n", mci_readl(host, CTRL));
+	dev_err(&host->dev, ": PWREN:	0x%08x\n", mci_readl(host, PWREN));
+	dev_err(&host->dev, ": CLKDIV:	0x%08x\n", mci_readl(host, CLKDIV));
+	dev_err(&host->dev, ": CLKSRC:	0x%08x\n", mci_readl(host, CLKSRC));
+	dev_err(&host->dev, ": CLKENA:	0x%08x\n", mci_readl(host, CLKENA));
+	dev_err(&host->dev, ": TMOUT:	0x%08x\n", mci_readl(host, TMOUT));
+	dev_err(&host->dev, ": CTYPE:	0x%08x\n", mci_readl(host, CTYPE));
+	dev_err(&host->dev, ": BLKSIZ:	0x%08x\n", mci_readl(host, BLKSIZ));
+	dev_err(&host->dev, ": BYTCNT:	0x%08x\n", mci_readl(host, BYTCNT));
+	dev_err(&host->dev, ": INTMSK:	0x%08x\n", mci_readl(host, INTMASK));
+	dev_err(&host->dev, ": CMDARG:	0x%08x\n", mci_readl(host, CMDARG));
+	dev_err(&host->dev, ": CMD:	0x%08x\n", mci_readl(host, CMD));
+	dev_err(&host->dev, ": MINTSTS:	0x%08x\n", mci_readl(host, MINTSTS));
+	dev_err(&host->dev, ": RINTSTS:	0x%08x\n", mci_readl(host, RINTSTS));
+	dev_err(&host->dev, ": STATUS:	0x%08x\n", mci_readl(host, STATUS));
+	dev_err(&host->dev, ": FIFOTH:	0x%08x\n", mci_readl(host, FIFOTH));
+	dev_err(&host->dev, ": CDETECT:	0x%08x\n", mci_readl(host, CDETECT));
+	dev_err(&host->dev, ": WRTPRT:	0x%08x\n", mci_readl(host, WRTPRT));
+	dev_err(&host->dev, ": GPIO:	0x%08x\n", mci_readl(host, GPIO));
+	dev_err(&host->dev, ": TCBCNT:	0x%08x\n", mci_readl(host, TCBCNT));
+	dev_err(&host->dev, ": TBBCNT:	0x%08x\n", mci_readl(host, TBBCNT));
+	dev_err(&host->dev, ": DEBNCE:	0x%08x\n", mci_readl(host, DEBNCE));
+	dev_err(&host->dev, ": USRID:	0x%08x\n", mci_readl(host, USRID));
+	dev_err(&host->dev, ": VERID:	0x%08x\n", mci_readl(host, VERID));
+	dev_err(&host->dev, ": HCON:	0x%08x\n", mci_readl(host, HCON));
+	dev_err(&host->dev, ": UHS_REG:	0x%08x\n", mci_readl(host, UHS_REG));
+	dev_err(&host->dev, ": BMOD:	0x%08x\n", mci_readl(host, BMOD));
+	dev_err(&host->dev, ": PLDMND:	0x%08x\n", mci_readl(host, PLDMND));
+	dev_err(&host->dev, ": DBADDR:	0x%08x\n", mci_readl(host, DBADDR));
+	dev_err(&host->dev, ": IDSTS:	0x%08x\n", mci_readl(host, IDSTS));
+	dev_err(&host->dev, ": IDINTEN:	0x%08x\n", mci_readl(host, IDINTEN));
+	dev_err(&host->dev, ": DSCADDR:	0x%08x\n", mci_readl(host, DSCADDR));
+	dev_err(&host->dev, ": BUFADDR:	0x%08x\n", mci_readl(host, BUFADDR));
+	dev_err(&host->dev, ": CLKSEL:	0x%08x\n", mci_readl(host, CLKSEL));
+	dev_err(&host->dev, ": ===========================================\n");
+}
+
 static void dw_mci_set_timeout(struct dw_mci *host)
 {
 	/* timeout (maximum) */
@@ -976,6 +1016,8 @@ static void __dw_mci_start_request(struct dw_mci *host,
 
 	/* Slot specific timing and width adjustment */
 	dw_mci_setup_bus(slot, 0);
+
+	mod_timer(&host->timer, jiffies + msecs_to_jiffies(10000));
 
 	host->cur_slot = slot;
 	host->mrq = mrq;
@@ -2269,6 +2311,59 @@ static irqreturn_t dw_mci_interrupt(int irq, void *dev_id)
 	return ret;
 }
 
+static void dw_mci_timeout_timer(unsigned long data)
+{
+	struct dw_mci *host;
+	struct mmc_request *mrq;
+	enum dw_mci_state state;
+
+	host = (struct dw_mci *)data;
+	mrq = host->mrq;
+
+	if (mrq) {
+		spin_lock(&host->lock);
+
+		state = host->state;
+		host->data = NULL;
+		host->cmd = NULL;
+
+		switch (host->state) {
+		case STATE_IDLE:
+			break;
+		case STATE_SENDING_CMD:
+			mrq->cmd->error = -ENOMEDIUM;
+			if (!mrq->data)
+				break;
+			/* fall through */
+		case STATE_SENDING_DATA:
+			mrq->data->error = -ENOMEDIUM;
+			dw_mci_stop_dma(host);
+			break;
+		case STATE_DATA_BUSY:
+		case STATE_DATA_ERROR:
+			if (mrq->data->error == -EINPROGRESS)
+				mrq->data->error = -ENOMEDIUM;
+			/* fall through */
+		case STATE_SENDING_STOP:
+			if (mrq->stop)
+				mrq->stop->error = -ENOMEDIUM;
+			break;
+		}
+
+		spin_unlock(&host->lock);
+		dev_err(&host->dev,
+			"Timeout waiting for hardware interrupt."
+			" state = %d\n", state);
+		dw_mci_reg_dump(host);
+		dw_mci_wait_reset(&host->dev, host, SDMMC_CTRL_FIFO_RESET |
+						    SDMMC_CTRL_RESET);
+		spin_lock(&host->lock);
+
+		dw_mci_request_end(host, mrq);
+		spin_unlock(&host->lock);
+	}
+}
+
 static void dw_mci_work_routine_card(struct work_struct *work)
 {
 	struct dw_mci *host = container_of(work, struct dw_mci, card_work);
@@ -2630,57 +2725,6 @@ static bool mci_wait_reset(struct device *dev, struct dw_mci *host)
 	dev_err(dev, "Timeout resetting block (ctrl %#x)\n", ctrl);
 
 	return false;
-}
-
-static void dw_mci_timeout_timer(unsigned long data)
-{
-	struct dw_mci *host = (struct dw_mci *)data;
-	struct mmc_request *mrq;
-
-	if (host && host->mrq) {
-		mrq = host->mrq;
-
-		dev_err(&host->dev,
-			"Timeout waiting for hardware interrupt\n"
-			"cmd%d, state: %d, status: %08X, rintsts: %08X\n",
-			mrq->cmd->opcode, host->state,
-			mci_readl(host, STATUS), mci_readl(host, RINTSTS));
-
-		spin_lock(&host->lock);
-		host->data = NULL;
-		host->cmd = NULL;
-
-		switch (host->state) {
-		case STATE_IDLE:
-			break;
-		case STATE_SENDING_CMD:
-			mrq->cmd->error = -ENOMEDIUM;
-			if (!mrq->data)
-				break;
-			/* fall through */
-		case STATE_SENDING_DATA:
-			mrq->data->error = -ENOMEDIUM;
-			dw_mci_stop_dma(host);
-			break;
-		case STATE_DATA_BUSY:
-		case STATE_DATA_ERROR:
-			if (mrq->data->error == -EINPROGRESS)
-				mrq->data->error = -ENOMEDIUM;
-			/* fall through */
-		case STATE_SENDING_STOP:
-			if (!mrq->stop)
-				break;
-			mrq->stop->error = -ENOMEDIUM;
-			break;
-		}
-
-		spin_unlock(&host->lock);
-		dw_mci_wait_fifo_reset(&host->dev, host);
-		spin_lock(&host->lock);
-
-		dw_mci_request_end(host, mrq);
-		spin_unlock(&host->lock);
-	}
 }
 
 int __devinit dw_mci_probe(struct dw_mci *host)
