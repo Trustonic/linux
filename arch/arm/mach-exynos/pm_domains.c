@@ -85,11 +85,13 @@ static void exynos_pd_clk_parent_save(struct exynos_pm_domain *pd)
 	}
 
 	if (pd->pclk) {
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 		if (!pd->int_min_hd) {
 			pd->int_min_hd = exynos5_bus_int_min(EXYNOS5_INT_MIN_FREQ);
 			if (!pd->int_min_hd)
 				pr_err("Failed to request int min_freq\n");
 		}
+#endif
 
 		pd->saved_pclk_rate = clk_get_rate(pd->pclk);
 		if (!pd->saved_pclk_rate) {
@@ -103,10 +105,12 @@ static void exynos_pd_clk_parent_save(struct exynos_pm_domain *pd)
 			pr_err("Failed to set rate of parent clk of %s for pd %s\n",
 				pd->pclk_name, pd->pd.name);
 
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 		if (pd->int_min_hd) {
 			exynos5_bus_int_put(pd->int_min_hd);
 			pd->int_min_hd = NULL;
 		}
+#endif
 	}
 }
 
@@ -126,11 +130,13 @@ static void exynos_pd_clk_parent_restore(struct exynos_pm_domain *pd)
 	}
 
 	if (pd->pclk) {
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 		if (!pd->int_min_hd) {
 			pd->int_min_hd = exynos5_bus_int_min(EXYNOS5_INT_MIN_FREQ);
 			if (!pd->int_min_hd)
 				pr_err("Failed to request int min_freq\n");
 		}
+#endif
 
 		if (pd->saved_pclk_rate) {
 			r = clk_set_rate(pd->pclk, pd->saved_pclk_rate);
@@ -140,11 +146,13 @@ static void exynos_pd_clk_parent_restore(struct exynos_pm_domain *pd)
 			pd->saved_pclk_rate = 0;
 		}
 
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 		if (pd->int_min_hd) {
 			exynos5_bus_int_put(pd->int_min_hd);
 			pd->int_min_hd = NULL;
 		}
 	}
+#endif
 }
 
 static int exynos_pd_power(struct generic_pm_domain *domain, bool power_on)
