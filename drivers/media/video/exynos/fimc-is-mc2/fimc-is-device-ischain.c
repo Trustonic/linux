@@ -1921,6 +1921,7 @@ int fimc_is_ischain_open(struct fimc_is_device_ischain *this,
 	/* 4. Disable AFTR cpu low power idle enter */
 	pm_qos_add_request(&pm_qos_req_cpu, PM_QOS_CPU_DMA_LATENCY, 100);
 
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 	/* memory minimun clock : 667Mhz */
 	if (!isp_mif_handle_min) {
 		isp_mif_handle_min = exynos5_bus_mif_min(667000);
@@ -1936,6 +1937,7 @@ int fimc_is_ischain_open(struct fimc_is_device_ischain *this,
 			err("exynos5_bus_int_min is fail");
 	} else
 		err("exynos5_bus_int_min is already applied");
+#endif
 
 	/* 5. A5 power on */
 	ret = fimc_is_ischain_power(this, 1);
@@ -1993,6 +1995,7 @@ int fimc_is_ischain_close(struct fimc_is_device_ischain *this)
 	/* 6. Enable AFTR cpu low power idle enter */
 	pm_qos_remove_request(&pm_qos_req_cpu);
 
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 	/* memory clock unlock */
 	if (isp_mif_handle_min) {
 		exynos5_bus_mif_put(isp_mif_handle_min);
@@ -2006,6 +2009,7 @@ int fimc_is_ischain_close(struct fimc_is_device_ischain *this)
 		isp_int_handle_min = NULL;
 	} else
 		err("exynos5_bus_int_put is already applied");
+#endif
 
 #ifndef RESERVED_MEM
 	/* 7. Dealloc memroy */
