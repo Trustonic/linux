@@ -1204,6 +1204,7 @@ static int gsc_get_media_info(struct device *dev, void *p)
 
 int gsc_bus_request_get(struct gsc_dev *gsc)
 {
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 	if (!gsc->mif_min_hd) {
 		gsc->mif_min_hd = exynos5_bus_mif_min(667000);
 		if (!gsc->mif_min_hd)
@@ -1215,12 +1216,14 @@ int gsc_bus_request_get(struct gsc_dev *gsc)
 		if (!gsc->int_min_hd)
 			gsc_err("failed to request min_freq");
 	}
+#endif
 
 	return 0;
 }
 
 void gsc_bus_request_put(struct gsc_dev *gsc)
 {
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 	if (gsc->mif_min_hd) {
 		exynos5_bus_mif_put(gsc->mif_min_hd);
 		gsc->mif_min_hd = NULL;
@@ -1229,6 +1232,7 @@ void gsc_bus_request_put(struct gsc_dev *gsc)
 		exynos5_bus_int_put(gsc->int_min_hd);
 		gsc->int_min_hd = NULL;
 	}
+#endif
 }
 
 int gsc_set_protected_content(struct gsc_dev *gsc, bool enable)

@@ -279,10 +279,12 @@ static int gsc_subdev_s_stream(struct v4l2_subdev *sd, int enable)
 		clear_bit(ST_OUTPUT_STREAMON, &gsc->state);
 		bts_change_bus_traffic(&gsc->pdev->dev, BTS_DECREASE_BW);
 		pm_runtime_put_sync(&gsc->pdev->dev);
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 		if (gsc->int_poll_hd) {
 			exynos5_bus_int_put(gsc->int_poll_hd);
 			gsc->int_poll_hd = NULL;
 		}
+#endif
 	}
 
 	return 0;
@@ -733,11 +735,13 @@ static void gsc_out_buffer_queue(struct vb2_buffer *vb)
 	}
 
 	if (!test_and_set_bit(ST_OUTPUT_STREAMON, &gsc->state)) {
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 		if (!gsc->int_poll_hd) {
 			gsc->int_poll_hd = exynos5_bus_int_poll();
 			if (!gsc->int_poll_hd)
 				gsc_err("failed to request busfreq poll");
 		}
+#endif
 		ret = pm_runtime_get_sync(&gsc->pdev->dev);
 		if (ret < 0) {
 			gsc_err("fail to pm_runtime_get_sync()");
