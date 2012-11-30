@@ -311,13 +311,12 @@ STOP:
 static int ahci_phy_init(void)
 {
 	u8 uCount, i = 0;
-#ifdef CONFIG_EXYNOS5_SATA_100MHZ_CLK
-	u8 reg_addrs[] = {0x02, 0x0B, 0x22, 0x21, 0x3A};
-	u8 default_setting_value[] = {0x24, 0x1E, 0x30, 0x4f, 0x0B};
-#endif
 #ifdef CONFIG_EXYNOS5_SATA_25MHZ_CLK
 	u8 reg_addrs[] = {0x22, 0x21, 0x3A};
 	u8 default_setting_value[] = {0x30, 0x4f, 0x0B};
+#else	/* CONFIG_EXYNOS5_SATA_100MHZ_CLK */
+	u8 reg_addrs[] = {0x02, 0x0B, 0x22, 0x21, 0x3A};
+	u8 default_setting_value[] = {0x24, 0x1E, 0x30, 0x4f, 0x0B};
 #endif
 
 	uCount = sizeof(reg_addrs)/sizeof(u8);
@@ -406,8 +405,7 @@ static int exynos5_ahci_init(struct device *dev, void __iomem *mmio)
 	val = __raw_readl(phy_ctrl + SATA_PHSATA_CTRLM);
 #ifdef CONFIG_EXYNOS5_SATA_25MHZ_CLK
 	val &= ~PHCTRLM_REF_RATE;
-#endif
-#ifdef CONFIG_EXYNOS5_SATA_100MHZ_CLK
+#else	/* CONFIG_EXYNOS5_SATA_100MHZ_CLK */
 	val |= PHCTRLM_REF_RATE;
 #endif
 	__raw_writel(val, phy_ctrl + SATA_PHSATA_CTRLM);
@@ -516,8 +514,7 @@ static int exynos5_ahci_resume(struct device *dev)
 	val = __raw_readl(phy_ctrl + SATA_PHSATA_CTRLM);
 #ifdef CONFIG_EXYNOS5_SATA_25MHZ_CLK
 	val &= ~PHCTRLM_REF_RATE;
-#endif
-#ifdef CONFIG_EXYNOS5_SATA_100MHZ_CLK
+#else	/* CONFIG_EXYNOS5_SATA_100MHZ_CLK */
 	val |= PHCTRLM_REF_RATE;
 #endif
 	 __raw_writel(val, phy_ctrl + SATA_PHSATA_CTRLM);

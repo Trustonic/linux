@@ -738,6 +738,26 @@ config EXYNOS4_SDHCI_CH2_8BIT
 	  If selected, Channel 3 is disabled.
 endif
 
+if EXYNOS5_DEV_AHCI
+
+choice
+	prompt "EXYNOS5 SATA controller clock"
+	default EXYNOS5_SATA_100MHZ_CLK
+
+config EXYNOS5_SATA_100MHZ_CLK
+	bool "100Mhz"
+	help
+	  Selected for 100Mhz source clock.
+
+config EXYNOS5_SATA_25MHZ_CLK
+	bool "25Mhz"
+	help
+	  Selected for 25Mhz source clock.
+
+endchoice
+
+endif
+
 endmenu
 
 endif
