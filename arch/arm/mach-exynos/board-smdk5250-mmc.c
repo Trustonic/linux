@@ -79,8 +79,63 @@ static struct dw_mci_board exynos_dwmci0_pdata __initdata = {
 	.clk_drv		= 0x3,
 };
 
+static int exynos_dwmci_get_ro(u32 slot_id)
+{
+	/* Did not support SD/MMC card write protect. */
+	return 0;
+}
+
+static void exynos_dwmci2_cfg_gpio(int width)
+{
+	unsigned int gpio;
+
+	for (gpio = EXYNOS5_GPC3(0); gpio < EXYNOS5_GPC3(2); gpio++) {
+		s3c_gpio_cfgpin(gpio, S3C_GPIO_SFN(2));
+		s3c_gpio_setpull(gpio, S3C_GPIO_PULL_NONE);
+		s5p_gpio_set_drvstr(gpio, S5P_GPIO_DRVSTR_LV2);
+	}
+
+	switch (width) {
+	case 4:
+		for (gpio = EXYNOS5_GPC3(3); gpio <= EXYNOS5_GPC3(6); gpio++) {
+			s3c_gpio_cfgpin(gpio, S3C_GPIO_SFN(2));
+			s3c_gpio_setpull(gpio, S3C_GPIO_PULL_NONE);
+			s5p_gpio_set_drvstr(gpio, S5P_GPIO_DRVSTR_LV2);
+		}
+		break;
+	case 1:
+		gpio = EXYNOS5_GPC3(3);
+		s3c_gpio_cfgpin(gpio, S3C_GPIO_SFN(2));
+		s3c_gpio_setpull(gpio, S3C_GPIO_PULL_NONE);
+		s5p_gpio_set_drvstr(gpio, S5P_GPIO_DRVSTR_LV2);
+	default:
+		break;
+	}
+
+	gpio = EXYNOS5_GPC3(2);
+	s3c_gpio_cfgpin(gpio, S3C_GPIO_SFN(2));
+	s3c_gpio_setpull(gpio, S3C_GPIO_PULL_NONE);
+	s5p_gpio_set_drvstr(gpio, S5P_GPIO_DRVSTR_LV2);
+}
+
+static struct dw_mci_board exynos_dwmci2_pdata __initdata = {
+	.num_slots		= 1,
+	.quirks			= DW_MCI_QUIRK_HIGHSPEED,
+	.bus_hz			= 50 * 1000 * 1000,
+	.caps			= MMC_CAP_CMD23,
+	.fifo_depth             = 0x80,
+	.detect_delay_ms	= 200,
+	.hclk_name		= "dwmci",
+	.cclk_name		= "sclk_dwmci",
+	.cfg_gpio		= exynos_dwmci2_cfg_gpio,
+	.get_ro			= exynos_dwmci_get_ro,
+	.sdr_timing		= 0x03020001,
+	.ddr_timing		= 0x03030002,
+};
+
 static struct platform_device *smdk5250_mmc_devices[] __initdata = {
 	&exynos5_device_dwmci0,
+	&exynos5_device_dwmci2,
 };
 
 void __init exynos5_smdk5250_mmc_init(void)
@@ -90,6 +145,12 @@ void __init exynos5_smdk5250_mmc_init(void)
 	clk_add_alias("dwmci", "dw_mmc.0", "hsmmc", &exynos5_device_dwmci0.dev);
 	clk_add_alias("sclk_dwmci", "dw_mmc.0", "sclk_mmc",
 		      &exynos5_device_dwmci0.dev);
+
+	exynos_dwmci_set_platdata(&exynos_dwmci2_pdata, 2);
+	dev_set_name(&exynos5_device_dwmci2.dev, "exynos4-sdhci.2");
+	clk_add_alias("dwmci", "dw_mmc.2", "hsmmc", &exynos5_device_dwmci2.dev);
+	clk_add_alias("sclk_dwmci", "dw_mmc.2", "sclk_mmc",
+		      &exynos5_device_dwmci2.dev);
 
 	platform_add_devices(smdk5250_mmc_devices,
 			ARRAY_SIZE(smdk5250_mmc_devices));
