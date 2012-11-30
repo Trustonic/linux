@@ -151,8 +151,8 @@ static void exynos_pd_clk_parent_restore(struct exynos_pm_domain *pd)
 			exynos5_bus_int_put(pd->int_min_hd);
 			pd->int_min_hd = NULL;
 		}
-	}
 #endif
+	}
 }
 
 static int exynos_pd_power(struct generic_pm_domain *domain, bool power_on)
