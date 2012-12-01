@@ -299,11 +299,9 @@ static void exynos_ss_udc_run_stop(struct exynos_ss_udc *udc, int is_on)
 	int res;
 
 	if (is_on) {
-		/* Android gadget need pullup */
-#ifdef CONFIG_USB_G_ANDROID
 		if (!udc->pullup_state)
 			return ;
-#endif
+
 		__orr32(udc->regs + EXYNOS_USB3_DCTL,
 			EXYNOS_USB3_DCTL_Run_Stop);
 		res = poll_bit_clear(udc->regs + EXYNOS_USB3_DSTS,
@@ -2675,9 +2673,8 @@ static int exynos_ss_udc_pullup(struct usb_gadget *gadget, int is_on)
 	struct exynos_ss_udc *udc = container_of(gadget,
 					struct exynos_ss_udc, gadget);
 
-#ifdef CONFIG_USB_G_ANDROID
 	udc->pullup_state = is_on;
-#endif
+
 	exynos_ss_udc_run_stop(udc, is_on);
 
 	return 0;

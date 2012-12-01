@@ -463,9 +463,8 @@ struct exynos_ss_udc {
 	bool			eps_enabled;
 	enum ctrl_ep_state	ep0_state;
 	int			ep0_three_stage;
-#ifdef CONFIG_USB_G_ANDROID
+
 	int			pullup_state;
-#endif
 
 	u8			*ep0_buff;
 	dma_addr_t		ep0_buff_dma;
