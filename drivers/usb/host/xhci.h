@@ -1494,9 +1494,13 @@ struct xhci_hcd {
 	u8			*port_array;
 	/* Array of pointers to USB 3.0 PORTSC registers */
 	__le32 __iomem		**usb3_ports;
+	/* Array of pointers to USB 3.0 PORTPMSC registers */
+	__le32 __iomem		**usb3_portpmsc;
 	unsigned int		num_usb3_ports;
 	/* Array of pointers to USB 2.0 PORTSC registers */
 	__le32 __iomem		**usb2_ports;
+	/* Array of pointers to USB 2.0 PORTPMSC registers */
+	__le32 __iomem		**usb2_portpmsc;
 	unsigned int		num_usb2_ports;
 	/* support xHCI 0.96 spec USB2 software LPM */
 	unsigned		sw_lpm_support:1;
