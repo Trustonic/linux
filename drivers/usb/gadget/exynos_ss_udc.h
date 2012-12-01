@@ -464,7 +464,8 @@ struct exynos_ss_udc {
 	enum ctrl_ep_state	ep0_state;
 	int			ep0_three_stage;
 
-	int			pullup_state;
+	unsigned int		pullup_state:1;
+	unsigned int		vbus_state:1;
 
 	u8			*ep0_buff;
 	dma_addr_t		ep0_buff_dma;

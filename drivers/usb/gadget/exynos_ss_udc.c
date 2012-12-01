@@ -299,9 +299,6 @@ static void exynos_ss_udc_run_stop(struct exynos_ss_udc *udc, int is_on)
 	int res;
 
 	if (is_on) {
-		if (!udc->pullup_state)
-			return ;
-
 		__orr32(udc->regs + EXYNOS_USB3_DCTL,
 			EXYNOS_USB3_DCTL_Run_Stop);
 		res = poll_bit_clear(udc->regs + EXYNOS_USB3_DSTS,
@@ -2619,8 +2616,9 @@ static int exynos_ss_udc_enable(struct exynos_ss_udc *udc)
 	udc->ep0_state = EP0_SETUP_PHASE;
 	exynos_ss_udc_enqueue_setup(udc);
 
-	/* Start the device controller operation */
-	exynos_ss_udc_run_stop(udc, 1);
+	/* Start controller if S/W connect was signalled */
+	if (udc->pullup_state)
+		exynos_ss_udc_run_stop(udc, 1);
 
 	return 0;
 }
@@ -2630,7 +2628,10 @@ static int exynos_ss_udc_disable(struct exynos_ss_udc *udc)
 	struct platform_device *pdev = to_platform_device(udc->dev);
 	int epindex;
 
-	exynos_ss_udc_run_stop(udc, 0);
+	/* Stop controller if it wasn't already stopped on S/W disconnect */
+	if (udc->pullup_state)
+		exynos_ss_udc_run_stop(udc, 0);
+
 	/* all endpoints should be shutdown */
 	for (epindex = 0; epindex < EXYNOS_USB3_EPS; epindex++)
 		exynos_ss_udc_ep_disable(&udc->eps[epindex].ep);
@@ -2656,11 +2657,17 @@ static int exynos_ss_udc_vbus_session(struct usb_gadget *gadget, int is_active)
 {
 	struct exynos_ss_udc *udc = container_of(gadget,
 					struct exynos_ss_udc, gadget);
+	int ret;
 
 	if (!is_active)
-		return exynos_ss_udc_disable(udc);
+		ret = exynos_ss_udc_disable(udc);
 	else
-		return exynos_ss_udc_enable(udc);
+		ret = exynos_ss_udc_enable(udc);
+
+	if (!ret)
+		udc->vbus_state = !!is_active;
+
+	return ret;
 }
 
 /**
@@ -2673,9 +2680,14 @@ static int exynos_ss_udc_pullup(struct usb_gadget *gadget, int is_on)
 	struct exynos_ss_udc *udc = container_of(gadget,
 					struct exynos_ss_udc, gadget);
 
-	udc->pullup_state = is_on;
+	udc->pullup_state = !!is_on;
 
-	exynos_ss_udc_run_stop(udc, is_on);
+	/*
+	 * Start controller if vbus is active.
+	 * Stop controller if it wasn't already stopped on vbus deactivation.
+	 */
+	if (udc->vbus_state)
+		exynos_ss_udc_run_stop(udc, is_on);
 
 	return 0;
 }
