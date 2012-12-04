@@ -731,9 +731,6 @@ irqreturn_t hdmi_irq_handler_ext(int irq, void *dev_data)
 
 static void hdmi_hpd_changed(struct hdmi_device *hdev, int state)
 {
-	struct device *dev = hdev->dev;
-	struct platform_device *pdev = to_platform_device(dev);
-	struct s5p_hdmi_platdata *pdata = pdev->dev.platform_data;
 	u32 preset;
 	int ret;
 
