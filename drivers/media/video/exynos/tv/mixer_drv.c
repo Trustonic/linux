@@ -233,7 +233,7 @@ static int mxr_streamer_put(struct mxr_device *mdev, struct v4l2_subdev *sd)
 	struct media_pad *pad;
 	struct sub_mxr_device *sub_mxr;
 	struct mxr_layer *layer;
-	struct v4l2_subdev *hdmi_sd;
+	struct v4l2_subdev *hdmi_sd = NULL;
 	struct v4l2_subdev *gsc_sd;
 	struct exynos_entity_data *md_data;
 
@@ -824,6 +824,9 @@ static void mxr_set_layer_src_fmt(struct sub_mxr_device *sub_mxr, u32 pad)
 	case V4L2_MBUS_FMT_XRGB8888_4X8_LE:
 		fourcc = V4L2_PIX_FMT_BGR32;
 		break;
+	default:
+		fourcc = V4L2_PIX_FMT_BGR32;
+		break; /* default format */
 	}
 	/* This will be applied to hardware right after streamon */
 	layer->fmt = find_format_by_fourcc(layer, fourcc);
