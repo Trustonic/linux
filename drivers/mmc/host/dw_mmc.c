@@ -2559,8 +2559,10 @@ static int __devinit dw_mci_init_slot(struct dw_mci *host, unsigned int id)
 		switch (bus_width) {
 		case 8:
 			mmc->caps |= MMC_CAP_8_BIT_DATA;
+			/* fall through */
 		case 4:
 			mmc->caps |= MMC_CAP_4_BIT_DATA;
+			/* fall through */
 		default:
 			if (host->pdata->cfg_gpio)
 				host->pdata->cfg_gpio(bus_width);
