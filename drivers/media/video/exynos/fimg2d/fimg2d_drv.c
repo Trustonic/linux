@@ -78,6 +78,20 @@ static void fimg2d_worker(struct work_struct *work)
 }
 static DECLARE_WORK(fimg2d_work, fimg2d_worker);
 
+static int fimg2d_context_wait(struct fimg2d_context *ctx)
+{
+	int ret;
+
+	ret = wait_event_timeout(ctx->wait_q, !atomic_read(&ctx->ncmd),
+			CTX_TIMEOUT);
+	if (!ret) {
+		fimg2d_err("ctx %p wait timeout\n", ctx);
+		return -ETIME;
+	}
+	return 0;
+}
+#endif
+
 static irqreturn_t fimg2d_irq(int irq, void *dev_id)
 {
 	fimg2d_debug("irq\n");
@@ -118,20 +132,6 @@ next:
 	BUG();
 	return 0;
 }
-
-static int fimg2d_context_wait(struct fimg2d_context *ctx)
-{
-	int ret;
-
-	ret = wait_event_timeout(ctx->wait_q, !atomic_read(&ctx->ncmd),
-			CTX_TIMEOUT);
-	if (!ret) {
-		fimg2d_err("ctx %p wait timeout\n", ctx);
-		return -1;
-	}
-	return 0;
-}
-#endif
 
 static int fimg2d_request_bitblt(struct fimg2d_control *ctrl,
 		struct fimg2d_context *ctx)
