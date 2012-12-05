@@ -273,6 +273,38 @@ static int exynos_ss_udc_issue_epcmd(struct exynos_ss_udc *udc,
 	return res;
 }
 
+/**
+ * exynos_ss_udc_end_xfer - end active transfer for endpoint
+ * @udc: The device state.
+ * @udc_ep: The endpoint for which transfer is stopped.
+ */
+static void exynos_ss_udc_end_xfer(struct exynos_ss_udc *udc,
+				   struct exynos_ss_udc_ep *udc_ep)
+{
+	struct exynos_ss_udc_ep_command epcmd = {{0}, };
+	int phys_epnum = get_phys_epnum(udc_ep);
+	int res;
+
+	if (!udc_ep->tri)
+		return;
+
+	epcmd.ep = phys_epnum;
+	epcmd.cmdtyp = EXYNOS_USB3_DEPCMDx_CmdTyp_DEPENDXFER;
+	epcmd.cmdflags = (udc_ep->tri <<
+		EXYNOS_USB3_DEPCMDx_CommandParam_SHIFT) |
+		EXYNOS_USB3_DEPCMDx_HiPri_ForceRM |
+		EXYNOS_USB3_DEPCMDx_CmdIOC |
+		EXYNOS_USB3_DEPCMDx_CmdAct;
+
+	res = exynos_ss_udc_issue_epcmd(udc, &epcmd);
+	if (res < 0) {
+		dev_err(udc->dev, "Failed to end transfer\n");
+		udc_ep->not_ready = 1;
+	}
+
+	udc_ep->tri = 0;
+}
+
 #ifdef CONFIG_BATTERY_SAMSUNG
 void exynos_ss_udc_cable_connect(struct exynos_ss_udc *udc, bool connect)
 {
@@ -1956,9 +1988,7 @@ static void exynos_ss_udc_irq_connectdone(struct exynos_ss_udc *udc)
  */
 static void exynos_ss_udc_irq_usbrst(struct exynos_ss_udc *udc)
 {
-	struct exynos_ss_udc_ep_command epcmd = {{0}, };
 	struct exynos_ss_udc_ep *udc_ep;
-	int res;
 	int epindex;
 
 	dev_dbg(udc->dev, "%s\n", __func__);
@@ -1983,8 +2013,6 @@ static void exynos_ss_udc_irq_usbrst(struct exynos_ss_udc *udc)
 	if (udc->core->ops->phy30_suspend)
 		udc->core->ops->phy30_suspend(udc->core, 0);
 
-	epcmd.cmdtyp = EXYNOS_USB3_DEPCMDx_CmdTyp_DEPENDXFER;
-
 	/* End transfer, kill all requests and clear STALL on the
 	   non-EP0 endpoints */
 	for (epindex = 0; epindex < EXYNOS_USB3_EPS; epindex++) {
@@ -1995,24 +2023,7 @@ static void exynos_ss_udc_irq_usbrst(struct exynos_ss_udc *udc)
 
 		udc_ep = &udc->eps[epindex];
 
-		epcmd.ep = get_phys_epnum(udc_ep);
-
-		if (udc_ep->tri) {
-			epcmd.cmdflags = (udc_ep->tri <<
-				EXYNOS_USB3_DEPCMDx_CommandParam_SHIFT) |
-				EXYNOS_USB3_DEPCMDx_HiPri_ForceRM |
-				EXYNOS_USB3_DEPCMDx_CmdIOC |
-				EXYNOS_USB3_DEPCMDx_CmdAct;
-
-			res = exynos_ss_udc_issue_epcmd(udc, &epcmd);
-			if (res < 0) {
-				dev_err(udc->dev, "Failed to end transfer\n");
-				udc_ep->not_ready = 1;
-			}
-
-			udc_ep->tri = 0;
-		}
-
+		exynos_ss_udc_end_xfer(udc, udc_ep);
 		exynos_ss_udc_kill_all_requests(udc, udc_ep, -ECONNRESET);
 
 		if (udc_ep->halted)
@@ -2526,30 +2537,12 @@ static void exynos_ss_udc_ep_activate(struct exynos_ss_udc *udc,
 static void exynos_ss_udc_ep_deactivate(struct exynos_ss_udc *udc,
 					struct exynos_ss_udc_ep *udc_ep)
 {
-	struct exynos_ss_udc_ep_command epcmd = {{0}, };
 	int phys_epnum = get_phys_epnum(udc_ep);
 
 	udc->eps_enabled = false;
 
-	if (udc_ep->tri && !udc_ep->not_ready) {
-		int res;
-
-		epcmd.ep = phys_epnum;
-		epcmd.cmdtyp = EXYNOS_USB3_DEPCMDx_CmdTyp_DEPENDXFER;
-		epcmd.cmdflags = (udc_ep->tri <<
-			EXYNOS_USB3_DEPCMDx_CommandParam_SHIFT) |
-			EXYNOS_USB3_DEPCMDx_HiPri_ForceRM |
-			EXYNOS_USB3_DEPCMDx_CmdIOC |
-			EXYNOS_USB3_DEPCMDx_CmdAct;
-
-		res = exynos_ss_udc_issue_epcmd(udc, &epcmd);
-		if (res < 0) {
-			dev_err(udc->dev, "Failed to end transfer\n");
-			udc_ep->not_ready = 1;
-		}
-
-		udc_ep->tri = 0;
-	}
+	if (!udc_ep->not_ready)
+		exynos_ss_udc_end_xfer(udc, udc_ep);
 
 	__bic32(udc->regs + EXYNOS_USB3_DALEPENA, 1 << phys_epnum);
 }
