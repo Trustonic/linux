@@ -53,16 +53,16 @@ static void s3c_udc_ep_set_stall(struct s3c_ep *ep);
 u32 cable_connected;
 void s3c_udc_cable_connect(struct s3c_udc *dev)
 {
-        samsung_cable_check_status(1);
-        cable_connected = 1;
+	samsung_cable_check_status(1);
+	cable_connected = 1;
 }
 
 void s3c_udc_cable_disconnect(struct s3c_udc *dev)
 {
-        if (cable_connected) {
-                samsung_cable_check_status(0);
-                cable_connected = 0;
-        }
+	if (cable_connected) {
+		samsung_cable_check_status(0);
+		cable_connected = 0;
+	}
 }
 #endif
 
@@ -573,7 +573,7 @@ static irqreturn_t s3c_udc_irq(int irq, void *_dev)
 				spin_lock(&dev->lock);
 			}
 #if defined(CONFIG_BATTERY_SAMSUNG)
-                        s3c_udc_cable_disconnect(dev);
+			s3c_udc_cable_disconnect(dev);
 #endif
 		}
 	}
@@ -1353,7 +1353,7 @@ static void s3c_ep0_setup(struct s3c_udc *dev)
 			dev->req_config = 1;
 		}
 #if defined(CONFIG_BATTERY_SAMSUNG)
-                s3c_udc_cable_connect(dev);
+		s3c_udc_cable_connect(dev);
 #endif
 		break;
 
