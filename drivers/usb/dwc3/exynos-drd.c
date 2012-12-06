@@ -329,10 +329,19 @@ struct exynos_drd_core *exynos_drd_bind(struct platform_device *child)
 static int exynos_drd_create_udc(struct exynos_drd *drd)
 {
 	struct platform_device	*pdev = to_platform_device(drd->dev);
+	struct dwc3_exynos_data	*pdata = drd->pdata;
 	struct platform_device	*udc;
+	const char		*udc_name;
 	int			ret = -ENOMEM;
 
-	udc = platform_device_alloc("exynos-ss-udc", pdev->id);
+	if (pdata->udc_name) {
+		udc_name = pdata->udc_name;
+	} else {
+		dev_err(drd->dev, "udc name is not available\n");
+		return -EINVAL;
+	}
+
+	udc = platform_device_alloc(udc_name, pdev->id);
 	if (!udc) {
 		dev_err(drd->dev, "couldn't allocate udc device (%d)\n",
 				    pdev->id);
@@ -375,10 +384,19 @@ err0:
 static int exynos_drd_create_xhci(struct exynos_drd *drd)
 {
 	struct platform_device	*pdev = to_platform_device(drd->dev);
+	struct dwc3_exynos_data	*pdata = drd->pdata;
 	struct platform_device	*xhci;
+	const char		*xhci_name;
 	int			ret = -ENOMEM;
 
-	xhci = platform_device_alloc("exynos-xhci", pdev->id);
+	if (pdata->xhci_name) {
+		xhci_name = pdata->xhci_name;
+	} else {
+		dev_err(drd->dev, "xhci device name is not available\n");
+		return -EINVAL;
+	}
+
+	xhci = platform_device_alloc(xhci_name, pdev->id);
 	if (!xhci) {
 		dev_err(&pdev->dev, "couldn't allocate xhci device (%d)\n",
 				    pdev->id);
