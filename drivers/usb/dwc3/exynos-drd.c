@@ -296,7 +296,7 @@ void exynos_drd_put(struct platform_device *child)
 	struct exynos_drd *drd = platform_get_drvdata(pdev);
 
 	spin_lock(&drd->lock);
-	drd->busy = false;
+	drd->active_child = NULL;
 	spin_unlock(&drd->lock);
 }
 
@@ -308,8 +308,8 @@ int exynos_drd_try_get(struct platform_device *child)
 	int ret = 0;
 
 	spin_lock(&drd->lock);
-	if (!drd->busy)
-		drd->busy = true;
+	if (!drd->active_child)
+		drd->active_child = child;
 	else
 		ret = -EBUSY;
 	spin_unlock(&drd->lock);
@@ -573,7 +573,7 @@ static int exynos_drd_resume(struct device *dev)
 	exynos_drd_phy_set(&drd->core);
 	exynos_drd_init(&drd->core);
 	/* We are starting from scratch */
-	drd->busy = false;
+	drd->active_child = NULL;
 	exynos_drd_switch_reset(drd, 1);
 
 	/* Update runtime PM status and clear runtime_error */

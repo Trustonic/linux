@@ -362,12 +362,11 @@ struct exynos_drd {
 	struct exynos_drd_core	core;
 	struct platform_device	*udc;
 	struct platform_device	*xhci;
+	struct platform_device	*active_child;
 	struct device		*dev;
 	struct dwc3_exynos_data	*pdata;
 
 	spinlock_t		lock;
-
-	bool			busy;
 
 	struct clk		*clk;
 	struct resource		*res;
