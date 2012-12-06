@@ -137,10 +137,10 @@ static struct exynos_ss_udc_ep *ep_from_windex(struct exynos_ss_udc *udc,
  */
 static struct exynos_ss_udc_req *get_ep_head(struct exynos_ss_udc_ep *udc_ep)
 {
-	if (list_empty(&udc_ep->queue))
+	if (list_empty(&udc_ep->req_queue))
 		return NULL;
 
-	return list_first_entry(&udc_ep->queue,
+	return list_first_entry(&udc_ep->req_queue,
 				struct exynos_ss_udc_req,
 				queue);
 }
@@ -155,7 +155,7 @@ static bool on_list(struct exynos_ss_udc_ep *udc_ep,
 {
 	struct exynos_ss_udc_req *udc_req, *treq;
 
-	list_for_each_entry_safe(udc_req, treq, &udc_ep->queue, queue) {
+	list_for_each_entry_safe(udc_req, treq, &udc_ep->req_queue, queue) {
 		if (udc_req == test)
 			return true;
 	}
@@ -554,8 +554,8 @@ static int exynos_ss_udc_ep_queue(struct usb_ep *ep,
 
 	spin_lock_irqsave(&udc_ep->lock, irqflags);
 
-	first = list_empty(&udc_ep->queue);
-	list_add_tail(&udc_req->queue, &udc_ep->queue);
+	first = list_empty(&udc_ep->req_queue);
+	list_add_tail(&udc_req->queue, &udc_ep->req_queue);
 
 	if (first && !udc_ep->not_ready)
 		exynos_ss_udc_start_req(udc, udc_ep, udc_req, false);
@@ -1150,7 +1150,7 @@ static int exynos_ss_udc_process_clr_feature(struct exynos_ss_udc *udc,
 					return ret;
 
 				/* If we have pending request, then start it */
-				restart = !list_empty(&udc_ep->queue);
+				restart = !list_empty(&udc_ep->req_queue);
 				if (restart) {
 					udc_req = get_ep_head(udc_ep);
 					exynos_ss_udc_start_req(udc, udc_ep,
@@ -1539,7 +1539,7 @@ static void exynos_ss_udc_kill_all_requests(struct exynos_ss_udc *udc,
 
 	spin_lock_irqsave(&udc_ep->lock, flags);
 
-	list_for_each_entry_safe(udc_req, treq, &udc_ep->queue, queue) {
+	list_for_each_entry_safe(udc_req, treq, &udc_ep->req_queue, queue) {
 
 		exynos_ss_udc_complete_request(udc, udc_ep, udc_req, result);
 	}
@@ -1605,7 +1605,7 @@ static void exynos_ss_udc_complete_request(struct exynos_ss_udc *udc,
 	 * so be careful when doing this. */
 
 	if (!udc_ep->req && result >= 0) {
-		restart = !list_empty(&udc_ep->queue);
+		restart = !list_empty(&udc_ep->req_queue);
 		if (restart) {
 			udc_req = get_ep_head(udc_ep);
 			exynos_ss_udc_start_req(udc, udc_ep, udc_req, false);
@@ -1691,7 +1691,7 @@ static void exynos_ss_udc_ep_cmd_complete(struct exynos_ss_udc *udc,
 	}
 
 	/* If we have pending request, then start it */
-	restart = !list_empty(&udc_ep->queue);
+	restart = !list_empty(&udc_ep->req_queue);
 	if (restart) {
 		udc_req = get_ep_head(udc_ep);
 		exynos_ss_udc_start_req(udc, udc_ep,
@@ -2277,7 +2277,7 @@ static int __devinit exynos_ss_udc_initep(struct exynos_ss_udc *udc,
 
 	dev_dbg(udc->dev, "%s: %s\n", __func__, udc_ep->name);
 
-	INIT_LIST_HEAD(&udc_ep->queue);
+	INIT_LIST_HEAD(&udc_ep->req_queue);
 	INIT_LIST_HEAD(&udc_ep->cmd_queue);
 	INIT_LIST_HEAD(&udc_ep->ep.ep_list);
 

@@ -394,7 +394,7 @@ struct exynos_ss_udc_req {
  */
 struct exynos_ss_udc_ep {
 	struct usb_ep			ep;
-	struct list_head		queue;
+	struct list_head		req_queue;
 	struct list_head		cmd_queue;
 	struct exynos_ss_udc		*parent;
 	struct exynos_ss_udc_req	*req;
