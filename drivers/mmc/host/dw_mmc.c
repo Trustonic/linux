@@ -466,7 +466,7 @@ static bool dw_mci_wait_reset(struct device *dev, struct dw_mci *host,
 	/* wait till resets clear */
 	do {
 		if (!(mci_readl(host, CTRL) & reset_val)) {
-			if (reset_val & SDMMC_CTRL_RESET)
+			if ((reset_val & SDMMC_CTRL_RESET) && host->cur_slot)
 				/* After CTRL Reset, Should be needed clk val to CIU */
 				mci_send_cmd(host->cur_slot,
 				SDMMC_CMD_UPD_CLK | SDMMC_CMD_PRV_DAT_WAIT, 0);
@@ -911,15 +911,18 @@ static bool dw_mci_wait_data_busy(struct dw_mci *host)
 {
 	u32 status;
 	unsigned long timeout = jiffies + msecs_to_jiffies(1000);
+	int try = 3;
 
 	do {
-		status = mci_readl(host, STATUS);
-		if (!(status & SDMMC_DATA_BUSY))
-			return true;
+		do {
+			status = mci_readl(host, STATUS);
+			if (!(status & SDMMC_DATA_BUSY))
+				return true;
 
+			usleep_range(10, 20);
+		} while (time_before(jiffies, timeout));
 		dw_mci_wait_reset(&host->dev, host, SDMMC_CTRL_RESET);
-		usleep_range(10, 20);
-	} while (time_before(jiffies, timeout));
+	} while (--try);
 
 	dev_err(&host->dev, "Data[0]: data is busy\n");
 
