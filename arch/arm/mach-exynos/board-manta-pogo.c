@@ -173,8 +173,10 @@ static void pogo_set_min_cpu_freq(unsigned int khz)
 
 	s->cpufreq_min = khz;
 
+#ifdef CONFIG_CPU_FREQ
 	for_each_online_cpu(i)
 		cpufreq_update_policy(i);
+#endif
 }
 
 static u16 make_cmd(int id, bool write, int data)
