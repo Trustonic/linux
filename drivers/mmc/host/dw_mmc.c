@@ -907,7 +907,7 @@ static void dw_mci_submit_data(struct dw_mci *host, struct mmc_data *data)
 	}
 }
 
-static bool dw_mci_wait_data_busy(struct dw_mci *host)
+static bool dw_mci_wait_data_busy(struct dw_mci *host, struct mmc_request *mrq)
 {
 	u32 status;
 	unsigned long timeout = jiffies + msecs_to_jiffies(1000);
@@ -921,6 +921,11 @@ static bool dw_mci_wait_data_busy(struct dw_mci *host)
 
 			usleep_range(10, 20);
 		} while (time_before(jiffies, timeout));
+
+		/* card is checked every 1s by CMD13 at least */
+		if (mrq->cmd->opcode == MMC_SEND_STATUS)
+			return true;
+
 		dw_mci_wait_reset(&host->dev, host, SDMMC_CTRL_RESET);
 	} while (--try);
 
@@ -1103,12 +1108,11 @@ static void dw_mci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 		return;
 	}
 
-	if (!dw_mci_stop_abort_cmd(mrq->cmd) &&
-			mrq->cmd->opcode != MMC_SEND_STATUS) {
-		if (!dw_mci_wait_data_busy(host)) {
-				mrq->cmd->error = -ENOTRECOVERABLE;
-				mmc_request_done(mmc, mrq);
-				return;
+	if (!dw_mci_stop_abort_cmd(mrq->cmd)) {
+		if (!dw_mci_wait_data_busy(host, mrq)) {
+			mrq->cmd->error = -ENOTRECOVERABLE;
+			mmc_request_done(mmc, mrq);
+			return;
 		}
 	}
 
