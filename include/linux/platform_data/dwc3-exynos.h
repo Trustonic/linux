@@ -16,6 +16,8 @@
 #define _DWC3_EXYNOS_H_
 
 struct dwc3_exynos_data {
+	const char *udc_name;
+	const char *xhci_name;
 	int phy_type;
 	int (*phy_init)(struct platform_device *pdev, int type);
 	int (*phy_exit)(struct platform_device *pdev, int type);
