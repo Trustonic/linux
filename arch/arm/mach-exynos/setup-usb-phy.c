@@ -14,6 +14,8 @@
 #include <linux/err.h>
 #include <linux/io.h>
 #include <linux/platform_device.h>
+#include <linux/string.h>
+#include <linux/platform_data/dwc3-exynos.h>
 #include <mach/regs-pmu.h>
 #include <mach/regs-usb-phy.h>
 #include <mach/regs-usb3-drd-phy.h>
@@ -845,6 +847,42 @@ static u32 exynos_usb_phy30_set_clock(struct platform_device *pdev)
 	return reg;
 }
 
+static int exynos5_usb_phy30_tune(struct platform_device *pdev)
+{
+	struct device *parent = pdev->dev.parent;
+	struct dwc3_exynos_data *pdata;
+	int phy_num = pdev->id;
+	void __iomem *reg_base;
+
+	if (!parent || !parent->platform_data)
+		return -EINVAL;
+
+	pdata = parent->platform_data;
+
+	switch (phy_num) {
+	case 0:
+		reg_base = S5P_VA_USB3_DRD0_PHY;
+		break;
+	case 1:
+		reg_base = S5P_VA_USB3_DRD1_PHY;
+		break;
+	default:
+		return -ENODEV;
+	}
+
+	if (!strcmp(pdata->udc_name, pdev->name)) {
+		/* TODO: Peripheral mode */
+
+	} else if (!strcmp(pdata->xhci_name, pdev->name)) {
+		/* TODO: Host mode */
+
+	} else {
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int exynos5_usb_phy30_init(struct platform_device *pdev)
 {
 	int phy_num = pdev->id;
@@ -1270,6 +1308,20 @@ done:
 
 	mutex_unlock(&usb_phy_control.phy_lock);
 	exynos_usb_phy_clock_disable(pdev, type);
+
+	return ret;
+}
+
+int s5p_usb_phy_tune(struct platform_device *pdev, int type)
+{
+	int ret = -EINVAL;
+
+	mutex_lock(&usb_phy_control.phy_lock);
+
+	if (type == S5P_USB_PHY_DRD)
+		ret = exynos5_usb_phy30_tune(pdev);
+
+	mutex_unlock(&usb_phy_control.phy_lock);
 
 	return ret;
 }
