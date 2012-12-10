@@ -20,6 +20,7 @@
 #include <plat/gpio-cfg.h>
 #include <plat/devs.h>
 #include <plat/jpeg.h>
+#include <plat/fimg2d.h>
 
 #include <mach/map.h>
 #include <mach/regs-clock.h>
@@ -27,8 +28,6 @@
 #include <mach/sysmmu.h>
 #include <mach/exynos-ion.h>
 #include <mach/exynos-mfc.h>
-
-#include <plat/fimg2d.h>
 
 #include "board-smdk5250.h"
 
@@ -51,6 +50,7 @@ struct platform_device exynos_device_md2 = {
 
 #ifdef CONFIG_VIDEO_EXYNOS_FIMG2D
 static struct fimg2d_platdata fimg2d_data __initdata = {
+	.ip_ver		= IP_VER_G2D_5G,
 	.hw_ver		= 0x42,
 	.gate_clkname	= "fimg2d",
 };
