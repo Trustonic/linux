@@ -642,6 +642,14 @@ static ssize_t srp_read(struct file *file, char *buffer,
 		srp.obuf_fill_done[srp.obuf_ready] = 0;
 		srp_debug("Elapsed Obuf[%d] after Send EOS\n", srp.obuf_ready);
 
+		if (srp.play_done && srp.ibuf_empty[0] && srp.ibuf_empty[1]) {
+			srp_info("Protect read operation after play done.\n");
+			srp.pcm_info.size = 0;
+			srp.stop_after_eos = 1;
+			ret = copy_to_user(argp, &srp.pcm_info, sizeof(struct srp_buf_info));
+			return ret;
+		}
+
 		srp_pending_ctrl(RUN);
 		srp_obuf_elapsed();
 	}
@@ -1113,6 +1121,8 @@ static irqreturn_t srp_irq(int irqno, void *dev_id)
 		srp.pcm_size = 0;
 		srp.play_done = 1;
 
+		srp.ibuf_empty[0] = 1;
+		srp.ibuf_empty[1] = 1;
 		srp.obuf_fill_done[0] = 1;
 		srp.obuf_fill_done[1] = 1;
 		wakeup_read = 1;
