@@ -187,6 +187,14 @@ static int exynos_xhci_runtime_resume(struct device *dev)
 
 	pm_runtime_get_sync(exynos_xhci->dev->parent);
 
+	/*
+	 * Parent device (DRD core) resumes before its child (xHCI).
+	 * Since we "get" DRD when it's already active, we need to
+	 * reconfigure PHY here, so PHY tuning took effect.
+	 */
+	if (exynos_xhci->core->ops->phy_set)
+		exynos_xhci->core->ops->phy_set(exynos_xhci->core);
+
 	if (exynos_xhci->core->ops->change_mode)
 		exynos_xhci->core->ops->change_mode(exynos_xhci->core, true);
 
