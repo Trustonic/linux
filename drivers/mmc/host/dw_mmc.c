@@ -1641,6 +1641,8 @@ static void dw_mci_tasklet_func(unsigned long priv)
 					 */
 					data->bytes_xfered = 0;
 					data->error = -ETIMEDOUT;
+					dev_err(&host->dev,
+						"End bit error\n");
 				} else
 					data->error = -EIO;
 
