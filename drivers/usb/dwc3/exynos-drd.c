@@ -157,6 +157,9 @@ static void exynos_drd_phy_set(struct exynos_drd_core *core)
 	if (pdata->phy_init)
 		pdata->phy_init(pdev, pdata->phy_type);
 
+	if (drd->active_child && pdata->phy_tune)
+		pdata->phy_tune(drd->active_child, pdata->phy_type);
+
 	__bic32(drd->regs + EXYNOS_USB3_GUSB2PHYCFG(0),
 		EXYNOS_USB3_GUSB2PHYCFGx_PHYSoftRst);
 	__bic32(drd->regs + EXYNOS_USB3_GUSB3PIPECTL(0),
