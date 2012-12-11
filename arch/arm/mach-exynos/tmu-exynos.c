@@ -34,6 +34,7 @@
 #include <mach/regs-mem.h>
 #include <mach/smc.h>
 #include <mach/exynos5_bus.h>
+#include <mach/asv-exynos.h>
 
 static DEFINE_MUTEX(tmu_lock);
 
@@ -89,6 +90,77 @@ static int get_cur_temp(struct tmu_info *info)
 	return temperature;
 }
 
+extern int mali_dvfs_freq_under_lock(int level);
+extern void mali_dvfs_freq_under_unlock(void);
+
+static int exynos_tc_freq_lock(struct tmu_info *info, int enable)
+{
+	int ret = 0;
+
+	if (enable == info->tc_state) {
+		pr_info("tmu: already is %s.\n",
+			enable ? "locked" : "unlocked");
+		return ret;
+	}
+
+	if (enable) {
+		/* locking the cpu frequency */
+		ret = exynos_thermal_throttle_min_freq(info->cpulevel_tc);
+		if (ret)
+			goto err_lock;
+
+		/* locking the mif frequency */
+		info->mif_handle = exynos5_bus_mif_min(info->miflevel_tc);
+		if (!info->mif_handle) {
+			ret = -EINVAL;
+			goto err_lock;
+		}
+
+		/* locking the int frequency */
+		info->int_handle = exynos5_bus_int_min(info->intlevel_tc);
+		if (!info->int_handle) {
+			ret = -EINVAL;
+			goto err_lock;
+		}
+
+		/* locking the g3d frequency */
+		mali_dvfs_freq_under_lock(1);
+
+		pr_info("Lock for TC is success..\n");
+	} else {
+		/* unlocking the cpu frequency */
+		ret = exynos_thermal_throttle_min_freq(0);
+		if (ret)
+			goto err_lock;
+
+		/* unlocking the mif frequency */
+		if (info->mif_handle) {
+			ret = exynos5_bus_mif_put(info->mif_handle);
+			if (ret)
+				goto err_lock;
+		}
+
+		/* unlocking the int frequency */
+		if (info->int_handle) {
+			ret = exynos5_bus_int_put(info->int_handle);
+			if (ret)
+				goto err_lock;
+		}
+
+		/* unlocking the g3d frequency */
+		mali_dvfs_freq_under_unlock();
+
+		pr_info("Unlock for TC is success..\n");
+	}
+
+	return ret;
+
+err_lock:
+	pr_err("tmu: exynos_tc_freq %s is failed.\n",
+			enable ? "locked" : "unlocked");
+	return ret;
+}
+
 static void tmu_monitor(struct work_struct *work)
 {
 	struct delayed_work *delayed_work = to_delayed_work(work);
@@ -103,8 +175,32 @@ static void tmu_monitor(struct work_struct *work)
 
 	mutex_lock(&tmu_lock);
 	switch (info->tmu_state) {
+	case TMU_STATUS_TC:
+		if ((cur_temp <= data->ts.start_tc) &&
+			!(info->tc_state)) {
+			if (!info->mif_vol_offset_state) {
+				exynos5_busfreq_mif_request_voltage_offset(37500);
+				info->mif_vol_offset_state = true;
+				pr_debug("tmu: mif voltage compensation (+37.5 mV)\n");
+			}
+
+			exynos_tc_freq_lock(info, true);
+
+			info->tc_state = true;
+			pr_debug("tmu: temperature compensation\n");
+		} else if ((cur_temp >= data->ts.stop_tc) &&
+				(info->tc_state)) {
+			exynos_tc_freq_lock(info, false);
+
+			info->tc_state = false;
+			info->tmu_state = TMU_STATUS_MIF_VC;
+			pr_debug("tmu: restore temperature compensation\n");
+		}
+		break;
 	case TMU_STATUS_MIF_VC:
-		if ((cur_temp <= data->ts.start_mif_vc) &&
+		if (cur_temp <= data->ts.start_tc) {
+			info->tmu_state = TMU_STATUS_TC;
+		} else if ((cur_temp <= data->ts.start_mif_vc) &&
 			!(info->mif_vol_offset_state)) {
 			exynos5_busfreq_mif_request_voltage_offset(37500);
 
@@ -123,6 +219,10 @@ static void tmu_monitor(struct work_struct *work)
 		} else {
 			exynos_thermal_unthrottle();
 		}
+
+		/* clear to prevent from interrupt by peindig bit */
+		__raw_writel((CLEAR_RISE_INT | CLEAR_FALL_INT),
+					info->tmu_base + INTCLEAR);
 		enable_irq(info->irq);
 		goto out;
 	case TMU_STATUS_THROTTLED:
@@ -194,9 +294,8 @@ static int exynos_tmu_init(struct tmu_info *info)
 	struct tmu_data *data = info->dev->platform_data;
 	unsigned int te_temp, con;
 	unsigned int temp_throttle, temp_trip;
-	unsigned int rising_thr;
-	unsigned int temp_mif_vc;
-	unsigned int falling_thr;
+	unsigned int temp_mif_vc, temp_tc;
+	unsigned int rising_thr, falling_thr;
 
 	/* must reload for using efuse value at EXYNOS4212 */
 	__raw_writel(TRIMINFO_RELOAD, info->tmu_base + TRIMINFO_CON);
@@ -221,6 +320,14 @@ static int exynos_tmu_init(struct tmu_info *info)
 			get_refresh_period(FREQ_IN_PLL),
 			info->auto_refresh_normal, info->auto_refresh_mem_throttle);
 
+	info->cpulevel_tc = asv_get_freq(ID_ARM, data->temp_compensate.arm_volt);
+	info->miflevel_tc = asv_get_freq(ID_MIF, data->temp_compensate.bus_mif_volt);
+	info->intlevel_tc = asv_get_freq(ID_INT, data->temp_compensate.bus_int_volt);
+
+	dev_info(info->dev, "TC ARM frequency = %d, TC MIF frequency = %d,"
+			"TC INT frequency = %d\n",
+			info->cpulevel_tc, info->miflevel_tc, info->intlevel_tc);
+
 	/*Get rising Threshold and Set interrupt level*/
 	temp_throttle = data->ts.start_throttle
 			+ info->te1 - TMU_DC_VALUE;
@@ -235,8 +342,10 @@ static int exynos_tmu_init(struct tmu_info *info)
 	/* Get falling Threshold and Set interrupt level */
 	temp_mif_vc = data->ts.start_mif_vc
 			+ info->te1 - TMU_DC_VALUE;
+	temp_tc = data->ts.start_tc
+			+ info->te1 - TMU_DC_VALUE;
 
-	falling_thr = (temp_mif_vc | (UNUSED_THRESHOLD << 8) |
+	falling_thr = (temp_tc | (temp_mif_vc << 8) |
 			(UNUSED_THRESHOLD << 16));
 
 	__raw_writel(falling_thr, info->tmu_base + THD_TEMP_FALL);
@@ -249,6 +358,9 @@ static int exynos_tmu_init(struct tmu_info *info)
 
 	/* Set init MIF voltage compensation state */
 	info->mif_vol_offset_state = false;
+
+	/* Set init temperature compensation state */
+	info->tc_state = false;
 
 	/* Need to initail regsiter setting after getting parameter info */
 	/* [28:23] vref [11:8] slope - Tunning parameter */
@@ -268,7 +380,8 @@ static int exynos_tmu_init(struct tmu_info *info)
 	mdelay(1);
 
 	/*LEV0 LEV1 interrupt enable */
-	__raw_writel(INTEN_RISE0 | INTEN_RISE1 | INTEN_FALL0, info->tmu_base + INTEN);
+	__raw_writel(INTEN_RISE0 | INTEN_RISE1 | INTEN_FALL0 | INTEN_FALL1,
+			info->tmu_base + INTEN);
 
 	return 0;
 }
@@ -284,17 +397,21 @@ static irqreturn_t tmu_irq(int irq, void *id)
 	/* To handle multiple interrupt pending,
 	* interrupt by high temperature are serviced with priority.
 	*/
-	if (status & INTSTAT_FALL0) {
+	if (status & INTSTAT_FALL1) {
 		dev_info(info->dev, "MIF voltage compensation interrupt\n");
 		info->tmu_state = TMU_STATUS_MIF_VC;
-		__raw_writel(INTCLEAR_FALL0, info->tmu_base + INTCLEAR);
+		__raw_writel(CLEAR_FALL_INT, info->tmu_base + INTCLEAR);
+	} else if (status & INTSTAT_FALL0) {
+		dev_info(info->dev, "Temperature compensation interrupt\n");
+		info->tmu_state = TMU_STATUS_TC;
+		__raw_writel(CLEAR_FALL_INT, info->tmu_base + INTCLEAR);
 	} else if (status & INTSTAT_RISE1) {
 		dev_info(info->dev, "Tripping interrupt\n");
 		info->tmu_state = TMU_STATUS_TRIPPED;
-		__raw_writel(INTCLEAR_RISE1, info->tmu_base + INTCLEAR);
+		__raw_writel(CLEAR_RISE_INT, info->tmu_base + INTCLEAR);
 	} else if (status & INTSTAT_RISE0) {
 		dev_info(info->dev, "Throttling interrupt\n");
-		__raw_writel(INTCLEAR_RISE0, info->tmu_base + INTCLEAR);
+		__raw_writel(CLEAR_RISE_INT, info->tmu_base + INTCLEAR);
 		info->tmu_state = TMU_STATUS_THROTTLED;
 	} else {
 		dev_err(info->dev, "%s: TMU interrupt error. INTSTAT : %x\n", __func__, status);

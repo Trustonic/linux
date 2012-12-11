@@ -12,6 +12,8 @@
 #ifndef __ASM_ARCH_TMU_H
 #define __ASM_ARCH_TMU_H
 
+#include <mach/exynos5_bus.h>
+
 #define MUX_ADDR_VALUE 6
 #define TMU_SAVE_NUM 10
 #define TMU_DC_VALUE 25
@@ -25,9 +27,12 @@ enum tmu_status_t {
 	TMU_STATUS_THROTTLED,
 	TMU_STATUS_TRIPPED,
 	TMU_STATUS_MIF_VC,
+	TMU_STATUS_TC,
 };
 
 struct temperature_params {
+	unsigned int stop_tc;
+	unsigned int start_tc;
 	unsigned int stop_mif_vc;
 	unsigned int start_mif_vc;
 	unsigned int stop_throttle;
@@ -38,8 +43,15 @@ struct temperature_params {
 	unsigned int start_mem_throttle;
 };
 
+struct temp_compensate_params {
+	unsigned int arm_volt;
+	unsigned int bus_mif_volt;
+	unsigned int bus_int_volt;
+};
+
 struct tmu_data {
 	struct temperature_params ts;
+	struct temp_compensate_params temp_compensate;
 	unsigned int efuse_value;
 	unsigned int slope;
 	int mode;
@@ -56,10 +68,20 @@ struct tmu_info {
 	unsigned int te2; /* triminfo_85 */
 	int tmu_state;
 	bool mif_vol_offset_state;
+	bool tc_state;
+
+	struct exynos5_bus_int_handle *poll_handle;
+	struct exynos5_bus_int_handle *int_handle;
+	struct exynos5_bus_mif_handle *mif_handle;
 
 	bool mem_throttled;
 	unsigned int auto_refresh_mem_throttle;
 	unsigned int auto_refresh_normal;
+
+	/* temperature compensation */
+	unsigned int cpulevel_tc;
+	unsigned int miflevel_tc;
+	unsigned int intlevel_tc;
 
 	/* monitoring rate */
 	unsigned int sampling_rate;
