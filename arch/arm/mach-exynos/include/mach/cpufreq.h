@@ -34,5 +34,6 @@ struct exynos_dvfs_info {
 extern int exynos4210_cpufreq_init(struct exynos_dvfs_info *);
 extern int exynos4x12_cpufreq_init(struct exynos_dvfs_info *);
 extern int __init exynos5250_cpufreq_init(struct exynos_dvfs_info *);
+extern int exynos_thermal_throttle_min_freq(unsigned int freq);
 extern void exynos_thermal_throttle(void);
 extern void exynos_thermal_unthrottle(void);
