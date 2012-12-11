@@ -23,6 +23,7 @@ struct exynos5_bus_mif_handle *exynos5_bus_mif_get(unsigned long min_freq);
 int exynos5_bus_mif_put(struct exynos5_bus_mif_handle *handle);
 int exynos5_bus_mif_update(struct exynos5_bus_mif_handle *handle,
 		unsigned long min_freq);
+void exynos5_busfreq_mif_request_voltage_offset(unsigned long offset);
 
 static inline
 struct exynos5_bus_mif_handle *exynos5_bus_mif_min(unsigned long min_freq)
@@ -101,6 +102,11 @@ int exynos5_bus_mif_update(struct exynos5_bus_mif_handle *handle,
 		unsigned long min_freq)
 {
 	return 0;
+}
+
+static inline
+void exynos5_busfreq_mif_request_voltage_offset(unsigned long offset)
+{
 }
 
 static inline void exynos5_ppmu_trace(void)
