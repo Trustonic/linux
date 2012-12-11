@@ -37,7 +37,9 @@ static struct lpj_info global_lpj_ref;
 /* Use boot_freq when entering sleep mode */
 static unsigned int boot_freq;
 static unsigned int max_freq;
+static unsigned int min_freq;
 static unsigned int max_thermal_freq;
+static unsigned int min_thermal_freq;
 static unsigned int curr_target_freq;
 
 static struct exynos_dvfs_info *exynos_info;
@@ -207,6 +209,9 @@ static int exynos_target(struct cpufreq_policy *policy,
 	if (target_freq > max_thermal_freq)
 		target_freq = max_thermal_freq;
 
+	if (target_freq < min_thermal_freq)
+		target_freq = min_thermal_freq;
+
 	if (cpufreq_frequency_table_target(policy, freq_table,
 					   target_freq, relation, &index)) {
 		ret = -EINVAL;
@@ -246,6 +251,43 @@ static unsigned int exynos_thermal_lower_speed(void)
 	return max;
 }
 
+int exynos_thermal_throttle_min_freq(unsigned int freq)
+{
+	struct cpufreq_frequency_table *freq_table = exynos_info->freq_table;
+	struct cpufreq_policy *policy = cpufreq_cpu_get(0);
+	unsigned int index, cur;
+	int ret = 0;
+
+	if (!exynos_cpufreq_init_done)
+		return -EINVAL;
+
+	mutex_lock(&cpufreq_lock);
+
+	if (!freq)
+		min_thermal_freq = min_freq;
+
+	if (cpufreq_frequency_table_target(policy, freq_table,
+					   freq, 0, &index)) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (freq)
+		min_thermal_freq = freq;
+
+	if (!exynos_cpufreq_disable) {
+		cur = exynos_getspeed(0);
+		if (cur < min_thermal_freq) {
+			freqs.old = cur;
+			exynos_cpufreq_scale(min_thermal_freq, freqs.old);
+		}
+	}
+
+out:
+	mutex_unlock(&cpufreq_lock);
+	return ret;
+}
+
 void exynos_thermal_throttle(void)
 {
 	unsigned int cur;
@@ -259,6 +301,9 @@ void exynos_thermal_throttle(void)
 	mutex_lock(&cpufreq_lock);
 
 	max_thermal_freq = exynos_thermal_lower_speed();
+
+	if (max_thermal_freq < min_thermal_freq)
+		max_thermal_freq = min_thermal_freq;
 
 	pr_debug("%s: temperature too high, cpu throttle at max %u\n",
 			__func__, max_thermal_freq);
@@ -456,6 +501,8 @@ static int __init exynos_cpufreq_init(void)
 
 	max_freq = exynos_info->freq_table[exynos_info->max_support_idx].frequency;
 	max_thermal_freq = max_freq;
+	min_freq = exynos_info->freq_table[exynos_info->min_support_idx].frequency;
+	min_thermal_freq = min_freq;
 
 	exynos_cpufreq_disable = false;
 
