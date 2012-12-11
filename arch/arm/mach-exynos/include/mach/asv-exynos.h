@@ -23,9 +23,11 @@ enum asv_type_id {
 struct asv_common {
 	bool		init_done;
 	unsigned int	(*get_voltage)(enum asv_type_id, unsigned int freq);
+	unsigned int	(*get_frequency)(enum asv_type_id, unsigned int volt);
 };
 
 extern unsigned int asv_get_volt(enum asv_type_id target_type, unsigned int target_freq);
+extern unsigned int asv_get_freq(enum asv_type_id target_type, unsigned int target_volt);
 extern int exynos5250_init_asv(struct asv_common *asv_info);
 
 #endif /* __ASM_ARCH_ASV_EXYNOS_H */

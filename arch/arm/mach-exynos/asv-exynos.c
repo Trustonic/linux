@@ -31,6 +31,14 @@ unsigned int asv_get_volt(enum asv_type_id target_type, unsigned int target_freq
 	return 0;
 }
 
+unsigned int asv_get_freq(enum asv_type_id target_type, unsigned int target_volt)
+{
+	if (exynos_asv.init_done)
+		return exynos_asv.get_frequency(target_type, target_volt);
+
+	return 0;
+}
+
 static int __init asv_init(void)
 {
 	int ret;
