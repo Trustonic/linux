@@ -173,6 +173,8 @@ static struct platform_device *smdk5250_devices[] __initdata = {
 /* TMU */
 static struct tmu_data smdk5250_tmu_pdata __initdata = {
 	.ts = {
+		.stop_tc		= 13,
+		.start_tc		= 10,
 		.stop_mif_vc		= 27,
 		.start_mif_vc		= 25,
 		.stop_throttle		= 78,
@@ -181,6 +183,12 @@ static struct tmu_data smdk5250_tmu_pdata __initdata = {
 		.start_emergency	= 120,
 		.stop_mem_throttle	= 80,
 		.start_mem_throttle	= 85,
+	},
+
+	.temp_compensate = {
+		.arm_volt	= 900000, /* uV */
+		.bus_mif_volt	= 900000, /* uV */
+		.bus_int_volt	= 900000, /* uV */
 	},
 
 	.efuse_value	= 80,
