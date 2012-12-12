@@ -520,6 +520,7 @@ struct s5p_mfc_dec {
 	enum v4l2_memory dst_memtype;
 	int sei_parse;
 	int stored_tag;
+	dma_addr_t y_addr_for_pb;
 
 	int internal_dpb;
 

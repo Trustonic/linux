@@ -432,6 +432,16 @@ static void s5p_mfc_handle_frame_new(struct s5p_mfc_ctx *ctx, unsigned int err)
 				dec->immediate_display = 0;
 			}
 
+			/* Update frame tag for packed PB */
+			if (dec->is_packedpb &&
+					(dec->y_addr_for_pb == dspl_y_addr)) {
+				call_cop(ctx, get_buf_update_val, ctx,
+					&ctx->dst_ctrls[index],
+					V4L2_CID_MPEG_MFC51_VIDEO_FRAME_TAG,
+					dec->stored_tag);
+				dec->y_addr_for_pb = 0;
+			}
+
 			if (!dec->is_dts_mode) {
 				ctx->last_framerate =
 					get_framerate(&ctx->last_timestamp,
@@ -611,6 +621,8 @@ static void s5p_mfc_handle_frame(struct s5p_mfc_ctx *ctx,
 
 			/* Run MFC again on the same buffer */
 			mfc_debug(2, "Running again the same buffer.\n");
+
+			dec->y_addr_for_pb = MFC_GET_ADR(DEC_DECODED_Y);
 
 			stream_vir = vb2_plane_vaddr(&src_buf->vb, 0);
 			s5p_mfc_cache_inv(&src_buf->vb, 0);
