@@ -13,6 +13,7 @@
 #include <linux/cpu.h>
 #include <linux/cpuidle.h>
 #include <linux/cpu_pm.h>
+#include <linux/suspend.h>
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/export.h>
@@ -28,6 +29,7 @@
 #include <asm/suspend.h>
 #include <asm/unified.h>
 #include <asm/hardware/gic.h>
+#include <asm/system_misc.h>
 #include <mach/regs-pmu.h>
 #include <mach/regs-clock.h>
 #include <mach/pmu.h>
@@ -507,6 +509,24 @@ cpu1_aborted:
 	return ret;
 }
 
+static int exynos_cpuidle_pm_notifier(struct notifier_block *notifier,
+					unsigned long pm_event, void *v)
+{
+	switch (pm_event) {
+	case PM_SUSPEND_PREPARE:
+		disable_hlt();
+		break;
+	case PM_POST_SUSPEND:
+		enable_hlt();
+		break;
+	}
+
+	return NOTIFY_OK;
+}
+
+static struct notifier_block exynos_cpuidle_nb = {
+	.notifier_call = exynos_cpuidle_pm_notifier,
+};
 
 static void __setup_broadcast_timer(void *arg)
 {
@@ -597,6 +617,8 @@ static int __init exynos_init_cpuidle(void)
 	}
 	drv->safe_state_index = 0;
 	cpuidle_register_driver(&exynos_idle_driver);
+
+	register_pm_notifier(&exynos_cpuidle_nb);
 
 	on_each_cpu(__setup_broadcast_timer, (void *)true, 1);
 	ret = register_cpu_notifier(&setup_broadcast_notifier);
