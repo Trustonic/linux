@@ -147,6 +147,8 @@ static bool smdk5250_get_bsession_valid(struct platform_device *pdev)
 }
 
 static struct dwc3_exynos_data smdk5250_drd_pdata __initdata = {
+	.udc_name		= "exynos-ss-udc",
+	.xhci_name		= "exynos-xhci",
 	.phy_type		= S5P_USB_PHY_DRD,
 	.phy_init		= s5p_usb_phy_init,
 	.phy_exit		= s5p_usb_phy_exit,
