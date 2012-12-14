@@ -34,9 +34,6 @@
 #include "srp-type.h"
 #include "srp_alp/srp_alp.h"
 
-/* Initialize divider value to avoid over-clock */
-#define EXYNOS_AUDSS_DIV_INIT_VAL	(0xF84)
-
 #define msecs_to_loops(t) (loops_per_jiffy / 1000 * HZ * t)
 
 struct i2s_dai {
@@ -1016,10 +1013,6 @@ static int clk_set_heirachy(struct i2s_dai *i2s)
 							i2s->pdev->id);
 		return ret;
 	}
-
-	/* To avoid over-clock */
-	writel(EXYNOS_AUDSS_DIV_INIT_VAL,
-			i2s->audss_base + EXYNOS_CLKDIV_AUDSS_OFFSET);
 
 	fout_epll = clk_get(&i2s->pdev->dev, "fout_epll");
 	if (IS_ERR(fout_epll)) {
