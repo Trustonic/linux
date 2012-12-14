@@ -736,7 +736,7 @@ static int mmc_select_powerclass(struct mmc_card *card,
  */
 static int mmc_select_hs200(struct mmc_card *card)
 {
-	int idx, ddr, err = -EINVAL;
+	int idx, err = -EINVAL;
 	struct mmc_host *host;
 	static unsigned ext_csd_bits[][2] = {
 		{EXT_CSD_BUS_WIDTH_4, EXT_CSD_DDR_BUS_WIDTH_4},
@@ -768,10 +768,6 @@ static int mmc_select_hs200(struct mmc_card *card)
 		goto err;
 
 	idx = (host->caps & MMC_CAP_8_BIT_DATA) ? 1 : 0;
-	ddr = ((card->ext_csd.card_type & EXT_CSD_CARD_TYPE_DDR_200_1_2V &&
-			host->caps2 & MMC_CAP2_HS200_1_2V_DDR) ||
-	       (card->ext_csd.card_type & EXT_CSD_CARD_TYPE_DDR_200_1_8V &&
-			host->caps2 & MMC_CAP2_HS200_1_8V_DDR)) ? 1 : 0;
 
 	/*
 	 * Unlike SD, MMC cards dont have a configuration register to notify
@@ -806,30 +802,9 @@ static int mmc_select_hs200(struct mmc_card *card)
 	}
 
 	/* switch to HS200 mode if bus width set successfully */
-	if (!err) {
-		if (ddr) {
-			err = mmc_select_powerclass(card, ext_csd_bits[idx][1],
-					(u8 *)&card->ext_csd);
-			if (err)
-				pr_warning("%s: power class selection to "
-						"bus width %d ddr %d failed\n",
-						mmc_hostname(card->host),
-						1 << bus_widths[idx], ddr);
-
-			err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
-					EXT_CSD_BUS_WIDTH,
-					ext_csd_bits[idx][1],
-					card->ext_csd.generic_cmd6_time);
-			if (err)
-				goto err;
-
-			err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
-					EXT_CSD_HS_TIMING, 3, 0);
-		} else {
-			err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
-					EXT_CSD_HS_TIMING, 2, 0);
-		}
-	}
+	if (!err)
+		err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
+				EXT_CSD_HS_TIMING, 2, 0);
 err:
 	return err;
 }
@@ -1064,13 +1039,8 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 			err = 0;
 		} else {
 			if (card->ext_csd.hs_max_dtr > 52000000) {
-				if (host->caps2 & MMC_CAP2_HS200_DDR &&
-				    card->ext_csd.card_type &
-					EXT_CSD_CARD_TYPE_DDR_200) {
-					mmc_card_set_hs200_ddr(card);
-					mmc_set_timing(card->host,
-						       MMC_TIMING_MMC_HS200_DDR);
-				} else if (host->caps2 & MMC_CAP2_HS200) {
+				if (host->caps2 & MMC_CAP2_HS200 ||
+					host->caps2 & MMC_CAP2_HS200_DDR) {
 					mmc_card_set_hs200(card);
 					mmc_set_timing(card->host,
 							MMC_TIMING_MMC_HS200);
@@ -1088,8 +1058,7 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 	max_dtr = (unsigned int)-1;
 
 	if (mmc_card_highspeed(card) ||
-			mmc_card_hs200(card) ||
-			mmc_card_hs200_ddr(card)) {
+			mmc_card_hs200(card)) {
 		if (max_dtr > card->ext_csd.hs_max_dtr)
 			max_dtr = card->ext_csd.hs_max_dtr;
 	} else if (max_dtr > card->csd.max_dtr) {
@@ -1120,6 +1089,7 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 	if (mmc_card_hs200(card)) {
 		u32 ext_csd_bits;
 		u32 bus_width = card->host->ios.bus_width;
+		int ddr;
 
 		/*
 		 * For devices supporting HS200 mode, the bus width has
@@ -1132,8 +1102,7 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 		 * 3. set the clock to > 52Mhz <=200MHz and
 		 * 4. execute tuning for HS200
 		 */
-		if ((host->caps2 & MMC_CAP2_HS200) &&
-		    card->host->ops->execute_tuning) {
+		if (card->host->ops->execute_tuning) {
 			mmc_host_clk_hold(card->host);
 			err = card->host->ops->execute_tuning(card->host,
 				MMC_SEND_TUNING_BLOCK_HS200);
@@ -1146,6 +1115,11 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 			}
 		}
 
+		ddr = ((card->ext_csd.card_type & EXT_CSD_CARD_TYPE_DDR_200_1_2V &&
+				host->caps2 & MMC_CAP2_HS200_1_2V_DDR) ||
+			(card->ext_csd.card_type & EXT_CSD_CARD_TYPE_DDR_200_1_8V &&
+				 host->caps2 & MMC_CAP2_HS200_1_8V_DDR)) ? 1 : 0;
+
 		ext_csd_bits = (bus_width == MMC_BUS_WIDTH_8) ?
 				EXT_CSD_BUS_WIDTH_8 : EXT_CSD_BUS_WIDTH_4;
 		err = mmc_select_powerclass(card, ext_csd_bits, ext_csd);
@@ -1153,6 +1127,48 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 			pr_warning("%s: power class selection to bus width %d"
 				   " failed\n", mmc_hostname(card->host),
 				   1 << bus_width);
+
+		if (ddr) {
+			err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
+					EXT_CSD_HS_TIMING, 1,
+					card->ext_csd.generic_cmd6_time);
+			if (err) {
+				pr_warning("%s: switch to high-speed "
+					"from hs200 failed\n",
+					mmc_hostname(card->host));
+				goto err;
+			}
+
+			mmc_set_timing(card->host, MMC_TIMING_MMC_HS);
+			mmc_set_clock(host, MMC_HIGH_52_MAX_DTR);
+
+			ext_csd_bits = (bus_width == MMC_BUS_WIDTH_8) ?
+				EXT_CSD_DDR_BUS_WIDTH_8 : EXT_CSD_DDR_BUS_WIDTH_4;
+
+			err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
+					EXT_CSD_BUS_WIDTH,
+					ext_csd_bits,
+					card->ext_csd.generic_cmd6_time);
+			if (err) {
+				pr_warning("%s: switch to bus width %d ddr "
+					"failed, err:%d\n", mmc_hostname(card->host),
+					1 << bus_width, err);
+				goto err;
+			}
+
+			err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
+					EXT_CSD_HS_TIMING, 3, 0);
+			if (err) {
+				pr_warning("%s: switch to ddr200 failed, err:%d\n",
+						mmc_hostname(card->host), err);
+				goto err;
+			}
+
+			mmc_card_clr_hs200(card);
+			mmc_card_set_hs200_ddr(card);
+			mmc_set_timing(card->host, MMC_TIMING_MMC_HS200_DDR);
+			mmc_set_clock(host, MMC_HS200_MAX_DTR);
+		}
 	}
 
 	/*
