@@ -3294,6 +3294,7 @@ static int __devinit s3c_fb_copy_bootloader_fb(struct platform_device *pdev,
 		void *from_virt = kmap(page);
 		void *to_virt = dma_buf_kmap(dest_buf, i / PAGE_SIZE);
 		memcpy(to_virt, from_virt, PAGE_SIZE);
+		dmac_map_area(to_virt, PAGE_SIZE, DMA_TO_DEVICE);
 		kunmap(page);
 		dma_buf_kunmap(dest_buf, i / PAGE_SIZE, to_virt);
 	}
