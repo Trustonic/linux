@@ -1084,6 +1084,8 @@ static int clk_set_heirachy(struct i2s_dai *i2s)
 
 	return ret;
 
+err6:
+	clk_put(i2s->dout_i2s);
 err5:
 	clk_put(i2s->dout_bus);
 err4:
