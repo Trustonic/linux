@@ -37,10 +37,6 @@
 /* Initialize divider value to avoid over-clock */
 #define EXYNOS_AUDSS_DIV_INIT_VAL	(0xF84)
 
-/* Target SRP/BUS clock rate */
-#define TARGET_SRPCLK_RATE	(100000000)
-#define TARGET_BUSCLK_RATE	(TARGET_SRPCLK_RATE >> 1)
-
 #define msecs_to_loops(t) (loops_per_jiffy / 1000 * HZ * t)
 
 struct i2s_dai {
@@ -1010,6 +1006,9 @@ i2s_delay(struct snd_pcm_substream *substream, struct snd_soc_dai *dai)
 static int clk_set_heirachy(struct i2s_dai *i2s)
 {
 	struct clk *fout_epll;
+	unsigned long audss_clk_rate = 0;
+	unsigned long srp_clk_rate = 0;
+	unsigned long bus_clk_rate = 0;
 	unsigned int ret = 0;
 
 	if ((i2s->pdev->id != 0) && (i2s->pdev->id != SAMSUNG_I2S_SECOFF)) {
@@ -1074,13 +1073,26 @@ static int clk_set_heirachy(struct i2s_dai *i2s)
 		dev_err(&i2s->pdev->dev, "failed to set parent %s of clock %s.\n",
 			 i2s->mout_audss->name, i2s->mout_i2s->name);
 
+	audss_clk_rate = clk_get_rate(fout_epll);
+	switch (audss_clk_rate) {
+	case 96000000:
+		srp_clk_rate = audss_clk_rate;
+		bus_clk_rate = srp_clk_rate >> 1;
+		break;
+	case 200000000:
+		srp_clk_rate = audss_clk_rate >> 1;
+		bus_clk_rate = srp_clk_rate >> 1;
+		break;
+	default:
+		dev_err(&i2s->pdev->dev, "Not support clk rate %ld\n",
+						      audss_clk_rate);
+		ret = -EINVAL;
+		goto err6;
+	}
 
-	clk_set_rate(i2s->dout_srp, TARGET_SRPCLK_RATE);
-	clk_set_rate(i2s->dout_bus, TARGET_BUSCLK_RATE);
-
-	dev_info(&i2s->pdev->dev, "EPLL rate = %ld\n", clk_get_rate(fout_epll));
-	dev_info(&i2s->pdev->dev, "SRP rate = %ld\n", clk_get_rate(i2s->dout_srp));
-	dev_info(&i2s->pdev->dev, "BUS rate = %ld\n", clk_get_rate(i2s->dout_bus));
+	/* The epll rate is currently 200Mhz */
+	clk_set_rate(i2s->dout_srp, srp_clk_rate);
+	clk_set_rate(i2s->dout_bus, bus_clk_rate);
 
 	return ret;
 
