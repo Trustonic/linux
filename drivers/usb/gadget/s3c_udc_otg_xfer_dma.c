@@ -272,7 +272,7 @@ static void complete_rx(struct s3c_udc *dev, u8 ep_num)
 		xfer_size = (ep_tsr & 0x7f);
 
 	else
-		xfer_size = (ep_tsr & 0x7fff);
+		xfer_size = (ep_tsr & 0x7ffff);
 
 	xfer_length = req->req.length - xfer_size;
 	req->req.actual += min(xfer_length, req->req.length - req->req.actual);
