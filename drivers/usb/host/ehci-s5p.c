@@ -343,6 +343,12 @@ static ssize_t store_ehci_power(struct device *dev,
 			goto exit;
 		}
 
+		/*
+		 * EHCI root hubs are expected to handle remote wakeup.
+		 * So, wakeup flag init defaults for root hubs.
+		 */
+		device_wakeup_enable(&hcd->self.root_hub->dev);
+
 		s5p_ehci->power_on = 1;
 		pm_runtime_allow(dev);
 	}
@@ -450,6 +456,12 @@ static int __devinit s5p_ehci_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Failed to add USB HCD\n");
 		goto fail;
 	}
+
+	/*
+	 * EHCI root hubs are expected to handle remote wakeup.
+	 * So, wakeup flag init defaults for root hubs.
+	 */
+	device_wakeup_enable(&hcd->self.root_hub->dev);
 
 	create_ehci_sys_file(ehci);
 	s5p_ehci->power_on = 1;
