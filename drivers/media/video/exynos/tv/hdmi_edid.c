@@ -133,6 +133,7 @@ static struct edid_3d_preset {
 static u32 preferred_preset = HDMI_DEFAULT_PRESET;
 static u32 edid_misc;
 static int max_audio_channels;
+static u32 source_phy_addr;
 
 static int edid_i2c_read(struct hdmi_device *hdev, u8 segment, u8 offset,
 						   u8 *buf, size_t len)
@@ -390,6 +391,7 @@ int edid_update(struct hdmi_device *hdev)
 	for (i = 1; i < ret; i++)
 		fb_edid_add_monspecs(edid + i * EDID_BLOCK_SIZE, &specs);
 
+	source_phy_addr = specs.vsdb->phy_addr;
 	preferred_preset = V4L2_DV_INVALID;
 	for (i = 0; i < ARRAY_SIZE(edid_presets); i++)
 		edid_presets[i].supported = false;
@@ -507,6 +509,11 @@ bool edid_supports_hdmi(struct hdmi_device *hdev)
 int edid_max_audio_channels(struct hdmi_device *hdev)
 {
 	return max_audio_channels;
+}
+
+int edid_source_phy_addr(struct hdmi_device *hdev)
+{
+	return source_phy_addr;
 }
 
 static int __devinit edid_probe(struct i2c_client *client,

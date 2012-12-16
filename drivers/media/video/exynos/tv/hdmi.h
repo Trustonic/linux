@@ -390,6 +390,7 @@ u32 edid_enum_presets(struct hdmi_device *hdev, int index);
 u32 edid_preferred_preset(struct hdmi_device *hdev);
 bool edid_supports_hdmi(struct hdmi_device *hdev);
 int edid_max_audio_channels(struct hdmi_device *hdev);
+int edid_source_phy_addr(struct hdmi_device *hdev);
 
 static inline
 void hdmi_write(struct hdmi_device *hdev, u32 reg_id, u32 value)
