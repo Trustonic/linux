@@ -335,10 +335,14 @@ static struct s3c_fb_platdata smdk5250_lcd1_pdata __initdata = {
 	.win[0]		= &smdk5250_fb_win0,
 	.win[1]		= &smdk5250_fb_win1,
 	.win[2]		= &smdk5250_fb_win2,
+	.win[3]		= &smdk5250_fb_win2,
+	.win[4]		= &smdk5250_fb_win2,
 #elif defined(CONFIG_LCD_MIPI_TC358764)
 	.win[0]		= &smdk5250_fb_win0,
 	.win[1]		= &smdk5250_fb_win1,
 	.win[2]		= &smdk5250_fb_win2,
+	.win[3]		= &smdk5250_fb_win2,
+	.win[4]		= &smdk5250_fb_win2,
 #elif defined(CONFIG_S5P_DP)
 	.win[0]		= &smdk5250_fb_win2,
 	.win[1]		= &smdk5250_fb_win2,
