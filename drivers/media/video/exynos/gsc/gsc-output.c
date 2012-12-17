@@ -267,8 +267,6 @@ static int gsc_subdev_s_stream(struct v4l2_subdev *sd, int enable)
 			return -EINVAL;
 		}
 	} else {
-		INIT_LIST_HEAD(&gsc->out.active_buf_q);
-		clear_bit(ST_OUTPUT_STREAMON, &gsc->state);
 		bts_change_bus_traffic(&gsc->pdev->dev, BTS_DECREASE_BW);
 		pm_runtime_put_sync(&gsc->pdev->dev);
 #ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
@@ -308,6 +306,26 @@ static int gsc_out_power_off(struct v4l2_subdev *sd)
 		return ret;
 
 	return 0;
+}
+
+static int gsc_out_video_s_stream(struct gsc_dev *gsc, int enable)
+{
+	struct gsc_output_device *out = &gsc->out;
+	struct media_pad *sink_pad;
+	struct v4l2_subdev *sd;
+	int ret = 0;
+
+	sink_pad = media_entity_remote_source(&out->vd_pad);
+	if (IS_ERR_OR_NULL(sink_pad)) {
+		gsc_err("No sink pad conncted with a gscaler video source pad");
+		return PTR_ERR(sink_pad);
+	}
+	sd = media_entity_to_v4l2_subdev(sink_pad->entity);
+	ret = v4l2_subdev_call(sd, video, s_stream, enable);
+	if (ret)
+		gsc_err("G-Scaler subdev s_stream[%d] failed", enable);
+
+	return ret;
 }
 
 /*
@@ -425,6 +443,14 @@ static int gsc_output_reqbufs(struct file *file, void *priv,
 	if (ret)
 		return ret;
 	out->req_cnt = reqbufs->count;
+
+	if (reqbufs->count == 0) {
+		ret = gsc_out_video_s_stream(gsc, 0);
+		if (ret) {
+			gsc_err("G-Scaler video s_stream off failed");
+			return ret;
+		}
+	}
 
 	return ret;
 }
@@ -586,26 +612,6 @@ static const struct v4l2_ioctl_ops gsc_output_ioctl_ops = {
 	.vidioc_cropcap			= gsc_output_cropcap,
 };
 
-static int gsc_out_video_s_stream(struct gsc_dev *gsc, int enable)
-{
-	struct gsc_output_device *out = &gsc->out;
-	struct media_pad *sink_pad;
-	struct v4l2_subdev *sd;
-	int ret = 0;
-
-	sink_pad = media_entity_remote_source(&out->vd_pad);
-	if (IS_ERR(sink_pad)) {
-		gsc_err("No sink pad conncted with a gscaler video source pad");
-		return PTR_ERR(sink_pad);
-	}
-	sd = media_entity_to_v4l2_subdev(sink_pad->entity);
-	ret = v4l2_subdev_call(sd, video, s_stream, enable);
-	if (ret)
-		gsc_err("G-Scaler subdev s_stream[%d] failed", enable);
-
-	return ret;
-}
-
 static int gsc_out_start_streaming(struct vb2_queue *q, unsigned int count)
 {
 	struct gsc_ctx *ctx = q->drv_priv;
@@ -624,19 +630,9 @@ static int gsc_out_stop_streaming(struct vb2_queue *q)
 	if (ret)
 		return ret;
 
-	if (ctx->out_path == GSC_FIMD) {
-		ret = gsc_wait_stop(gsc);
-		if (ret < 0) {
-			gsc_err("gscaler stop timeout");
-			return ret;
-		}
-	}
+	INIT_LIST_HEAD(&gsc->out.active_buf_q);
+	clear_bit(ST_OUTPUT_STREAMON, &gsc->state);
 
-	ret = gsc_out_video_s_stream(gsc, 0);
-	if (ret) {
-		gsc_err("G-Scaler video s_stream off failed");
-		return ret;
-	}
 	media_entity_pipeline_stop(&gsc->out.vfd->entity);
 
 	return ret;
@@ -801,13 +797,6 @@ static int gsc_out_link_setup(struct media_entity *entity,
 				gsc_err("G-Scaler source pad was linked already");
 		} else if (!(flags & ~MEDIA_LNK_FL_ENABLED)) {
 			if (gsc->pipeline.disp != NULL) {
-				if (gsc->out.ctx->out_path == GSC_FIMD) {
-					gsc_hw_set_local_dst(gsc->id,
-							     GSC_FIMD, false);
-				} else {
-					gsc_hw_set_local_dst(gsc->id,
-							     GSC_MIXER, false);
-				}
 				gsc->pipeline.disp = NULL;
 				gsc->out.ctx->out_path = 0;
 			} else
@@ -973,6 +962,7 @@ static int gsc_create_subdev(struct gsc_dev *gsc)
 	gsc_out_link_callback->power_off = gsc_out_power_off;
 	gsc->md_data.media_ops = gsc_out_link_callback;
 	v4l2_set_subdevdata(sd, &gsc->md_data);
+	gsc->mdev[MDEV_OUTPUT]->in_str_off = false;
 
 	return 0;
 error:

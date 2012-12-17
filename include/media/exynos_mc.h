@@ -106,6 +106,7 @@ struct exynos_md {
 	struct v4l2_subdev	*sensor_sd[SENSOR_MAX_ENTITIES];
 	u16			id;
 	bool			is_flite_on;
+	bool			in_str_off;
 	spinlock_t slock;
 };
 
