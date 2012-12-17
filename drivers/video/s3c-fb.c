@@ -87,6 +87,7 @@
 #define MAX_BW_PER_WINDOW	(2560 * 1600 * 4 * 60)
 
 struct s3c_fb;
+struct s3c_fb_user_window local_window;
 
 #ifdef CONFIG_ION_EXYNOS
 extern struct ion_device *ion_exynos;
@@ -278,7 +279,6 @@ struct s3c_fb_win {
 	struct media_pad pads[FIMD_PADS_NUM];	/* window's pad : 1 sink */
 	struct v4l2_subdev sd;		/* Take a window as a v4l2_subdevice */
 	int end_stream;
-	int last_frame;
 #endif
 };
 
@@ -1329,13 +1329,8 @@ static irqreturn_t s3c_fb_irq(int irq, void *dev_id)
 			}
 
 			shadow_protect_win(win, 1);
-			data = readl(sfb->regs + WINCON(win->index));
-			data &= ~WINCONx_ENWIN;
-			writel(data, sfb->regs + WINCON(win->index));
-
 			data = readl(sfb->regs + SHADOWCON);
-			data &= ~(SHADOWCON_CHx_ENABLE(win->index) |
-				   SHADOWCON_CHx_LOCAL_ENABLE(win->index));
+			data &= ~(SHADOWCON_CHx_LOCAL_ENABLE(win->index));
 			writel(data, sfb->regs + SHADOWCON);
 
 			data = readl(sfb->regs + WINCON(win->index));
@@ -1345,9 +1340,9 @@ static irqreturn_t s3c_fb_irq(int irq, void *dev_id)
 
 			sfb->windows[win_no]->end_stream = 0;
 		}
-	} else if (sfb->windows[win_no]->last_frame) {
-		sfb->windows[win_no]->last_frame = 0;
 	}
+	if (sfb->md->in_str_off)
+		sfb->md->in_str_off = false;
 #endif
 
 	irq_sts_reg = readl(regs + VIDINTCON1);
@@ -2107,19 +2102,23 @@ static void __s3c_fb_update_regs(struct s3c_fb *sfb, struct s3c_reg_data *regs)
 
 	for (i = 0; i < sfb->variant.nr_windows; i++) {
 		if (!sfb->windows[i]->local) {
-			writel(regs->wincon[i], sfb->regs + WINCON(i));
-			writel(regs->win_rgborder[i], sfb->regs + WIN_RGB_ORDER(i));
-			writel(regs->winmap[i], sfb->regs + WINxMAP(i));
+			if (i || !sfb->md->in_str_off) {
+				writel(regs->wincon[i], sfb->regs + WINCON(i));
+				writel(regs->win_rgborder[i],
+				       sfb->regs + WIN_RGB_ORDER(i));
+				writel(regs->winmap[i], sfb->regs + WINxMAP(i));
+				if (sfb->windows[i]->variant.has_osd_c)
+					writel(regs->vidosd_c[i],
+					       sfb->regs + VIDOSD_C(i, sfb->variant));
+				if (sfb->windows[i]->variant.has_osd_d)
+					writel(regs->vidosd_d[i],
+					       sfb->regs + VIDOSD_D(i, sfb->variant));
+			}
 			writel(regs->vidosd_a[i],
 			       sfb->regs + VIDOSD_A(i, sfb->variant));
 			writel(regs->vidosd_b[i],
 			       sfb->regs + VIDOSD_B(i, sfb->variant));
-			if (sfb->windows[i]->variant.has_osd_c)
-				writel(regs->vidosd_c[i],
-				       sfb->regs + VIDOSD_C(i, sfb->variant));
-			if (sfb->windows[i]->variant.has_osd_d)
-				writel(regs->vidosd_d[i],
-				       sfb->regs + VIDOSD_D(i, sfb->variant));
+
 			writel(regs->vidw_alpha0[i],
 			       sfb->regs + VIDW_ALPHA0(i));
 			writel(regs->vidw_alpha1[i],
@@ -2141,7 +2140,7 @@ static void __s3c_fb_update_regs(struct s3c_fb *sfb, struct s3c_reg_data *regs)
 		if ((data & 0x21) == 0x21)
 			data = (0x21 | regs->shadowcon);
 		else
-			data = regs->shadowcon;
+			data = regs->shadowcon | 0x1;
 
 		writel(data, sfb->regs + SHADOWCON);
 	}
@@ -2730,16 +2729,6 @@ static int s3c_fb_sd_pad_set_fmt(struct v4l2_subdev *sd, struct v4l2_subdev_fh *
 	win->fbinfo->var.yres = format->format.height;
 	data = win->fbinfo->var.xres * win->fbinfo->var.yres;
 
-	vidosd_set_size(win, data);
-
-	if (data > (1280*720)) {
-		data = readl(sfb->regs + WINCON(win->index));
-		data |= WINCONx_CSC_CON_EQ709;
-		writel(data, sfb->regs + WINCON(win->index));
-		dev_dbg(sfb->dev, "Over HD size : (width, height) : (%d, %d)\n",
-				win->fbinfo->var.xres, win->fbinfo->var.yres);
-	}
-
 	dev_dbg(sfb->dev, "Set sd pad format (width, height) : (%d, %d)\n",
 			win->fbinfo->var.xres, win->fbinfo->var.yres);
 	return 0;
@@ -2766,19 +2755,12 @@ static int s3c_fb_sd_pad_get_fmt(struct v4l2_subdev *sd, struct v4l2_subdev_fh *
 static int s3c_fb_sd_set_pad_crop(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh,
 		       struct v4l2_subdev_crop *crop)
 {
-	int ret;
 	struct s3c_fb_win *win = v4l2_subdev_to_s3c_fb_win(sd);
 	struct s3c_fb *sfb = win->parent;
-	struct s3c_fb_user_window user_window;
 
 	/* (left, top) : (xoffset, yoffset) */
-	user_window.x = crop->rect.left;
-	user_window.y = crop->rect.top;
-
-	ret = s3c_fb_set_window_position(win->fbinfo, user_window);
-
-	if (ret)
-		return ret;
+	local_window.x = crop->rect.left;
+	local_window.y = crop->rect.top;
 
 	dev_dbg(sfb->dev, "Set sd pad crop (x, y) : (%d, %d)\n",
 			crop->rect.left, crop->rect.top);
@@ -2817,6 +2799,13 @@ static int s3c_fb_sd_s_stream(struct v4l2_subdev *sd, int enable)
 	if (enable) { /* Enable  1 channel  to a local path for a window in fimd1 */
 		/* The following sequence should be observed to enable a local path */
 		/* Enlocal On --> Enlocal Channel On --> Window On*/
+		int x, y, w, h;
+
+		x = local_window.x;
+		y = local_window.y;
+		w = win->fbinfo->var.xres;
+		h = win->fbinfo->var.yres;
+
 		shadow_protect_win(win, 1);
 		data = readl(sfb->regs + WINCON(win->index));
 		data &= ~WINCONx_ENLOCAL_MASK;
@@ -2832,10 +2821,19 @@ static int s3c_fb_sd_s_stream(struct v4l2_subdev *sd, int enable)
 		writel(WIN_RGB_ORDER_BGR, sfb->regs + WIN_RGB_ORDER(0));
 
 		data = readl(sfb->regs + WINCON(win->index));
-		data |= WINCONx_ENWIN;
+		data |= (WINCONx_CSCWIDTH_NARROW | WINCONx_ENWIN);
 		writel(data, sfb->regs + WINCON(win->index));
-		shadow_protect_win(win, 0);
 
+		data = vidosd_a(x, y);
+		writel(data, sfb->regs + VIDOSD_A(win->index, sfb->variant));
+
+		data = vidosd_b(x, y, w, h);
+		writel(data, sfb->regs + VIDOSD_B(win->index, sfb->variant));
+
+		data = w * h;
+		writel(data, sfb->regs + VIDOSD_C(win->index, sfb->variant));
+
+		shadow_protect_win(win, 0);
 	} else {
 		sfb->windows[win_no]->end_stream = 1;
 		do {
@@ -2846,14 +2844,6 @@ static int s3c_fb_sd_s_stream(struct v4l2_subdev *sd, int enable)
 				return ret;
 			}
 		} while (sfb->windows[win_no]->end_stream);
-
-		sfb->windows[win_no]->last_frame = 1;
-		ret = s3c_fb_wait_for_vsync(sfb, 0);
-		if (ret) {
-			dev_err(sfb->dev, "wait timeout(last_frame) : %s\n",
-				__func__);
-			return ret;
-		}
 	}
 
 	dev_dbg(sfb->dev, "Get the window via local path started/stopped : %d\n",
@@ -2915,6 +2905,7 @@ static int s3c_fb_me_link_setup(struct media_entity *entity,
 		if (local->index == FIMD_PAD_SINK_FROM_GSCALER_SRC)
 			win->local = 0;
 		win->use = 0;
+		sfb->md->in_str_off = true;
 
 		for (i = 0; i < entity->num_links; ++i)
 			if (entity->links[i].flags & MEDIA_LNK_FL_ENABLED)
