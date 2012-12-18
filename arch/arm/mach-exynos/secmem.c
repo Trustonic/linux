@@ -54,8 +54,6 @@ struct secmem_info {
 	bool		drm_enabled;
 };
 
-#define SECMEM_IS_PAGE_ALIGNED(addr) (!((addr) & (~PAGE_MASK)))
-
 static int secmem_open(struct inode *inode, struct file *file)
 {
 	struct miscdevice *miscdev = file->private_data;
