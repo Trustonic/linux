@@ -1,13 +1,10 @@
-/** MobiCore driver module.(interface to the secure world SWD)
- * @addtogroup MCD_MCDIMPL_KMOD_LOGGING MobiCore Driver Logging Subsystem.
- * @ingroup  MCD_MCDIMPL_KMOD
- * @{
- * @file
+/*
  * MobiCore Driver Logging Subsystem.
+ *
  * The logging subsytem provides the interface between the Mobicore trace
  * buffer and the Linux log
  *
- * <!-- Copyright Giesecke & Devrient GmbH 2009-2012 -->
+ * <-- Copyright Giesecke & Devrient GmbH 2009-2012 -->
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -25,47 +22,39 @@
 #include "logging.h"
 
 /* Default len of the log ring buffer 256KB*/
-#define LOG_BUF_SIZE	(64 * PAGE_SIZE)
+#define LOG_BUF_SIZE			(64 * PAGE_SIZE)
 
 /* Max Len of a log line for printing */
-#define LOG_LINE_SIZE	256
+#define LOG_LINE_SIZE			256
 
 static uint32_t log_size = LOG_BUF_SIZE;
+
 module_param(log_size, uint, 0);
-MODULE_PARM_DESC(log_size, " Size of the MobiCore log ringbuffer "
-						"(or 256KB default).");
+MODULE_PARM_DESC(log_size, "Size of the MobiCore log ringbuffer(256KB def)");
 
 /* Definitions for log version 2 */
-#define LOG_TYPE_MASK				(0x0007)
-#define LOG_TYPE_CHAR				0
-#define LOG_TYPE_INTEGER			1
+#define LOG_TYPE_MASK			(0x0007)
+#define LOG_TYPE_CHAR			0
+#define LOG_TYPE_INTEGER		1
 /* Field length */
-#define LOG_LENGTH_MASK				(0x00F8)
-#define LOG_LENGTH_SHIFT			3
+#define LOG_LENGTH_MASK			(0x00F8)
+#define LOG_LENGTH_SHIFT		3
 /* Extra attributes */
-#define LOG_EOL					(0x0100)
-#define LOG_INTEGER_DECIMAL			(0x0200)
-#define LOG_INTEGER_SIGNED			(0x0400)
+#define LOG_EOL				(0x0100)
+#define LOG_INTEGER_DECIMAL		(0x0200)
+#define LOG_INTEGER_SIGNED		(0x0400)
 
 struct logmsg_struct {
-	/* Type and format of data */
-	uint16_t ctrl;
-	/* Unique value for each event source */
-	uint16_t source;
-	/* Value, if any */
-	uint32_t log_data;
+	uint16_t ctrl;			/* Type and format of data */
+	uint16_t source;		/* Unique value for each event source */
+	uint32_t log_data;		/* Value, if any */
 };
 
-/** MobiCore log previous position */
-static uint32_t log_pos;
-/** MobiCore log buffer structure */
-static struct mc_trace_buf *log_buf;
-/** Log Thread task structure */
-struct task_struct *log_thread;
-/** Log Line buffer */
-static char *log_line;
-/** Log Line buffer current len */
-static uint32_t log_line_len;
+static uint32_t log_pos;		/* MobiCore log previous position */
+static struct mc_trace_buf *log_buf;	/* MobiCore log buffer structure */
+struct task_struct *log_thread;		/* Log Thread task structure */
+static char *log_line;			/* Log Line buffer */
+static uint32_t log_line_len;		/* Log Line buffer current len */
 
 static void log_eol(void)
 {
@@ -75,9 +64,11 @@ static void log_eol(void)
 	log_line_len = 0;
 	log_line[0] = 0;
 }
-/**
- * Put a char to the log line if there is enough space if not then also
- * output the line. Assume nobody else is updating the line! */
+
+/*
+ * Collect chars in log_line buffer and output the buffer when it is full.
+ * No locking needed because only "mobicore_log" thread updates this buffer.
+ */
 static void log_char(char ch)
 {
 	if (ch == '\n' || ch == '\r') {
@@ -96,12 +87,13 @@ static void log_char(char ch)
 	log_line_len++;
 }
 
-/**
- * Put a string to the log line if there is enough space if not then also
- * output the line. Assume nobody else is updating the line! */
+/*
+ * Put a string to the log line.
+ */
 static void log_str(const char *s)
 {
 	int i;
+
 	for (i = 0; i < strnlen(s, LOG_LINE_SIZE); i++)
 		log_char(s[i]);
 }
@@ -119,8 +111,9 @@ static uint32_t process_v1log(void)
 	return buff - log_buf->buff;
 }
 
-static const uint8_t HEX2ASCII[16] = { '0', '1', '2', '3', '4', '5', '6', '7',
-				'8', '9', 'a', 'b', 'c', 'd', 'e', 'f' };
+static const uint8_t HEX2ASCII[16] = {
+	'0', '1', '2', '3', '4', '5', '6', '7',
+	'8', '9', 'a', 'b', 'c', 'd', 'e', 'f' };
 
 static void dbg_raw_nro(uint32_t format, uint32_t value)
 {
@@ -131,15 +124,15 @@ static void dbg_raw_nro(uint32_t format, uint32_t value)
 	uint32_t digit_base = 1;
 
 	if ((format & LOG_INTEGER_SIGNED) != 0 && ((signed int)value) < 0) {
-			negative = 1;
-			value = (uint32_t)(-(signed int)value);
-			width--;
+		negative = 1;
+		value = (uint32_t)(-(signed int)value);
+		width--;
 	}
 
 	/* Find length and divider to get largest digit */
 	while (value / digit_base >= base) {
-			digit_base *= base;
-			digits++;
+		digit_base *= base;
+		digits++;
 	}
 
 	if (width > digits) {
@@ -165,6 +158,7 @@ static void log_msg(struct logmsg_struct *msg)
 {
 	unsigned char msgtxt[5];
 	int mpos = 0;
+
 	switch (msg->ctrl & LOG_TYPE_MASK) {
 	case LOG_TYPE_CHAR: {
 		uint32_t ch;
@@ -196,16 +190,16 @@ static uint32_t process_v2log(void)
 		log_msg((struct logmsg_struct *)buff);
 		buff += sizeof(struct logmsg_struct);
 		/* Wrap around */
-		if (buff + sizeof(struct logmsg_struct) >
-			(char *)log_buf + log_size)
+		if ((buff + sizeof(struct logmsg_struct)) >
+		    ((char *)log_buf + log_size))
 			buff = log_buf->buff;
 	}
 	return buff - log_buf->buff;
 }
 
+/* log_worker() - Worker thread processing the log_buf buffer. */
 static int log_worker(void *p)
 {
-	/* The thread should have never started */
 	if (log_buf == NULL)
 		return -EFAULT;
 
@@ -221,12 +215,12 @@ static int log_worker(void *p)
 			log_pos = process_v2log();
 			break;
 		default:
-			MCDRV_DBG_ERROR("Unknown Mobicore log data "
-				"version %d logging disabled.",
-				log_buf->version);
+			MCDRV_DBG_ERROR("Unknown Mobicore log data");
 			log_pos = log_buf->write_pos;
-			/* Stop the thread as we have no idea what
-			 * happens next */
+			/*
+			 * Stop the thread as we have no idea what
+			 * happens next
+			 */
 			return -EFAULT;
 		}
 	}
@@ -234,7 +228,7 @@ static int log_worker(void *p)
 	return 0;
 }
 
-/**
+/*
  * Wakeup the log reader thread
  * This should be called from the places where calls into MobiCore have
  * generated some logs(eg, yield, SIQ...)
@@ -247,8 +241,8 @@ void mobicore_log_read(void)
 	wake_up_process(log_thread);
 }
 
-/**
- * Setup mobicore kernel log. It assumes it's running on CORE 0!
+/*
+ * Setup MobiCore kernel log. It assumes it's running on CORE 0!
  * The fastcall will complain is that is not the case!
  */
 long mobicore_log_setup(void)
@@ -284,11 +278,12 @@ long mobicore_log_setup(void)
 	}
 
 	sched_setscheduler(log_thread, SCHED_IDLE, &param);
-
-	/* We are going to map this buffer into virtual address space in SWd.
-	 * To reduce complexity there, we use a contiguous buffer. */
+	/*
+	 * We are going to map this buffer into virtual address space in SWd.
+	 * To reduce complexity there, we use a contiguous buffer.
+	 */
 	log_buf = (void *)__get_free_pages(GFP_KERNEL | __GFP_ZERO,
-					get_order(log_size));
+					   get_order(log_size));
 	if (!log_buf) {
 		MCDRV_DBG_ERROR("Failed to get page for logger!");
 		ret = -ENOMEM;
@@ -297,13 +292,14 @@ long mobicore_log_setup(void)
 	phys_log_buf = virt_to_phys(log_buf);
 
 	memset(&fc_log, 0, sizeof(fc_log));
-	fc_log.as_in.cmd      = MC_FC_NWD_TRACE;
+	fc_log.as_in.cmd = MC_FC_NWD_TRACE;
 	fc_log.as_in.param[0] = phys_log_buf;
 	fc_log.as_in.param[1] = log_size;
 
 	MCDRV_DBG("fc_log virt=%p phys=%p ", log_buf, (void *)phys_log_buf);
 	mc_fastcall(&fc_log);
 	MCDRV_DBG("fc_log out ret=0x%08x", fc_log.as_out.ret);
+
 	/* If the setup failed we must free the memory allocated */
 	if (fc_log.as_out.ret) {
 		MCDRV_DBG_ERROR("MobiCore shared traces setup failed!");
@@ -312,8 +308,6 @@ long mobicore_log_setup(void)
 		ret = -EIO;
 		goto mobicore_log_setup_kthread;
 	}
-
-	wake_up_process(log_thread);
 
 	MCDRV_DBG("fc_log Logger version %u\n", log_buf->version);
 	return 0;
@@ -327,7 +321,7 @@ mobicore_log_setup_log_line:
 	return ret;
 }
 
-/**
+/*
  * Free kernel log componenets.
  * ATTN: We can't free the log buffer because it's also in use by MobiCore and
  * even if the module is unloaded MobiCore is still running.

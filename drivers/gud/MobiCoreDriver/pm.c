@@ -1,7 +1,4 @@
-/** MobiCore driver module.(interface to the secure world SWD)
- * @addtogroup MCD_MCDIMPL_KMOD_IMPL
- * @{
- * @file
+/*
  * MobiCore Driver Kernel Module.
  * This module is written as a Linux device driver.
  * This driver represents the command proxy on the lowest layer, from the
@@ -12,7 +9,7 @@
  * The access to the driver is possible with a file descriptor,
  * which has to be created by the fd = open(/dev/mobicore) command.
  *
- * <!-- Copyright Giesecke & Devrient GmbH 2009-2012 -->
+ * <-- Copyright Giesecke & Devrient GmbH 2009-2012 -->
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -42,6 +39,10 @@ static void mc_resume_handler(unsigned long data)
 		return;
 
 	ctx->mcp->flags.sleep_mode.SleepReq = 0;
+	if (ctx->daemon) {
+		wake_up_process(ctx->daemon);
+		set_task_state(ctx->daemon, TASK_RUNNING);
+	}
 }
 
 static void mc_suspend_handler(struct work_struct *work)
@@ -74,12 +75,16 @@ static int mc_suspend_notifier(struct notifier_block *nb,
 
 	switch (event) {
 	case PM_SUSPEND_PREPARE:
-		/* Make sure we have finished all the work otherwise
-		 * we end up in a race condition */
+		/*
+		 * Make sure we have finished all the work otherwise
+		 * we end up in a race condition
+		 */
 		mod_timer(&resume_timer, 0);
 		cancel_work_sync(&suspend_work);
-		/* We can't go to sleep if MobiCore is not IDLE
-		 * or not Ready to sleep */
+		/*
+		 * We can't go to sleep if MobiCore is not IDLE
+		 * or not Ready to sleep
+		 */
 		dump_sleep_params(&mcp->flags);
 		if (!(mcp->flags.sleep_mode.ReadyToSleep & READY_TO_SLEEP)) {
 			schedule_work_on(0, &suspend_work);
@@ -112,6 +117,7 @@ int mc_pm_initialize(struct mc_context *context)
 	ret = register_pm_notifier(&mc_notif_block);
 	if (ret)
 		MCDRV_DBG_ERROR("device pm register failed\n");
+
 	return ret;
 }
 
@@ -120,6 +126,7 @@ int mc_pm_free(void)
 	int ret = unregister_pm_notifier(&mc_notif_block);
 	if (ret)
 		MCDRV_DBG_ERROR("device pm unregister failed\n");
+
 	del_timer(&resume_timer);
 	return ret;
 }

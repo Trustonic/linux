@@ -1,15 +1,6 @@
-/**
- * <!-- Copyright Giesecke & Devrient GmbH 2009-2012 -->
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * MobiCore driver module.(interface to the secure world SWD)
- * @addtogroup MCD_MCDIMPL_KMOD_IMPL
- * @{
- * @file
+/*
  * MobiCore Driver Kernel Module.
+ *
  * This driver represents the command proxy on the lowest layer, from the
  * secure world to the non secure world, and vice versa.
 
@@ -18,6 +9,12 @@
  * The access to the driver is possible with a file descriptor,
  * which has to be created by the fd = open(/dev/mobicore) command or
  * fd = open(/dev/mobicore-user)
+ *
+ * <-- Copyright Giesecke & Devrient GmbH 2009-2012 -->
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #include <linux/miscdevice.h>
 #include <linux/interrupt.h>
@@ -31,7 +28,6 @@
 #include <linux/completion.h>
 
 #include "main.h"
-#include "android.h"
 #include "fastcall.h"
 
 #include "arm.h"
@@ -41,15 +37,12 @@
 #include "debug.h"
 #include "logging.h"
 
-/** MobiCore interrupt context data */
+/* MobiCore interrupt context data */
 struct mc_context ctx;
 
 /* Get process context from file pointer */
 static struct mc_instance *get_instance(struct file *file)
 {
-	if (!file)
-		return NULL;
-
 	return (struct mc_instance *)(file->private_data);
 }
 
@@ -89,9 +82,8 @@ static int free_buffer(struct mc_buffer *buffer)
 		return 0;
 	}
 
-	MCDRV_DBG("phys_addr=0x%p, virt_addr=0x%p\n",
-			buffer->phys,
-			buffer->addr);
+	MCDRV_DBG("handle=%u phys_addr=0x%p, virt_addr=0x%p\n",
+		  buffer->handle, buffer->phys, buffer->addr);
 
 	list_del(&buffer->list);
 
@@ -137,12 +129,13 @@ found:
 	return ret;
 }
 
-/**
- * Free a WSM buffer allocated with mobicore_allocate_wsm
- * @param instance
- * @param handle		handle of the buffer
+/*
+ * __free_buffer - Free a WSM buffer allocated with mobicore_allocate_wsm
  *
- * @return 0 if no error
+ * @instance
+ * @handle		handle of the buffer
+ *
+ * Returns 0 if no error
  *
  */
 static int __free_buffer(struct mc_instance *instance, uint32_t handle)
@@ -217,18 +210,18 @@ int mc_get_buffer(struct mc_instance *instance,
 
 	if (cbuffer == NULL) {
 		MCDRV_DBG_WARN("MMAP_WSM request: could not allocate buffer\n");
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto unlock_instance;
 	}
 	mutex_lock(&ctx.bufs_lock);
 
 	MCDRV_DBG_VERBOSE("size %ld -> order %d --> %ld (2^n pages)\n",
-		len, order, allocated_size);
+			  len, order, allocated_size);
 
 	addr = (void *)__get_free_pages(GFP_USER | __GFP_ZERO, order);
 
 	if (addr == NULL) {
-		MCDRV_DBG_WARN("get_free_pages failed, "
-				"no contiguous region available.\n");
+		MCDRV_DBG_WARN("get_free_pages failed\n");
 		ret = -ENOMEM;
 		goto err;
 	}
@@ -245,10 +238,9 @@ int mc_get_buffer(struct mc_instance *instance,
 	INIT_LIST_HEAD(&cbuffer->list);
 	list_add(&cbuffer->list, &ctx.cont_bufs);
 
-	MCDRV_DBG("allocated phys=0x%p - 0x%p, "
-		"size=%ld, kernel_virt=0x%p, handle=%d\n",
-		phys, (void *)((unsigned int)phys+allocated_size),
-		allocated_size, addr, cbuffer->handle);
+	MCDRV_DBG("allocated phys=0x%p - 0x%p, size=%ld, virt=0x%p, h=%d\n",
+		  phys, (void *)((unsigned int)phys+allocated_size),
+		  allocated_size, addr, cbuffer->handle);
 	*buffer = cbuffer;
 	goto unlock;
 
@@ -256,12 +248,15 @@ err:
 	kfree(cbuffer);
 unlock:
 	mutex_unlock(&ctx.bufs_lock);
+unlock_instance:
 	mutex_unlock(&instance->lock);
 	return ret;
 }
 
-/* Locks a contiguous buffer - +1 refcount. Assumes the instance lock is
- * already taken! */
+/*
+ * __lock_buffer() - Locks a contiguous buffer - +1 refcount.
+ * Assumes the instance lock is already taken!
+ */
 static int __lock_buffer(struct mc_instance *instance, uint32_t handle)
 {
 	int ret = 0;
@@ -292,17 +287,16 @@ unlock:
 
 void *get_mci_base_phys(unsigned int len)
 {
-	if (ctx.mci_base.phys)
+	if (ctx.mci_base.phys) {
 		return ctx.mci_base.phys;
-	else {
+	} else {
 		unsigned int order = get_order(len);
 		ctx.mcp = NULL;
 		ctx.mci_base.order = order;
 		ctx.mci_base.addr =
 			(void *)__get_free_pages(GFP_USER | __GFP_ZERO, order);
 		if (ctx.mci_base.addr == NULL) {
-			MCDRV_DBG_WARN("get_free_pages failed, "
-				"no contiguous region available.\n");
+			MCDRV_DBG_WARN("get_free_pages failed\n");
 			memset(&ctx.mci_base, 0, sizeof(ctx.mci_base));
 			return NULL;
 		}
@@ -311,8 +305,10 @@ void *get_mci_base_phys(unsigned int len)
 	}
 }
 
-/* Create a l2 table from a virtual memory buffer which can be vmalloc
- * or user space virtual memory */
+/*
+ * Create a l2 table from a virtual memory buffer which can be vmalloc
+ * or user space virtual memory
+ */
 int mc_register_wsm_l2(struct mc_instance *instance,
 	uint32_t buffer, uint32_t len,
 	uint32_t *handle, uint32_t *phys)
@@ -351,14 +347,6 @@ int mc_register_wsm_l2(struct mc_instance *instance,
 	return ret;
 }
 
-/**
- *
- * @param instance
- * @param arg
- *
- * @return 0 if no error
- *
- */
 int mc_unregister_wsm_l2(struct mc_instance *instance, uint32_t handle)
 {
 	int ret = 0;
@@ -467,7 +455,7 @@ static int mc_fd_mmap(struct file *file, struct vm_area_struct *vmarea)
 	int ret = 0;
 
 	MCDRV_DBG("enter (vma start=0x%p, size=%ld, mci=%p)\n",
-		(void *)vmarea->vm_start, len, ctx.mci_base.phys);
+		  (void *)vmarea->vm_start, len, ctx.mci_base.phys);
 
 	if (WARN(!instance, "No instance data available"))
 		return -EFAULT;
@@ -492,11 +480,13 @@ static int mc_fd_mmap(struct file *file, struct vm_area_struct *vmarea)
 
 found:
 		vmarea->vm_flags |= VM_RESERVED;
-		/* Convert kernel address to user address. Kernel address begins
-		* at PAGE_OFFSET, user address range is below PAGE_OFFSET.
-		* Remapping the area is always done, so multiple mappings
-		* of one region are possible. Now remap kernel address
-		* space into user space */
+		/*
+		 * Convert kernel address to user address. Kernel address begins
+		 * at PAGE_OFFSET, user address range is below PAGE_OFFSET.
+		 * Remapping the area is always done, so multiple mappings
+		 * of one region are possible. Now remap kernel address
+		 * space into user space
+		 */
 		pfn = (unsigned int)paddr >> PAGE_SHIFT;
 		ret = (int)remap_pfn_range(vmarea, vmarea->vm_start, pfn,
 			buffer->len, vmarea->vm_page_prot);
@@ -510,11 +500,13 @@ found:
 			return -EFAULT;
 
 		vmarea->vm_flags |= VM_RESERVED;
-		/* Convert kernel address to user address. Kernel address begins
-		* at PAGE_OFFSET, user address range is below PAGE_OFFSET.
-		* Remapping the area is always done, so multiple mappings
-		* of one region are possible. Now remap kernel address
-		* space into user space */
+		/*
+		 * Convert kernel address to user address. Kernel address begins
+		 * at PAGE_OFFSET, user address range is below PAGE_OFFSET.
+		 * Remapping the area is always done, so multiple mappings
+		 * of one region are possible. Now remap kernel address
+		 * space into user space
+		 */
 		pfn = (unsigned int)paddr >> PAGE_SHIFT;
 		ret = (int)remap_pfn_range(vmarea, vmarea->vm_start, pfn, len,
 			vmarea->vm_page_prot);
@@ -525,12 +517,6 @@ found:
 	return ret;
 }
 
-/*
-#############################################################################
-##
-## IoCtl handlers
-##
-#############################################################################*/
 static inline int ioctl_check_pointer(unsigned int cmd, int __user *uarg)
 {
 	int err = 0;
@@ -544,13 +530,13 @@ static inline int ioctl_check_pointer(unsigned int cmd, int __user *uarg)
 	return 0;
 }
 
-/**
- * This function will be called from user space as ioctl(...).
- * @param file	pointer to file
- * @param cmd	command
- * @param arg	arguments
+/*
+ * mc_fd_user_ioctl() - Will be called from user space as ioctl(..)
+ * @file	pointer to file
+ * @cmd		command
+ * @arg		arguments
  *
- * @return int 0 for OK and an errno in case of error
+ * Returns 0 for OK and an errno in case of error
  */
 static long mc_fd_user_ioctl(struct file *file, unsigned int cmd,
 	unsigned long arg)
@@ -645,6 +631,16 @@ static long mc_fd_admin_ioctl(struct file *file, unsigned int cmd,
 
 	if (ioctl_check_pointer(cmd, uarg))
 		return -EFAULT;
+
+	if (ctx.mcp) {
+		while (ctx.mcp->flags.sleep_mode.SleepReq) {
+			ctx.daemon = current;
+			set_current_state(TASK_INTERRUPTIBLE);
+			/* Backoff daemon for a while */
+			schedule_timeout(msecs_to_jiffies(DAEMON_BACKOFF_TIME));
+			set_current_state(TASK_RUNNING);
+		}
+	}
 
 	switch (cmd) {
 	case MC_IO_INIT: {
@@ -751,19 +747,21 @@ static long mc_fd_admin_ioctl(struct file *file, unsigned int cmd,
 	return (int)ret;
 }
 
-/**
- * This function will be called from user space as read(...).
+/*
+ * mc_fd_read() - This will be called from user space as read(...)
+ * @file:	file pointer
+ * @buffer:	buffer where to copy to(userspace)
+ * @buffer_len:	number of requested data
+ * @pos:	not used
+ *
  * The read function is blocking until a interrupt occurs. In that case the
  * event counter is copied into user space and the function is finished.
- * @param *file
- * @param *buffer  buffer where to copy to(userspace)
- * @param buffer_len	 number of requested data
- * @param *pos	 not used
- * @return ssize_t	ok case: number of copied data
- *			error case: return errno
+ *
+ * If OK this function returns the number of copied data otherwise it returns
+ * errno
  */
 static ssize_t mc_fd_read(struct file *file, char *buffer, size_t buffer_len,
-	loff_t *pos)
+			  loff_t *pos)
 {
 	int ret = 0, ssiq_counter;
 	struct mc_instance *instance = get_instance(file);
@@ -793,7 +791,7 @@ static ssize_t mc_fd_read(struct file *file, char *buffer, size_t buffer_len,
 
 		ssiq_counter = atomic_read(&ctx.isr_counter);
 		MCDRV_DBG_VERBOSE("ssiq_counter=%i, ctx.counter=%i\n",
-			ssiq_counter, ctx.evt_counter);
+				  ssiq_counter, ctx.evt_counter);
 
 		if (ssiq_counter != ctx.evt_counter) {
 			/* read data and exit loop without error */
@@ -827,7 +825,7 @@ static ssize_t mc_fd_read(struct file *file, char *buffer, size_t buffer_len,
 	return (ssize_t)ret;
 }
 
-/**
+/*
  * Initialize a new mobicore API instance object
  *
  * @return Instance or NULL if no allocation was possible.
@@ -848,10 +846,10 @@ struct mc_instance *mc_alloc_instance(void)
 	return instance;
 }
 
-/**
+/*
  * Release a mobicore instance object and all objects related to it
- * @param instance instance
- * @return 0 if Ok or -E ERROR
+ * @instance:	instance
+ * Returns 0 if Ok or -E ERROR
  */
 int mc_release_instance(struct mc_instance *instance)
 {
@@ -883,13 +881,13 @@ int mc_release_instance(struct mc_instance *instance)
 	return 0;
 }
 
-/**
- * This function will be called from user space as fd = open(...).
+/*
+ * mc_fd_user_open() - Will be called from user space as fd = open(...)
  * A set of internal instance data are created and initialized.
  *
- * @param inode
- * @param file
- * @return 0 if OK or -ENOMEM if no allocation was possible.
+ * @inode
+ * @file
+ * Returns 0 if OK or -ENOMEM if no allocation was possible.
  */
 static int mc_fd_user_open(struct inode *inode, struct file *file)
 {
@@ -911,27 +909,23 @@ static int mc_fd_admin_open(struct inode *inode, struct file *file)
 {
 	struct mc_instance *instance;
 
-	/* The daemon is already set so we can't allow anybody else to open
-	 * the admin interface. */
+	/*
+	 * The daemon is already set so we can't allow anybody else to open
+	 * the admin interface.
+	 */
 	if (ctx.daemon_inst) {
 		MCDRV_DBG_ERROR("Daemon is already connected");
 		return -EPERM;
 	}
 	/* Setup the usual variables */
-	mc_fd_user_open(inode, file);
+	if (mc_fd_user_open(inode, file))
+		return -ENOMEM;
 	instance = get_instance(file);
 
 	MCDRV_DBG("accept this as MobiCore Daemon\n");
 
-	/* Set the caller's CPU mask to CPU0*/
-	/*if (goto_cpu0() != 0) {
-		mc_release_instance(instance);
-		file->private_data = NULL;
-		MCDRV_DBG("changing core failed!\n");
-		return -EFAULT;
-	}*/
-
 	ctx.daemon_inst = instance;
+	ctx.daemon = current;
 	instance->admin = true;
 	init_completion(&ctx.isr_comp);
 	/* init ssiq event counter */
@@ -940,14 +934,14 @@ static int mc_fd_admin_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
-/**
- * This function will be called from user space as close(...).
+/*
+ * mc_fd_release() - This function will be called from user space as close(...)
  * The instance data are freed and the associated memory pages are unreserved.
  *
- * @param inode
- * @param file
+ * @inode
+ * @file
  *
- * @return 0
+ * Returns 0
  */
 static int mc_fd_release(struct inode *inode, struct file *file)
 {
@@ -959,15 +953,17 @@ static int mc_fd_release(struct inode *inode, struct file *file)
 
 	/* check if daemon closes us. */
 	if (is_daemon(instance)) {
-		/* TODO: cleanup? ctx.mc_l2_tables remains */
 		MCDRV_DBG_WARN("WARNING: MobiCore Daemon died\n");
 		ctx.daemon_inst = NULL;
+		ctx.daemon = NULL;
 	}
 
 	ret = mc_release_instance(instance);
 
-	/* ret is quite irrelevant here as most apps don't care about the
-	 * return value from close() and it's quite difficult to recover */
+	/*
+	 * ret is quite irrelevant here as most apps don't care about the
+	 * return value from close() and it's quite difficult to recover
+	 */
 	MCDRV_DBG_VERBOSE("exit with %d/0x%08X\n", ret, ret);
 
 	return (int)ret;
@@ -1022,7 +1018,7 @@ static struct miscdevice mc_user_device = {
 	.fops	= &mc_user_fops,
 };
 
-/**
+/*
  * This function is called the kernel during startup or by a insmod command.
  * This device is installed and registered as miscdevice, then interrupt and
  * queue handling is set up
@@ -1033,8 +1029,8 @@ static int __init mobicore_init(void)
 
 	MCDRV_DBG("enter (Build " __TIMESTAMP__ ")\n");
 	MCDRV_DBG("mcDrvModuleApi version is %i.%i\n",
-			MCDRVMODULEAPI_VERSION_MAJOR,
-			MCDRVMODULEAPI_VERSION_MINOR);
+		  MCDRVMODULEAPI_VERSION_MAJOR,
+		  MCDRVMODULEAPI_VERSION_MINOR);
 #ifdef MOBICORE_COMPONENT_BUILD_TAG
 	MCDRV_DBG("%s\n", MOBICORE_COMPONENT_BUILD_TAG);
 #endif
@@ -1051,17 +1047,13 @@ static int __init mobicore_init(void)
 		return -ENODEV;
 	}
 
-	ret = mc_fastcall_init();
-	if (ret)
-		goto error;
-
 	init_completion(&ctx.isr_comp);
 	/* set up S-SIQ interrupt handler */
 	ret = request_irq(MC_INTR_SSIQ, mc_ssiq_isr, IRQF_TRIGGER_RISING,
 			MC_ADMIN_DEVNODE, &ctx);
 	if (ret != 0) {
 		MCDRV_DBG_ERROR("interrupt request failed\n");
-		goto err_req_irq;
+		goto error;
 	}
 
 #ifdef MC_PM_RUNTIME
@@ -1093,10 +1085,12 @@ static int __init mobicore_init(void)
 
 	ret = mc_init_l2_tables();
 
-	/* initialize unique number counter which we can use for
+	/*
+	 * initialize unique number counter which we can use for
 	 * handles. It is limited to 2^32, but this should be
 	 * enough to be roll-over safe for us. We start with 1
-	 * instead of 0. */
+	 * instead of 0.
+	 */
 	atomic_set(&ctx.unique_counter, 1);
 
 	/* init list for contiguous buffers  */
@@ -1113,13 +1107,11 @@ free_admin:
 	misc_deregister(&mc_admin_device);
 free_isr:
 	free_irq(MC_INTR_SSIQ, &ctx);
-err_req_irq:
-	mc_fastcall_destroy();
 error:
 	return ret;
 }
 
-/**
+/*
  * This function removes this device driver from the Linux device manager .
  */
 static void __exit mobicore_exit(void)
@@ -1139,9 +1131,6 @@ static void __exit mobicore_exit(void)
 
 	misc_deregister(&mc_admin_device);
 	misc_deregister(&mc_user_device);
-
-	mc_fastcall_destroy();
-
 	MCDRV_DBG_VERBOSE("exit");
 }
 
@@ -1152,4 +1141,3 @@ MODULE_AUTHOR("Giesecke & Devrient GmbH");
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("MobiCore driver");
 
-/** @} */

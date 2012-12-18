@@ -1,37 +1,27 @@
-/**
+/*
+ * Common data types for use by the MobiCore Kernel API Driver
  *
- * Common data types
- *
- * <!-- Copyright Giesecke & Devrient GmbH 2009 - 2012 -->
+ * <-- Copyright Giesecke & Devrient GmbH 2009 - 2012 -->
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
-#ifndef COMMON_H
-#define COMMON_H
+#ifndef _MC_KAPI_COMMON_H
+#define _MC_KAPI_COMMON_H
 
 #include "connection.h"
 #include "mcinq.h"
 
-void mcapi_insert_connection(
-	struct connection *connection
-);
+void mcapi_insert_connection(struct connection *connection);
+void mcapi_remove_connection(uint32_t seq);
+unsigned int mcapi_unique_id(void);
 
-void mcapi_remove_connection(
-	uint32_t seq
-);
+#define MC_DAEMON_PID			0xFFFFFFFF
+#define MC_DRV_MOD_DEVNODE_FULLPATH	"/dev/mobicore"
 
-unsigned int mcapi_unique_id(
-	void
-);
-
-
-#define MC_DAEMON_PID 0xFFFFFFFF
-#define MC_DRV_MOD_DEVNODE_FULLPATH "/dev/mobicore"
-
-/* dummy function helper macro. */
-#define DUMMY_FUNCTION()	do {} while (0)
+/* dummy function helper macro */
+#define DUMMY_FUNCTION()		do {} while (0)
 
 #define MCDRV_ERROR(txt, ...) \
 	printk(KERN_ERR "mcKernelApi %s() ### ERROR: " txt, \
@@ -42,9 +32,9 @@ unsigned int mcapi_unique_id(
 
 /* #define DEBUG_VERBOSE */
 #if defined(DEBUG_VERBOSE)
-#define MCDRV_DBG_VERBOSE		  MCDRV_DBG
+#define MCDRV_DBG_VERBOSE		MCDRV_DBG
 #else
-#define MCDRV_DBG_VERBOSE(...)	 DUMMY_FUNCTION()
+#define MCDRV_DBG_VERBOSE(...)		DUMMY_FUNCTION()
 #endif
 
 #define MCDRV_DBG(txt, ...) \
@@ -66,32 +56,24 @@ unsigned int mcapi_unique_id(
 #define MCDRV_ASSERT(cond) \
 	do { \
 		if (unlikely(!(cond))) { \
-			panic("mcKernelApi Assertion failed: %s:%d\n", \
-				__FILE__, __LINE__); \
+			panic("mc_kernelapi Assertion failed: %s:%d\n", \
+			      __FILE__, __LINE__); \
 		} \
 	} while (0)
 
 #elif defined(NDEBUG)
 
-#define MCDRV_DBG_VERBOSE(...)	DUMMY_FUNCTION()
-#define MCDRV_DBG(...)		DUMMY_FUNCTION()
-#define MCDRV_DBG_WARN(...)	DUMMY_FUNCTION()
-#define MCDRV_DBG_ERROR(...)	DUMMY_FUNCTION()
+#define MCDRV_DBG_VERBOSE(...)		DUMMY_FUNCTION()
+#define MCDRV_DBG(...)			DUMMY_FUNCTION()
+#define MCDRV_DBG_WARN(...)		DUMMY_FUNCTION()
+#define MCDRV_DBG_ERROR(...)		DUMMY_FUNCTION()
 
-#define MCDRV_ASSERT(...)	DUMMY_FUNCTION()
+#define MCDRV_ASSERT(...)		DUMMY_FUNCTION()
 
 #else
 #error "Define DEBUG or NDEBUG"
 #endif /* [not] defined(DEBUG_MCMODULE) */
 
+#define assert(expr)			MCDRV_ASSERT(expr)
 
-#define LOG_I MCDRV_DBG_VERBOSE
-#define LOG_W MCDRV_DBG_WARN
-#define LOG_E MCDRV_DBG_ERROR
-
-
-#define assert(expr) MCDRV_ASSERT(expr)
-
-#endif /* COMMON_H */
-
-/** @} */
+#endif /* _MC_KAPI_COMMON_H */

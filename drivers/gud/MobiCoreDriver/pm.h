@@ -1,15 +1,7 @@
-/**
+/*
  * Header file of MobiCore Driver Kernel Module.
  *
- * @addtogroup MCD_MCDIMPL_KMOD_IMPL
- * @{
- * Internal structures of the McDrvModule
- * @file
- *
- * Header file the MobiCore Driver Kernel Module,
- * its internal structures and defines.
- *
- * <!-- Copyright Giesecke & Devrient GmbH 2009-2012 -->
+ * <-- Copyright Giesecke & Devrient GmbH 2009-2012 -->
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -35,5 +27,7 @@ int mc_pm_initialize(struct mc_context *context);
 /* Free all Power Management resources*/
 int mc_pm_free(void);
 
+int register_bL_swicher_notifier(struct notifier_block *nb);
+int unregister_bL_swicher_notifier(struct notifier_block *nb);
+
 #endif /* _MC_PM_H_ */
-/** @} */

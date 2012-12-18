@@ -1,14 +1,14 @@
 #
 # this makefile is called from the kernel make syste
 ifeq ($(MODE),release)
-    EXTRA_CFLAGS+=-O2 -DNDEBUG
+    ccflags-y += -O2 -DNDEBUG
 else  # DEBUG
     # "-O" is needed to expand inlines
-    EXTRA_CFLAGS+=-O -g3 -DDEBUG
+    ccflags-y += -O -g3 -DDEBUG
 endif # DEBUG/RELEASE
 
 ifdef MOBICORE_CFLAGS
-    EXTRA_CFLAGS+=$(MOBICORE_CFLAGS)
+    ccflags-y +=$(MOBICORE_CFLAGS)
 endif
 
 #Set the extra symbols
@@ -17,7 +17,8 @@ ifdef MCDRV_SYMBOLS_FILE
 endif
 
 #EXTRA_CFLAGS += -DDEBUG -DDEBUG_VERBOSE
-EXTRA_CFLAGS += -Wno-declaration-after-statement
+#EXTRA_CFLAGS += -Wno-declaration-after-statement
+ccflags-y += -Wno-declaration-after-statement
 # add our module to kernel.
 obj-m += mcKernelApi.o
 
