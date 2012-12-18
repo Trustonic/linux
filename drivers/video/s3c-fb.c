@@ -273,6 +273,8 @@ struct s3c_fb_win {
 	int local;		/* use of local path gscaler to window in fimd */
 	struct media_pad pads[FIMD_PADS_NUM];	/* window's pad : 1 sink */
 	struct v4l2_subdev sd;		/* Take a window as a v4l2_subdevice */
+	int end_stream;
+	int last_frame;
 #endif
 };
 
@@ -353,6 +355,7 @@ struct s3c_fb {
 
 #ifdef CONFIG_FB_EXYNOS_FIMD_MC
 	struct exynos_md *md;
+	unsigned int win_index;
 #endif
 #ifdef CONFIG_FB_EXYNOS_FIMD_MC_WB
 	struct exynos_md *md_wb;
@@ -1289,8 +1292,57 @@ static irqreturn_t s3c_fb_irq(int irq, void *dev_id)
 	void __iomem  *regs = sfb->regs;
 	u32 irq_sts_reg;
 	ktime_t timestamp = ktime_get();
-
+#ifdef CONFIG_FB_EXYNOS_FIMD_MC
+	unsigned int win_no = sfb->win_index;
+#endif
 	spin_lock(&sfb->slock);
+
+#ifdef CONFIG_FB_EXYNOS_FIMD_MC
+	win_no = sfb->win_index;
+
+	if (sfb->windows[win_no]->end_stream) {
+		u32 data = 0;
+		struct s3c_fb_win *win = sfb->windows[win_no];
+		struct v4l2_subdev *sd = &win->sd;
+		struct v4l2_subdev *gsc_sd;
+		struct exynos_entity_data *md_data;
+		struct media_pad *pad;
+
+		data = readl(sfb->regs + VIDCON1);
+		data = VIDCON1_LINECNT_GET(data);
+		sfb->windows[win_no]->end_stream = data ? 1 : 0;
+
+		if (!sfb->windows[win_no]->end_stream) {
+			pad = &sd->entity.pads[FIMD_PAD_SINK_FROM_GSCALER_SRC];
+			pad = media_entity_remote_source(pad);
+
+			if (pad) {
+				gsc_sd = media_entity_to_v4l2_subdev(
+						pad->entity);
+				md_data = (struct exynos_entity_data *)
+						gsc_sd->dev_priv;
+				md_data->media_ops->power_off(gsc_sd);
+			}
+
+			s3c_fb_blank(FB_BLANK_POWERDOWN, win->fbinfo);
+
+			shadow_protect_win(win, 1);
+			data = readl(sfb->regs + SHADOWCON);
+			data &= ~(SHADOWCON_CHx_ENABLE(win->index) |
+				   SHADOWCON_CHx_LOCAL_ENABLE(win->index));
+			writel(data, sfb->regs + SHADOWCON);
+
+			data = readl(sfb->regs + WINCON(win->index));
+			data &= ~WINCONx_ENLOCAL;
+			writel(data, sfb->regs + WINCON(win->index));
+			shadow_protect_win(win, 0);
+
+			sfb->windows[win_no]->end_stream = 0;
+		}
+	} else if (sfb->windows[win_no]->last_frame) {
+		sfb->windows[win_no]->last_frame = 0;
+	}
+#endif
 
 	irq_sts_reg = readl(regs + VIDINTCON1);
 
@@ -2720,6 +2772,8 @@ static int s3c_fb_sd_s_stream(struct v4l2_subdev *sd, int enable)
 	u32 data = 0;
 	struct s3c_fb_win *win = v4l2_subdev_to_s3c_fb_win(sd);
 	struct s3c_fb *sfb = win->parent;
+	unsigned int win_no = sfb->win_index;
+	int ret;
 
 	if (enable) { /* Enable  1 channel  to a local path for a window in fimd1 */
 		/* The following sequence should be observed to enable a local path */
@@ -2738,22 +2792,24 @@ static int s3c_fb_sd_s_stream(struct v4l2_subdev *sd, int enable)
 
 		s3c_fb_blank(FB_BLANK_UNBLANK, win->fbinfo);
 
-	} else { /* Disable  1 channel  to a local path for a window in fimd1 */
-		/* The following sequence should be observed to disable a local path */
-		/* Enlocal channel Off --> Window Off --> Enlocal Off */
-		shadow_protect_win(win, 1);
-		data = readl(sfb->regs + SHADOWCON);
-		data &=  ~(SHADOWCON_CHx_ENABLE(win->index) | SHADOWCON_CHx_LOCAL_ENABLE(win->index));
-		writel(data, sfb->regs + SHADOWCON);
-		shadow_protect_win(win, 0);
+	} else {
+		sfb->windows[win_no]->end_stream = 1;
+		do {
+			ret = s3c_fb_wait_for_vsync(sfb, 0);
+			if (ret) {
+				dev_err(sfb->dev, "wait timeout(end_stream) : %s\n",
+					__func__);
+				return ret;
+			}
+		} while (sfb->windows[win_no]->end_stream);
 
-		s3c_fb_blank(FB_BLANK_POWERDOWN, win->fbinfo);
-
-		shadow_protect_win(win, 1);
-		data = readl(sfb->regs + WINCON(win->index));
-		data &= ~WINCONx_ENLOCAL;
-		writel(data, sfb->regs + WINCON(win->index));
-		shadow_protect_win(win, 0);
+		sfb->windows[win_no]->last_frame = 1;
+		ret = s3c_fb_wait_for_vsync(sfb, 0);
+		if (ret) {
+			dev_err(sfb->dev, "wait timeout(last_frame) : %s\n",
+				__func__);
+			return ret;
+		}
 	}
 
 	dev_dbg(sfb->dev, "Get the window via local path started/stopped : %d\n",
@@ -2805,6 +2861,7 @@ static int s3c_fb_me_link_setup(struct media_entity *entity,
 	struct v4l2_subdev *sd = media_entity_to_v4l2_subdev(entity);
 	struct s3c_fb_win *win = v4l2_subdev_to_s3c_fb_win(sd);
 	struct s3c_fb *sfb = win->parent;
+	sfb->win_index = win->index;
 
 	if (flags & MEDIA_LNK_FL_ENABLED) {
 		win->use = 1;
