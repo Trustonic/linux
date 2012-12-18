@@ -282,6 +282,7 @@ struct dw_mci_board {
 	u8 clk_drv;
 	u8 clk_smpl;
 	bool tuned;
+	bool only_once_tune;
 
 	/* cd_type: Type of Card Detection method (see cd_types enum above) */
 	enum dw_mci_cd_types cd_type;

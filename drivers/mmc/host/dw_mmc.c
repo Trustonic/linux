@@ -1369,7 +1369,8 @@ static int dw_mci_execute_tuning(struct mmc_host *mmc, u32 opcode)
 			}
 
 			host->pdata->clk_smpl = mid;
-			host->pdata->tuned = true;
+			if (host->pdata->only_once_tune)
+				host->pdata->tuned = true;
 			dw_mci_set_sampling(host, mid);
 			break;
 		}
