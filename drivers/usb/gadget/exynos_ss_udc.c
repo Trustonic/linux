@@ -1914,8 +1914,7 @@ static void exynos_ss_udc_irq_connectdone(struct exynos_ss_udc *udc)
 {
 	struct exynos_ss_udc_ep_command epcmd = {{0}, };
 	u32 reg, speed;
-	int mps0, mps;
-	int epindex;
+	int mps0;
 	int res;
 
 	reg = readl(udc->regs + EXYNOS_USB3_DSTS);
@@ -1926,26 +1925,22 @@ static void exynos_ss_udc_irq_connectdone(struct exynos_ss_udc *udc)
 	case 0:
 		udc->gadget.speed = USB_SPEED_HIGH;
 		mps0 = EP0_HS_MPS;
-		mps = EP_HS_MPS;
 		break;
 	/* Full-speed */
 	case 1:
 	case 3:
 		udc->gadget.speed = USB_SPEED_FULL;
 		mps0 = EP0_FS_MPS;
-		mps = EP_FS_MPS;
 		break;
 	/* Low-speed */
 	case 2:
 		udc->gadget.speed = USB_SPEED_LOW;
 		mps0 = EP0_LS_MPS;
-		mps = EP_LS_MPS;
 		break;
 	/* SuperSpeed */
 	case 4:
 		udc->gadget.speed = USB_SPEED_SUPER;
 		mps0 = EP0_SS_MPS;
-		mps = EP_SS_MPS;
 		break;
 
 	default:
@@ -1967,14 +1962,7 @@ static void exynos_ss_udc_irq_connectdone(struct exynos_ss_udc *udc)
 			udc->core->ops->phy30_suspend(udc->core, 1);
 	}
 
-	for (epindex = 0; epindex < EXYNOS_USB3_EPS; epindex++) {
-		int epnum = epindex_to_epnum(epindex, NULL);
-
-		if (unlikely(epnum == 0))
-			udc->eps[epindex].ep.maxpacket = mps0;
-		else
-			udc->eps[epindex].ep.maxpacket = mps;
-	}
+	udc->eps[EP0INDEX].ep.maxpacket = mps0;
 
 	epcmd.ep = 0;
 	epcmd.param0 = EXYNOS_USB3_DEPCMDPAR0x_MPS(mps0);
