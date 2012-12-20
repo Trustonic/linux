@@ -30,6 +30,8 @@
 /* Number of USB endpoints: EP0 + 10xEPin + 10xEPout */
 #define EXYNOS_USB3_EPS	(1 + 10 + 10)
 
+#define NUM_ISOC_TRBS	64
+
 /* Has to be multiple of four */
 #define EXYNOS_USB3_EVENT_BUFF_WSIZE	256
 #define EXYNOS_USB3_EVENT_BUFF_BSIZE	(EXYNOS_USB3_EVENT_BUFF_WSIZE << 2)
@@ -373,8 +375,9 @@ struct exynos_ss_udc_req {
  *       and has yet to be completed (maybe due to data move, or simply
  *	 awaiting an ack from the core all the data has been completed).
  * @lock: State lock to protect contents of endpoint.
- * @trb: Transfer Request Block.
- * @trb_dma: Transfer Request Block DMA address.
+ * @trb: Points the the first Transfer Request Block in the pool.
+ * @trb_dma: First Transfer Request Block DMA address.
+ * @trbs_avail: Number of available Transfer Request Blocks.
  * @tri: Transfer resource index.
  * @epnum: The USB endpoint number.
  * @type: The endpoint type.
@@ -403,6 +406,7 @@ struct exynos_ss_udc_ep {
 
 	struct exynos_ss_udc_trb	*trb;
 	dma_addr_t			trb_dma;
+	int				trbs_avail;
 	u8				tri;
 
 	unsigned char		epnum;

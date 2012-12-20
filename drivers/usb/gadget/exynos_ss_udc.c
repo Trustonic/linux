@@ -2256,6 +2256,7 @@ static int __devinit exynos_ss_udc_initep(struct exynos_ss_udc *udc,
 {
 	int epnum, epdir;
 	const char *dir, *type;
+	int desc_size;
 
 	epnum = epindex_to_epnum(epindex, &epdir);
 
@@ -2302,14 +2303,32 @@ static int __devinit exynos_ss_udc_initep(struct exynos_ss_udc *udc,
 	udc_ep->ep.maxpacket = epnum ? EP_HS_MPS : EP0_HS_MPS;
 #endif
 	udc_ep->ep.ops = &exynos_ss_udc_ep_ops;
-	udc_ep->trb = dmam_alloc_coherent(udc->dev,
-					  sizeof(struct exynos_ss_udc_trb),
-					  &udc_ep->trb_dma,
-					  GFP_KERNEL);
+
+	/* Allocate TRB(s) */
+	if (!strcmp(type, "iso")) {
+		desc_size = sizeof(struct exynos_ss_udc_trb) *
+				(NUM_ISOC_TRBS + 1); /* +1 for link TRB */
+		udc_ep->trbs_avail = NUM_ISOC_TRBS;
+	} else {
+		desc_size = sizeof(struct exynos_ss_udc_trb);
+		udc_ep->trbs_avail = 1;
+	}
+
+	udc_ep->trb = dmam_alloc_coherent(udc->dev, desc_size,
+					  &udc_ep->trb_dma, GFP_KERNEL);
 	if (!udc_ep->trb)
 		return -ENOMEM;
 
-	memset(udc_ep->trb, 0, sizeof(struct exynos_ss_udc_trb));
+	memset(udc_ep->trb, 0, desc_size);
+
+	/* For isoc endpoints set last TRB as link */
+	if (!strcmp(type, "iso")) {
+		struct exynos_ss_udc_trb *link = udc_ep->trb + NUM_ISOC_TRBS;
+
+		link->buff_ptr_low = (u32) udc_ep->trb_dma;
+		link->param2 = EXYNOS_USB3_TRB_HWO |
+			       EXYNOS_USB3_TRB_TRBCTL(LINK_TRB);
+	}
 
 	if (epnum == 0) {
 		struct exynos_ss_udc_req *udc_req;
