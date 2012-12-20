@@ -1586,7 +1586,6 @@ static void exynos_ss_udc_complete_request(struct exynos_ss_udc *udc,
 		udc_req->req.status = result;
 
 	udc_ep->req = NULL;
-	udc_ep->tri = 0;
 	udc_ep->sent_zlp = 0;
 	list_del_init(&udc_req->queue);
 
@@ -2119,6 +2118,8 @@ static void exynos_ss_udc_handle_depevt(struct exynos_ss_udc *udc, u32 event)
 
 	case EXYNOS_USB3_DEPEVT_EVENT_XferComplete:
 		dev_vdbg(udc->dev, "Xfer Complete\n");
+
+		udc_ep->tri = 0;
 
 		exynos_ss_udc_xfer_complete(udc, udc_ep, event);
 
