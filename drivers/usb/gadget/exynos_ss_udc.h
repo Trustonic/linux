@@ -351,6 +351,8 @@ struct exynos_ss_udc_ep_command {
 /**
  * struct exynos_ss_udc_req - data transfer request
  * @req: The USB gadget request.
+ * @trb: Transfer Request Block for the request.
+ * @trb_dma: Transfer Request Block DMA address.
  * @queue: The list of requests for the endpoint this is queued for.
  * @buf: Holds original buffer address if bounce buffer is used.
  * @length: Holds original buffer length of data if bounce buffer is used.
@@ -358,6 +360,8 @@ struct exynos_ss_udc_ep_command {
  */
 struct exynos_ss_udc_req {
 	struct usb_request	req;
+	struct exynos_ss_udc_trb *trb;
+	dma_addr_t		trb_dma;
 	struct list_head	queue;
 	void			*buf;
 	unsigned		length;
@@ -377,10 +381,13 @@ struct exynos_ss_udc_req {
  * @lock: State lock to protect contents of endpoint.
  * @trb: Points the the first Transfer Request Block in the pool.
  * @trb_dma: First Transfer Request Block DMA address.
+ * @trb_index: Points to the next free Transfer Request Block.
  * @trbs_avail: Number of available Transfer Request Blocks.
  * @tri: Transfer resource index.
  * @epnum: The USB endpoint number.
  * @type: The endpoint type.
+ * @uframe: Indicates the (micro)frame number to which the first TRB applies
+ *	    (for isochronous endpoints only).
  * @dir_in: Set to true if this endpoint is of the IN direction, which
  *	    means that it is sending data to the Host.
  * @halted: Set if the endpoint has been halted.
@@ -398,19 +405,23 @@ struct exynos_ss_udc_req {
 struct exynos_ss_udc_ep {
 	struct usb_ep			ep;
 	struct list_head		req_queue;
+	struct list_head		req_started;
 	struct list_head		cmd_queue;
 	struct exynos_ss_udc		*parent;
-	struct exynos_ss_udc_req	*req;
 
 	spinlock_t			lock;
 
 	struct exynos_ss_udc_trb	*trb;
 	dma_addr_t			trb_dma;
+	int				trb_index;
 	int				trbs_avail;
 	u8				tri;
 
 	unsigned char		epnum;
 	unsigned int		type;
+
+	unsigned int		uframe;
+
 	unsigned int		dir_in:1;
 	unsigned int		halted:1;
 	unsigned int		enabled:1;

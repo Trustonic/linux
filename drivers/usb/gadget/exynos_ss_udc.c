@@ -746,6 +746,7 @@ static void exynos_ss_udc_start_req(struct exynos_ss_udc *udc,
 				    struct exynos_ss_udc_req *udc_req,
 				    bool send_zlp)
 {
+	const struct usb_endpoint_descriptor *desc = udc_ep->ep.desc;
 	struct exynos_ss_udc_ep_command epcmd = {{0}, };
 	struct usb_request *ureq = &udc_req->req;
 	struct exynos_ss_udc_trb *trb;
@@ -790,6 +791,8 @@ static void exynos_ss_udc_start_req(struct exynos_ss_udc *udc,
 					   __func__, udc->ep0_state);
 			return;
 		}
+	else if (desc && usb_endpoint_xfer_isoc(desc))
+		trb_type = ISOCHRONOUS_FIRST;
 	else
 		trb_type = NORMAL;
 
@@ -823,15 +826,37 @@ static void exynos_ss_udc_start_req(struct exynos_ss_udc *udc,
 	trb->buff_ptr_low = (u32) ureq->dma;
 	trb->buff_ptr_high = 0;
 	trb->param1 = EXYNOS_USB3_TRB_BUFSIZ(xfer_length);
-	trb->param2 = EXYNOS_USB3_TRB_LST | EXYNOS_USB3_TRB_HWO |
-		      EXYNOS_USB3_TRB_TRBCTL(trb_type);
+	trb->param2 = EXYNOS_USB3_TRB_TRBCTL(trb_type);
 
-	/* Start Transfer */
+	if (desc && usb_endpoint_xfer_isoc(desc))
+		trb->param2 |= EXYNOS_USB3_TRB_ISP_IMI |
+			       EXYNOS_USB3_TRB_CSP |
+			       EXYNOS_USB3_TRB_IOC;
+	else
+		trb->param2 |= EXYNOS_USB3_TRB_LST;
+
+	trb->param2 |= EXYNOS_USB3_TRB_HWO;
+
+	/* Start/update Transfer */
 	epcmd.ep = get_phys_epnum(udc_ep);
 	epcmd.param0 = 0;
 	epcmd.param1 = trb_dma;
-	epcmd.cmdtyp = EXYNOS_USB3_DEPCMDx_CmdTyp_DEPSTRTXFER;
-	epcmd.cmdflags = EXYNOS_USB3_DEPCMDx_CmdAct;
+
+	if (desc && usb_endpoint_xfer_isoc(desc)) {
+		if (udc_ep->tri) {
+			epcmd.cmdtyp = EXYNOS_USB3_DEPCMDx_CmdTyp_DEPUPDXFER;
+			epcmd.cmdflags =
+				EXYNOS_USB3_DEPCMDx_EventParam(udc_ep->tri);
+		} else {
+			epcmd.cmdtyp = EXYNOS_USB3_DEPCMDx_CmdTyp_DEPSTRTXFER;
+			epcmd.cmdflags =
+				EXYNOS_USB3_DEPCMDx_EventParam(udc_ep->uframe);
+		}
+	} else {
+		epcmd.cmdtyp = EXYNOS_USB3_DEPCMDx_CmdTyp_DEPSTRTXFER;
+	}
+
+	epcmd.cmdflags |= EXYNOS_USB3_DEPCMDx_CmdAct;
 
 	res = exynos_ss_udc_issue_epcmd(udc, &epcmd);
 	if (res < 0) {
