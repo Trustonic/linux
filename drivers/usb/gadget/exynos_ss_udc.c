@@ -133,10 +133,10 @@ static struct exynos_ss_udc_ep *ep_from_windex(struct exynos_ss_udc *udc,
 }
 
 /**
- * get_ep_head - return the first request on the endpoint
+ * get_ep_head - return the first queued request on the endpoint
  * @udc_ep: The endpoint to get request from.
  *
- * Get the first request on the endpoint.
+ * Get the first queued request on the endpoint.
  */
 static struct exynos_ss_udc_req *get_ep_head(struct exynos_ss_udc_ep *udc_ep)
 {
@@ -144,6 +144,23 @@ static struct exynos_ss_udc_req *get_ep_head(struct exynos_ss_udc_ep *udc_ep)
 		return NULL;
 
 	return list_first_entry(&udc_ep->req_queue,
+				struct exynos_ss_udc_req,
+				queue);
+}
+
+/**
+ * get_ep_started_head - return the first started request on the endpoint
+ * @udc_ep: The endpoint to get request from.
+ *
+ * Get the first started request on the endpoint.
+ */
+static struct exynos_ss_udc_req *
+get_ep_started_head(struct exynos_ss_udc_ep *udc_ep)
+{
+	if (list_empty(&udc_ep->req_started))
+		return NULL;
+
+	return list_first_entry(&udc_ep->req_started,
 				struct exynos_ss_udc_req,
 				queue);
 }
@@ -542,7 +559,8 @@ static int exynos_ss_udc_ep_queue(struct usb_ep *ep,
 
 	spin_lock_irqsave(&udc_ep->lock, irqflags);
 
-	first = list_empty(&udc_ep->req_queue);
+	first = list_empty(&udc_ep->req_queue) &&
+		list_empty(&udc_ep->req_started);
 	list_add_tail(&udc_req->queue, &udc_ep->req_queue);
 
 	if (first && !udc_ep->not_ready)
@@ -601,7 +619,8 @@ static int exynos_ss_udc_ep_sethalt(struct usb_ep *ep, int value)
 
 	spin_lock_irqsave(&udc_ep->lock, irqflags);
 
-	if (value && epnum != 0 && udc_ep->dir_in && udc_ep->req) {
+	if (value && epnum != 0 && udc_ep->dir_in &&
+	    !list_empty(&udc_ep->req_started)) {
 		dev_vdbg(udc->dev, "%s: transfer in progress!\n", __func__);
 		spin_unlock_irqrestore(&udc_ep->lock, irqflags);
 		return -EAGAIN;
@@ -670,6 +689,49 @@ static struct usb_ep_ops exynos_ss_udc_ep_ops = {
 };
 
 /**
+ * exynos_ss_udc_get_free_trb - find the first free TRB in the EP's TRB pool
+ * @udc_ep: The endpoint
+ * @trb_dma: The TRB's DMA address (out parameter)
+ *
+ * If there is no available TRB, the function returns NULL.
+ * If TRB is available, the function returns its virtual address and saves TRB's
+ * DMA address to location pointed by trb_dma parameter.
+ */
+struct exynos_ss_udc_trb *
+exynos_ss_udc_get_free_trb(struct exynos_ss_udc_ep *udc_ep, dma_addr_t *trb_dma)
+{
+	const struct usb_endpoint_descriptor *desc = udc_ep->ep.desc;
+	struct exynos_ss_udc_trb *trb_next;
+	dma_addr_t trb_dma_next;
+	int numtrbs;
+
+	BUG_ON(trb_dma == NULL);
+
+	if (!udc_ep->trbs_avail)
+		return NULL;
+
+	trb_next = udc_ep->trb + udc_ep->trb_index;
+	trb_dma_next = udc_ep->trb_dma +
+		udc_ep->trb_index * sizeof(struct exynos_ss_udc_trb);
+
+	udc_ep->trb_index++;
+
+	if (desc && usb_endpoint_xfer_isoc(desc))
+		numtrbs = NUM_ISOC_TRBS;
+	else
+		numtrbs = 1;
+
+	if (udc_ep->trb_index >= numtrbs)
+		udc_ep->trb_index = 0;
+
+	udc_ep->trbs_avail--;
+
+	*trb_dma = trb_dma_next;
+
+	return trb_next;
+}
+
+/**
  * exynos_ss_udc_start_req - start a USB request from an endpoint's queue
  * @udc: The device state.
  * @udc_ep: The endpoint to process a request for.
@@ -686,6 +748,8 @@ static void exynos_ss_udc_start_req(struct exynos_ss_udc *udc,
 {
 	struct exynos_ss_udc_ep_command epcmd = {{0}, };
 	struct usb_request *ureq = &udc_req->req;
+	struct exynos_ss_udc_trb *trb;
+	dma_addr_t trb_dma;
 	enum trb_control trb_type = NORMAL;
 	int epnum = udc_ep->epnum;
 	int xfer_length;
@@ -729,7 +793,25 @@ static void exynos_ss_udc_start_req(struct exynos_ss_udc *udc,
 	else
 		trb_type = NORMAL;
 
-	udc_ep->req = udc_req;
+	/* Get TRB */
+	if (!send_zlp) {
+		trb = exynos_ss_udc_get_free_trb(udc_ep, &trb_dma);
+	} else {
+		/* For ZLP reuse request's TRB */
+		trb = udc_req->trb;
+		trb_dma = udc_req->trb_dma;
+	}
+
+	if (!trb) {
+		dev_dbg(udc->dev, "%s: no available TRB\n", __func__);
+		return;
+	}
+
+	if (!send_zlp) {
+		udc_req->trb = trb;
+		udc_req->trb_dma = trb_dma;
+		list_move_tail(&udc_req->queue, &udc_ep->req_started);
+	}
 
 	/* Get transfer length */
 	if (send_zlp)
@@ -738,17 +820,16 @@ static void exynos_ss_udc_start_req(struct exynos_ss_udc *udc,
 		xfer_length = ureq->length & EXYNOS_USB3_TRB_BUFSIZ_MASK;
 
 	/* Fill TRB */
-	udc_ep->trb->buff_ptr_low = (u32) ureq->dma;
-	udc_ep->trb->buff_ptr_high = 0;
-	udc_ep->trb->param1 = EXYNOS_USB3_TRB_BUFSIZ(xfer_length);
-	udc_ep->trb->param2 = EXYNOS_USB3_TRB_LST |
-			      EXYNOS_USB3_TRB_HWO |
-			      EXYNOS_USB3_TRB_TRBCTL(trb_type);
+	trb->buff_ptr_low = (u32) ureq->dma;
+	trb->buff_ptr_high = 0;
+	trb->param1 = EXYNOS_USB3_TRB_BUFSIZ(xfer_length);
+	trb->param2 = EXYNOS_USB3_TRB_LST | EXYNOS_USB3_TRB_HWO |
+		      EXYNOS_USB3_TRB_TRBCTL(trb_type);
 
 	/* Start Transfer */
 	epcmd.ep = get_phys_epnum(udc_ep);
 	epcmd.param0 = 0;
-	epcmd.param1 = udc_ep->trb_dma;
+	epcmd.param1 = trb_dma;
 	epcmd.cmdtyp = EXYNOS_USB3_DEPCMDx_CmdTyp_DEPSTRTXFER;
 	epcmd.cmdflags = EXYNOS_USB3_DEPCMDx_CmdAct;
 
@@ -1523,7 +1604,7 @@ static void exynos_ss_udc_complete_setup(struct usb_ep *ep,
 }
 
 /**
- * exynos_ss_udc_kill_all_requests - remove all requests from the endpoint's queue
+ * exynos_ss_udc_kill_all_requests - remove all requests from the endpoint's queues
  * @udc: The device state.
  * @ep: The endpoint the requests may be on.
  * @result: The result code to use.
@@ -1541,6 +1622,11 @@ static void exynos_ss_udc_kill_all_requests(struct exynos_ss_udc *udc,
 	dev_vdbg(udc->dev, "%s: %s\n", __func__, udc_ep->name);
 
 	spin_lock_irqsave(&udc_ep->lock, flags);
+
+	list_for_each_entry_safe(udc_req, treq, &udc_ep->req_started, queue) {
+
+		exynos_ss_udc_complete_request(udc, udc_ep, udc_req, result);
+	}
 
 	list_for_each_entry_safe(udc_req, treq, &udc_ep->req_queue, queue) {
 
@@ -1579,13 +1665,18 @@ static void exynos_ss_udc_complete_request(struct exynos_ss_udc *udc,
 			    udc_ep, udc_ep->ep.name, udc_req,
 			    result, udc_req->req.complete);
 
+	/* If complete started request */
+	if (udc_req->trb) {
+		udc_req->trb = NULL;
+		udc_ep->trbs_avail++;
+	}
+
 	/* only replace the status if we've not already set an error
 	 * from a previous transaction */
 
 	if (udc_req->req.status == -EINPROGRESS)
 		udc_req->req.status = result;
 
-	udc_ep->req = NULL;
 	udc_ep->sent_zlp = 0;
 	list_del_init(&udc_req->queue);
 
@@ -1606,7 +1697,7 @@ static void exynos_ss_udc_complete_request(struct exynos_ss_udc *udc,
 	 * of the previous request may have caused a new request to be started
 	 * so be careful when doing this. */
 
-	if (!udc_ep->req && result >= 0) {
+	if (list_empty(&udc_ep->req_started) && result >= 0) {
 		restart = !list_empty(&udc_ep->req_queue);
 		if (restart) {
 			udc_req = get_ep_head(udc_ep);
@@ -1710,7 +1801,7 @@ static void exynos_ss_udc_xfer_complete(struct exynos_ss_udc *udc,
 					struct exynos_ss_udc_ep *udc_ep,
 					u32 event)
 {
-	struct exynos_ss_udc_req *udc_req = udc_ep->req;
+	struct exynos_ss_udc_req *udc_req = get_ep_started_head(udc_ep);
 	struct usb_request *req = &udc_req->req;
 	int size_left;
 	int result = 0;
@@ -1727,7 +1818,7 @@ static void exynos_ss_udc_xfer_complete(struct exynos_ss_udc *udc,
 		result = -ECONNRESET;
 	}
 
-	if (udc_ep->trb->param2 & EXYNOS_USB3_TRB_HWO)
+	if (udc_req->trb->param2 & EXYNOS_USB3_TRB_HWO)
 		dev_err(udc->dev, "HWO bit set\n");
 
 	/* Finish ZLP handling for IN tranzactions */
@@ -1736,7 +1827,7 @@ static void exynos_ss_udc_xfer_complete(struct exynos_ss_udc *udc,
 		goto sent_zlp;
 	}
 
-	size_left = udc_ep->trb->param1 & EXYNOS_USB3_TRB_BUFSIZ_MASK;
+	size_left = udc_req->trb->param1 & EXYNOS_USB3_TRB_BUFSIZ_MASK;
 
 	if (udc_ep->dir_in) {
 		/* Incomplete IN transfer */
@@ -2286,6 +2377,7 @@ static int __devinit exynos_ss_udc_initep(struct exynos_ss_udc *udc,
 	dev_vdbg(udc->dev, "%s: %s\n", __func__, udc_ep->name);
 
 	INIT_LIST_HEAD(&udc_ep->req_queue);
+	INIT_LIST_HEAD(&udc_ep->req_started);
 	INIT_LIST_HEAD(&udc_ep->cmd_queue);
 	INIT_LIST_HEAD(&udc_ep->ep.ep_list);
 
