@@ -216,6 +216,7 @@
 #define EXYNOS_USB3_TRB_TRBSTS_MASK			(0xf << 28)
 #define EXYNOS_USB3_TRB_TRBSTS_SHIFT			28
 #define EXYNOS_USB3_TRB_TRBSTS(_x)			((_x) << 28)
+#define EXYNOS_USB3_TRB_TRBSTS_MissedIsoc		(1 << 28)
 #define EXYNOS_USB3_TRB_PCM1_MASK			(0x3 << 24)
 #define EXYNOS_USB3_TRB_PCM1_SHIFT			24
 #define EXYNOS_USB3_TRB_PCM1(_x)			((_x) << 24)

@@ -1681,6 +1681,7 @@ static void exynos_ss_udc_complete_request(struct exynos_ss_udc *udc,
 					   struct exynos_ss_udc_req *udc_req,
 					   int result)
 {
+	const struct usb_endpoint_descriptor *desc = udc_ep->ep.desc;
 	bool restart;
 
 	if (!udc_req) {
@@ -1724,7 +1725,9 @@ static void exynos_ss_udc_complete_request(struct exynos_ss_udc *udc,
 	 * of the previous request may have caused a new request to be started
 	 * so be careful when doing this. */
 
-	if (list_empty(&udc_ep->req_started) && result >= 0) {
+	if (desc && usb_endpoint_xfer_isoc(desc)) {
+		; /* Do nothing for isochronous endpoints */
+	} else if (list_empty(&udc_ep->req_started) && result >= 0) {
 		restart = !list_empty(&udc_ep->req_queue);
 		if (restart) {
 			udc_req = get_ep_head(udc_ep);
@@ -1873,6 +1876,7 @@ static void exynos_ss_udc_xfer_complete(struct exynos_ss_udc *udc,
 {
 	struct exynos_ss_udc_req *udc_req = get_ep_started_head(udc_ep);
 	struct usb_request *req = &udc_req->req;
+	u32 trb_status;
 	int size_left;
 	int result = 0;
 
@@ -1902,8 +1906,16 @@ static void exynos_ss_udc_xfer_complete(struct exynos_ss_udc *udc,
 	if (udc_ep->dir_in) {
 		/* Incomplete IN transfer */
 		if (size_left) {
-			dev_vdbg(udc->dev, "BUFSIZ isn't zero (%d)", size_left);
-			/* REVISIT shall we -ECONNRESET here? */
+			trb_status = udc_req->trb->param1 &
+					EXYNOS_USB3_TRB_TRBSTS_MASK;
+
+			if (trb_status == EXYNOS_USB3_TRB_TRBSTS_MissedIsoc)
+				/* REVISIT shall we restart isoc transfer
+				 * in this case? */
+				dev_vdbg(udc->dev, "Isoc interval missed\n");
+			else
+				/* REVISIT shall we -ECONNRESET here? */
+				dev_vdbg(udc->dev, "Incomplete In xfer\n");
 		}
 
 	}
@@ -2322,10 +2334,29 @@ static void exynos_ss_udc_handle_depevt(struct exynos_ss_udc *udc, u32 event)
 
 		udc_ep->tri = 0;
 
+		if (desc && usb_endpoint_xfer_isoc(desc)) {
+			dev_warn(udc->dev, "Xfer Complete for Isoc EP\n");
+			return;
+		}
+
 		exynos_ss_udc_xfer_complete(udc, udc_ep, event);
 
 		if (epnum == 0 && udc->ep0_state == EP0_SETUP_PHASE)
 			exynos_ss_udc_enqueue_setup(udc);
+
+		break;
+
+	case EXYNOS_USB3_DEPEVT_EVENT_XferInProgress:
+		dev_vdbg(udc->dev, "Xfer In Progress\n");
+
+		if (!(desc && usb_endpoint_xfer_isoc(desc))) {
+			dev_warn(udc->dev,
+				"Xfer In Progress for non Isoc EP\n");
+			return;
+		}
+
+		/* Complete for Isoc EP */
+		exynos_ss_udc_xfer_complete(udc, udc_ep, event);
 
 		break;
 
@@ -2729,7 +2760,9 @@ static void exynos_ss_udc_ep_activate(struct exynos_ss_udc *udc,
 			(udc_ep->dir_in ? EXYNOS_USB3_DEPCMDPAR1x_EpDir : 0) |
 			EXYNOS_USB3_DEPCMDPAR1x_bInterval_m1(binterval_m1) |
 			EXYNOS_USB3_DEPCMDPAR1x_XferNRdyEn |
-			EXYNOS_USB3_DEPCMDPAR1x_XferCmplEn;
+			EXYNOS_USB3_DEPCMDPAR1x_XferCmplEn |
+			(desc && usb_endpoint_xfer_isoc(desc) ?
+				EXYNOS_USB3_DEPCMDPAR1x_XferInProgEn : 0) ;
 	epcmd->cmdtyp = EXYNOS_USB3_DEPCMDx_CmdTyp_DEPCFG;
 	epcmd->cmdflags = EXYNOS_USB3_DEPCMDx_CmdAct;
 
