@@ -139,9 +139,13 @@ static void exynos_drd_switch_schedule_work(struct work_struct *work)
 }
 
 /**
- * exynos_drd_switch_is_host_off - check if host's runtime pm status.
+ * exynos_drd_switch_is_host_off - check host's PM status.
  *
  * @otg: Pointer to the usb_otg structure.
+ *
+ * Before peripheral can start two conditions must be met:
+ * 1. Host's completely resumed after system sleep.
+ * 2. Host is runtime suspended.
  */
 static bool exynos_drd_switch_is_host_off(struct usb_otg *otg)
 {
@@ -155,7 +159,7 @@ static bool exynos_drd_switch_is_host_off(struct usb_otg *otg)
 	hcd = bus_to_hcd(otg->host);
 	dev = hcd->self.controller;
 
-	return pm_runtime_suspended(dev);
+	return !dev->power.is_suspended && pm_runtime_suspended(dev);
 }
 
 /**
