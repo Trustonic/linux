@@ -416,10 +416,9 @@ static int exynos_ss_udc_ep_enable(struct usb_ep *ep,
 
 	switch (udc_ep->type) {
 	case USB_ENDPOINT_XFER_ISOC:
-		dev_err(udc->dev, "no current ISOC support\n");
+		dev_vdbg(udc->dev, "Isochronous endpoint\n");
 		udc_ep->interval = 1 << (desc->bInterval - 1);
-		spin_unlock_irqrestore(&udc_ep->lock, flags);
-		return -EINVAL;
+		break;
 
 	case USB_ENDPOINT_XFER_BULK:
 		dev_vdbg(udc->dev, "Bulk endpoint\n");
