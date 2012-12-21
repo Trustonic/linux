@@ -2633,19 +2633,19 @@ static int __devinit dw_mci_init_slot(struct dw_mci *host, unsigned int id)
 
 	host->vmmc = regulator_get(mmc_dev(mmc), "vmmc");
 	if (IS_ERR(host->vmmc)) {
-		pr_info("%s: no vmmc regulator found\n", mmc_hostname(mmc));
+		dev_info(&host->dev, "no vmmc regulator found\n");
 		host->vmmc = NULL;
 	} else {
-		pr_info("%s: vmmc regulator found\n", mmc_hostname(mmc));
+		dev_info(&host->dev, "vmmc regulator found\n");
 		regulator_enable(host->vmmc);
 	}
 
 	host->vqmmc = regulator_get(mmc_dev(mmc), "vqmmc");
 	if (IS_ERR(host->vqmmc)) {
-		pr_info("%s: no vqmmc regulator found\n", mmc_hostname(mmc));
+		dev_info(&host->dev, "no vqmmc regulator found\n");
 		host->vqmmc = NULL;
 	} else {
-		pr_info("%s: vqmmc regulator found\n", mmc_hostname(mmc));
+		dev_info(&host->dev, "vqmmc regulator found\n");
 		regulator_enable(host->vqmmc);
 	}
 
