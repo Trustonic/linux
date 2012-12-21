@@ -2347,17 +2347,14 @@ static irqreturn_t dw_mci_interrupt(int irq, void *dev_id)
 
 static void dw_mci_timeout_timer(unsigned long data)
 {
-	struct dw_mci *host;
+	struct dw_mci *host = (struct dw_mci *)data;
 	struct mmc_request *mrq;
-	enum dw_mci_state state;
 
-	host = (struct dw_mci *)data;
-	mrq = host->mrq;
+	if (host && host->mrq) {
+		mrq = host->mrq;
 
-	if (mrq) {
 		spin_lock(&host->lock);
 
-		state = host->state;
 		host->data = NULL;
 		host->cmd = NULL;
 
@@ -2387,7 +2384,7 @@ static void dw_mci_timeout_timer(unsigned long data)
 		spin_unlock(&host->lock);
 		dev_err(&host->dev,
 			"Timeout waiting for hardware interrupt."
-			" state = %d\n", state);
+			" state = %d\n", host->state);
 		dw_mci_reg_dump(host);
 		dw_mci_fifo_reset(&host->dev, host);
 		spin_lock(&host->lock);
