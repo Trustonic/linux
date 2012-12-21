@@ -241,6 +241,7 @@ struct s3c_reg_data {
 	u32			vidw_buf_end[S3C_FB_MAX_WIN];
 	u32			vidw_buf_size[S3C_FB_MAX_WIN];
 	struct s3c_dma_buf_data	dma_buf_data[S3C_FB_MAX_WIN];
+	unsigned int		bandwidth;
 };
 #endif
 
@@ -2054,10 +2055,7 @@ static int s3c_fb_set_win_config(struct s3c_fb *sfb,
 	dev_dbg(sfb->dev, "Total BW = %d Mbits, Max BW per window = %d Mbits\n",
 			bw / (1024 * 1024), MAX_BW_PER_WINDOW / (1024 * 1024));
 
-	if (bw > MAX_BW_PER_WINDOW)
-		exynos5_mif_multiple_windows(true);
-	else
-		exynos5_mif_multiple_windows(false);
+	regs->bandwidth = bw;
 
 	if (ret) {
 		for (i = 0; i < sfb->variant.nr_windows; i++) {
@@ -2185,6 +2183,9 @@ static void s3c_fb_update_regs(struct s3c_fb *sfb, struct s3c_reg_data *regs)
 		}
 	}
 
+	if (regs->bandwidth > MAX_BW_PER_WINDOW)
+		exynos5_mif_multiple_windows(true);
+
 	do {
 		__s3c_fb_update_regs(sfb, regs);
 		s3c_fb_wait_for_vsync(sfb, VSYNC_TIMEOUT_MSEC);
@@ -2217,6 +2218,9 @@ static void s3c_fb_update_regs(struct s3c_fb *sfb, struct s3c_reg_data *regs)
 	for (i = 0; i < sfb->variant.nr_windows; i++)
 		if (!sfb->windows[i]->local)
 			s3c_fb_free_dma_buf(sfb, &old_dma_bufs[i]);
+
+	if (regs->bandwidth <= MAX_BW_PER_WINDOW)
+		exynos5_mif_multiple_windows(false);
 }
 
 static void s3c_fb_update_regs_handler(struct kthread_work *work)
