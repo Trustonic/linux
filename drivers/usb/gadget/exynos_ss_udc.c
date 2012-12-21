@@ -564,9 +564,27 @@ static int exynos_ss_udc_ep_queue(struct usb_ep *ep,
 		list_empty(&udc_ep->req_started);
 	list_add_tail(&udc_req->queue, &udc_ep->req_queue);
 
-	if (first && !udc_ep->not_ready)
-		exynos_ss_udc_start_req(udc, udc_ep, udc_req, false);
+	if (udc_ep->not_ready)
+		goto exit;
 
+	if (ep->desc && usb_endpoint_xfer_isoc(ep->desc)) {
+		/* Start request if transfer is pending or already started */
+		if (udc_ep->pending_xfer || udc_ep->tri) {
+			while (!list_empty(&udc_ep->req_queue)) {
+				if (!udc_ep->trbs_avail)
+					break;
+
+				udc_req = get_ep_head(udc_ep);
+				exynos_ss_udc_start_req(udc, udc_ep,
+							udc_req, false);
+			}
+		}
+	} else {
+		if (first)
+			exynos_ss_udc_start_req(udc, udc_ep, udc_req, false);
+	}
+
+exit:
 	spin_unlock_irqrestore(&udc_ep->lock, irqflags);
 
 	return 0;
