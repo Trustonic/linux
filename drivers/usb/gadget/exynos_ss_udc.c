@@ -417,6 +417,7 @@ static int exynos_ss_udc_ep_enable(struct usb_ep *ep,
 	switch (udc_ep->type) {
 	case USB_ENDPOINT_XFER_ISOC:
 		dev_err(udc->dev, "no current ISOC support\n");
+		udc_ep->interval = 1 << (desc->bInterval - 1);
 		spin_unlock_irqrestore(&udc_ep->lock, flags);
 		return -EINVAL;
 
@@ -867,7 +868,7 @@ static void exynos_ss_udc_start_req(struct exynos_ss_udc *udc,
 		depcmd = readl(udc->regs + EXYNOS_USB3_DEPCMD(epcmd.ep));
 		udc_ep->tri = (depcmd >> EXYNOS_USB3_DEPCMDx_EventParam_SHIFT) &
 				EXYNOS_USB3_DEPCMDx_XferRscIdx_LIMIT;
-
+		udc_ep->pending_xfer = 0;
 		udc_ep->sent_zlp = send_zlp;
 	}
 }
@@ -2021,6 +2022,53 @@ static void exynos_ss_udc_xfer_notready(struct exynos_ss_udc *udc,
 }
 
 /**
+ * exynos_ss_udc_start_isoc_xfer - start Isoc Xfer on Transfer Not Ready event
+ * @udc: The device state.
+ * @udc_ep: The endpoint this event is for.
+ * @event: The event being handled.
+ */
+static void exynos_ss_udc_start_isoc_xfer(struct exynos_ss_udc *udc,
+					  struct exynos_ss_udc_ep *udc_ep,
+					  u32 event)
+{
+	struct exynos_ss_udc_req *udc_req;
+	u32 uf, mask;
+	unsigned long flags;
+
+	dev_dbg(udc->dev, "%s\n", __func__);
+
+	mask = ~(udc_ep->interval - 1);
+	uf = (event >> EXYNOS_USB3_DEPEVT_EventParam_SHIFT) &
+		EXYNOS_USB3_DEPEVT_IsocMicroFrameNum_LIMIT;
+	uf &= mask;
+	/* 4 intervals in the future */
+	uf += udc_ep->interval * 4;
+
+	spin_lock_irqsave(&udc_ep->lock, flags);
+
+	udc_ep->uframe = uf;
+
+	if (list_empty(&udc_ep->req_queue)) {
+		dev_dbg(udc->dev, "Isoc EP request queue is empty\n");
+		udc_ep->pending_xfer = 1;
+		spin_unlock_irqrestore(&udc_ep->lock, flags);
+		return;
+	}
+
+	/* Start isoc transfer */
+	do {
+		if (!udc_ep->trbs_avail)
+			break;
+
+		udc_req = get_ep_head(udc_ep);
+		exynos_ss_udc_start_req(udc, udc_ep, udc_req, false);
+
+	} while (!list_empty(&udc_ep->req_queue));
+
+	spin_unlock_irqrestore(&udc_ep->lock, flags);
+}
+
+/**
  * exynos_ss_udc_irq_connectdone - process event Connection Done
  * @udc: The device state.
  *
@@ -2139,10 +2187,11 @@ static void exynos_ss_udc_irq_usbrst(struct exynos_ss_udc *udc)
 	for (epindex = 0; epindex < EXYNOS_USB3_EPS; epindex++) {
 		int epnum = epindex_to_epnum(epindex, NULL);
 
+		udc_ep = &udc->eps[epindex];
+		udc_ep->pending_xfer = 0;
+
 		if (unlikely(epnum == 0))
 			continue;
-
-		udc_ep = &udc->eps[epindex];
 
 		exynos_ss_udc_end_xfer(udc, udc_ep);
 		exynos_ss_udc_kill_all_requests(udc, udc_ep, -ECONNRESET);
@@ -2211,13 +2260,17 @@ static void exynos_ss_udc_handle_depevt(struct exynos_ss_udc *udc, u32 event)
 {
 	int phys_epnum = (event & EXYNOS_USB3_DEPEVT_EPNUM_MASK) >> 1;
 	struct exynos_ss_udc_ep *udc_ep = get_udc_ep(udc, phys_epnum);
+	const struct usb_endpoint_descriptor *desc = udc_ep->ep.desc;
 	int epnum = udc_ep->epnum;
 
 	switch (event & EXYNOS_USB3_DEPEVT_EVENT_MASK) {
 	case EXYNOS_USB3_DEPEVT_EVENT_XferNotReady:
 		dev_vdbg(udc->dev, "Xfer Not Ready\n");
 
-		exynos_ss_udc_xfer_notready(udc, udc_ep, event);
+		if (desc && usb_endpoint_xfer_isoc(desc))
+			exynos_ss_udc_start_isoc_xfer(udc, udc_ep, event);
+		else
+			exynos_ss_udc_xfer_notready(udc, udc_ep, event);
 		break;
 
 	case EXYNOS_USB3_DEPEVT_EVENT_XferComplete:

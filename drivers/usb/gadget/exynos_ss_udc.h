@@ -239,6 +239,7 @@
 #define EXYNOS_USB3_DEPEVT_EventParam_MASK		(0xffff << 16)
 #define EXYNOS_USB3_DEPEVT_EventParam_SHIFT		16
 #define EXYNOS_USB3_DEPEVT_EventParam(_x)		((_x) << 16)
+#define EXYNOS_USB3_DEPEVT_IsocMicroFrameNum_LIMIT	0xffff
 #define EXYNOS_USB3_DEPEVT_EventStatus_MASK		(0xf << 12)
 #define EXYNOS_USB3_DEPEVT_EventStatus_SHIFT		12
 #define EXYNOS_USB3_DEPEVT_EventStatus_CTL_MASK		(0x3 << 12)
@@ -386,6 +387,8 @@ struct exynos_ss_udc_req {
  * @tri: Transfer resource index.
  * @epnum: The USB endpoint number.
  * @type: The endpoint type.
+ * @interval: Period for polling endpoint for data transfers (for isochronous
+ *	      endpoints only).
  * @uframe: Indicates the (micro)frame number to which the first TRB applies
  *	    (for isochronous endpoints only).
  * @dir_in: Set to true if this endpoint is of the IN direction, which
@@ -395,6 +398,7 @@ struct exynos_ss_udc_req {
  * @wedged: Set if the endpoint has been wedged.
  * @not_ready: Set to true if a command for the endpoint hasn't completed
  *	       during timeout interval.
+ * @pending_xfer: Set if request queue is empty on XferNotReady event.
  * @name: The driver generated name for the endpoint.
  *
  * This is the driver's state for each registered enpoint, allowing it
@@ -420,6 +424,7 @@ struct exynos_ss_udc_ep {
 	unsigned char		epnum;
 	unsigned int		type;
 
+	unsigned int		interval;
 	unsigned int		uframe;
 
 	unsigned int		dir_in:1;
@@ -428,6 +433,7 @@ struct exynos_ss_udc_ep {
 	unsigned int		wedged:1;
 	unsigned int		not_ready:1;
 	unsigned int		sent_zlp:1;
+	unsigned int		pending_xfer:1;
 
 	char			name[13];
 };
