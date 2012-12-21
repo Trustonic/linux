@@ -851,7 +851,8 @@ static void exynos_ss_udc_start_req(struct exynos_ss_udc *udc,
 		} else {
 			epcmd.cmdtyp = EXYNOS_USB3_DEPCMDx_CmdTyp_DEPSTRTXFER;
 			epcmd.cmdflags =
-				EXYNOS_USB3_DEPCMDx_EventParam(udc_ep->uframe);
+				EXYNOS_USB3_DEPCMDx_EventParam(udc_ep->uframe) |
+				EXYNOS_USB3_DEPCMDx_CmdIOC;
 		}
 	} else {
 		epcmd.cmdtyp = EXYNOS_USB3_DEPCMDx_CmdTyp_DEPSTRTXFER;
@@ -1780,37 +1781,80 @@ static void exynos_ss_udc_ep_cmd_complete(struct exynos_ss_udc *udc,
 					  struct exynos_ss_udc_ep *udc_ep,
 					  u32 event)
 {
+	const struct usb_endpoint_descriptor *desc = udc_ep->ep.desc;
 	struct exynos_ss_udc_ep_command *epcmd, *tepcmd;
 	struct exynos_ss_udc_req *udc_req;
+	u32 cmdtyp;
 	int res;
 	bool restart;
 
 	dev_vdbg(udc->dev, "%s: %s\n", __func__, udc_ep->name);
 
-	/* We use IOC _only_ for End Transfer command currently */
+	cmdtyp = (event >> EXYNOS_USB3_DEPEVT_CmdTyp_SHIFT) &
+			EXYNOS_USB3_DEPCMDx_CmdTyp_MASK;
 
-	udc_ep->not_ready = 0;
+	if (cmdtyp == EXYNOS_USB3_DEPCMDx_CmdTyp_DEPENDXFER) {
+		/* End Transfer command complete */
 
-	/* Issue all pending commands for endpoint */
-	list_for_each_entry_safe(epcmd, tepcmd,
-				 &udc_ep->cmd_queue, queue) {
+		udc_ep->not_ready = 0;
 
-		dev_vdbg(udc->dev, "Pending command %02xh\n", epcmd->cmdtyp);
+		/* Issue all pending commands for endpoint */
+		list_for_each_entry_safe(epcmd, tepcmd,
+					 &udc_ep->cmd_queue, queue) {
 
-		res = exynos_ss_udc_issue_epcmd(udc, epcmd);
-		if (res < 0)
-			dev_err(udc->dev, "Failed to issue pending command\n");
+			dev_vdbg(udc->dev, "Pending command %02xh\n",
+					    epcmd->cmdtyp);
 
-		list_del_init(&epcmd->queue);
-		kfree(epcmd);
-	}
+			res = exynos_ss_udc_issue_epcmd(udc, epcmd);
+			if (res < 0)
+				dev_err(udc->dev, "Failed to issue pending command\n");
 
-	/* If we have pending request, then start it */
-	restart = !list_empty(&udc_ep->req_queue);
-	if (restart) {
-		udc_req = get_ep_head(udc_ep);
-		exynos_ss_udc_start_req(udc, udc_ep,
-					udc_req, false);
+			list_del_init(&epcmd->queue);
+			kfree(epcmd);
+		}
+
+		/* If we have pending request, then start it */
+		if (desc && usb_endpoint_xfer_isoc(desc)) {
+			; /* Do nothing for isochronous endpoints */
+		} else {
+			restart = !list_empty(&udc_ep->req_queue);
+			if (restart) {
+				udc_req = get_ep_head(udc_ep);
+				exynos_ss_udc_start_req(udc, udc_ep,
+							udc_req, false);
+			}
+		}
+
+	} else if (cmdtyp == EXYNOS_USB3_DEPCMDx_CmdTyp_DEPSTRTXFER) {
+		/* Start Transfer command complete */
+
+		/*
+		 * For isochronous endpoints: here we check whether the future
+		 * microframe time had already passed when Start Transfer command
+		 * was received. If it had, we need to end current active transfer
+		 * and restart the requests on the next XferNotReady event.
+		 */
+		if ((desc && usb_endpoint_xfer_isoc(desc)) &&
+		    (event & EXYNOS_USB3_DEPEVT_EventStatus_BusTimeExp)) {
+			struct exynos_ss_udc_req *udc_req, *treq;
+
+			dev_dbg(udc->dev, "Microframe time has already passed\n");
+
+			spin_lock(&udc_ep->lock);
+
+			exynos_ss_udc_end_xfer(udc, udc_ep);
+
+			/* Mark requests as not started */
+			list_for_each_entry_safe_reverse(udc_req, treq,
+						&udc_ep->req_started, queue) {
+				list_move(&udc_req->queue, &udc_ep->req_queue);
+				udc_ep->trbs_avail++;
+			}
+
+			spin_unlock(&udc_ep->lock);
+		}
+	} else {
+		dev_warn(udc->dev, "%s: unsupported command type\n", __func__);
 	}
 }
 
