@@ -41,8 +41,10 @@
 #include <mach/exynos-ion.h>
 #include <mach/tmu.h>
 
+#include "../../../drivers/staging/android/ram_console.h"
 #include "common.h"
 #include "board-smdk5250.h"
+#include "resetreason.h"
 
 static char smdk5250_board_info_string[255];
 
@@ -58,9 +60,14 @@ static void smdk5250_init_hw_rev(void)
 	mach_panic_string = smdk5250_board_info_string;
 }
 
+static struct ram_console_platform_data ramconsole_pdata;
+
 static struct platform_device ramconsole_device = {
 	.name           = "ram_console",
 	.id             = -1,
+	.dev		= {
+		.platform_data = &ramconsole_pdata,
+	},
 };
 
 static struct platform_device persistent_trace_device = {
@@ -420,6 +427,7 @@ static void __init smdk5250_machine_init(void)
 #endif
 	exynos5_smdk5250_mmc_init();
 
+	ramconsole_pdata.bootinfo = exynos_get_resetreason();
 	platform_add_devices(smdk5250_devices, ARRAY_SIZE(smdk5250_devices));
 
 	exynos5_smdk5250_audio_init();
