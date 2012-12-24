@@ -46,6 +46,13 @@
 #include "board-smdk5250.h"
 #include "resetreason.h"
 
+#define SMDK5250_CPU0_DEBUG_PA		0x10890000
+#define SMDK5250_CPU1_DEBUG_PA		0x10892000
+#define SMDK5250_CPU_DBGPCSR		0xa0
+
+static void __iomem *smdk5250_cpu0_debug;
+static void __iomem *smdk5250_cpu1_debug;
+
 static char smdk5250_board_info_string[255];
 
 static void smdk5250_init_hw_rev(void)
@@ -408,6 +415,46 @@ static void __init exynos5_smdk5250_sysfs_soc_init(void)
 	return;  /* Or return parent should you need to use one later */
 }
 
+void smdk5250_panic_dump_cpu_pc(int cpu, unsigned long dbgpcsr)
+{
+       void *pc = NULL;
+
+       pr_err("CPU%d DBGPCSR: %08lx\n", cpu, dbgpcsr);
+       if ((dbgpcsr & 3) == 0)
+               pc = (void *)(dbgpcsr - 8);
+       else if ((dbgpcsr & 1) == 1)
+               pc = (void *)((dbgpcsr & ~1) - 4);
+
+       pr_err("CPU%d PC: <%p> %pF\n", cpu, pc, pc);
+}
+
+int smdk5250_panic_notify(struct notifier_block *nb, unsigned long event, void *p)
+{
+       unsigned long dbgpcsr;
+
+       if (smdk5250_cpu0_debug && cpu_online(0)) {
+               dbgpcsr = __raw_readl(smdk5250_cpu0_debug + SMDK5250_CPU_DBGPCSR);
+               smdk5250_panic_dump_cpu_pc(0, dbgpcsr);
+       }
+       if (smdk5250_cpu1_debug && cpu_online(1)) {
+               dbgpcsr = __raw_readl(smdk5250_cpu1_debug + SMDK5250_CPU_DBGPCSR);
+               smdk5250_panic_dump_cpu_pc(1, dbgpcsr);
+       }
+       return NOTIFY_OK;
+}
+
+struct notifier_block smdk5250_panic_nb = {
+       .notifier_call = smdk5250_panic_notify,
+};
+
+static void __init smdk5250_panic_init(void)
+{
+       smdk5250_cpu0_debug = ioremap(SMDK5250_CPU0_DEBUG_PA, SZ_4K);
+       smdk5250_cpu1_debug = ioremap(SMDK5250_CPU1_DEBUG_PA, SZ_4K);
+
+       atomic_notifier_chain_register(&panic_notifier_list, &smdk5250_panic_nb);
+}
+
 static void __init smdk5250_machine_init(void)
 {
 	smdk5250_init_hw_rev();
@@ -415,6 +462,7 @@ static void __init smdk5250_machine_init(void)
 #ifdef CONFIG_EXYNOS_FIQ_DEBUGGER
 	exynos_serial_debug_init(2, 0);
 #endif
+	smdk5250_panic_init();
 
 	s3c_i2c0_set_platdata(NULL);
 	s3c_i2c4_set_platdata(NULL);
