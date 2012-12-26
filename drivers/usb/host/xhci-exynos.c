@@ -50,6 +50,7 @@ static const char hcd_name[] = "xhci_hcd";
 #ifdef CONFIG_PM
 static int exynos_xhci_suspend(struct device *dev)
 {
+	struct platform_device	*pdev = to_platform_device(dev);
 	struct exynos_xhci_hcd	*exynos_xhci;
 	struct usb_hcd		*hcd;
 	struct xhci_hcd		*xhci;
@@ -75,6 +76,8 @@ static int exynos_xhci_suspend(struct device *dev)
 	retval = xhci_suspend(xhci);
 
 	pm_runtime_put_sync(dev->parent);
+
+	exynos_drd_put(pdev);
 
 	return retval;
 }
