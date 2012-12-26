@@ -68,7 +68,7 @@ static int exynos_xhci_suspend(struct device *dev)
 
 	if (hcd->state != HC_STATE_SUSPENDED ||
 			xhci->shared_hcd->state != HC_STATE_SUSPENDED)
-		return -EINVAL;
+		dev_err(dev, "%s: HC state is not suspended!\n", __func__);
 #ifdef CONFIG_USB_SUSPEND
 	if (pm_runtime_suspended(dev))
 		return 0;
