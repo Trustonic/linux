@@ -310,8 +310,7 @@ static int sdio_io_rw_ext_helper(struct sdio_func *func, int write,
 	/* Do the bulk of the transfer using block mode (if supported). */
 	if (func->card->cccr.multi_block && (size > sdio_max_byte_size(func))) {
 		/* Blocks per command is limited by host count, host transfer
-		 * size (we only use a single sg entry) and the maximum for
-		 * IO_RW_EXTENDED of 511 blocks. */
+		 * size and the maximum for IO_RW_EXTENDED of 511 blocks. */
 		max_blocks = min(func->card->host->max_blk_count, 511u);
 
 		while (remainder >= func->cur_blksize) {
