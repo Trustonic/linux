@@ -135,8 +135,6 @@ struct dw_mci_slot {
 	int			last_detect_state;
 };
 
-static struct sg_table sgt;
-
 #if defined(CONFIG_DEBUG_FS)
 static int dw_mci_req_show(struct seq_file *s, void *v)
 {
@@ -2512,13 +2510,6 @@ static int __devinit dw_mci_init_slot(struct dw_mci *host, unsigned int id)
 	slot->mmc = mmc;
 	slot->host = host;
 
-	if (sg_alloc_table(&sgt, SG_MAX_SINGLE_ALLOC, GFP_KERNEL)) {
-		dev_err(&host->dev, "%s: Cannot allocate sg table\n",
-				mmc_hostname(mmc));
-		return -ENOMEM;
-	}
-	mmc->sgl = sgt.sgl;
-
 	mmc->ops = &dw_mci_ops;
 	mmc->f_min = DIV_ROUND_UP(host->bus_hz, 510);
 	mmc->f_max = host->bus_hz;
@@ -2646,8 +2637,6 @@ static int __devinit dw_mci_init_slot(struct dw_mci *host, unsigned int id)
 
 static void dw_mci_cleanup_slot(struct dw_mci_slot *slot, unsigned int id)
 {
-	sg_free_table(&sgt);
-
 	/* Shutdown detect IRQ */
 	if (slot->host->pdata->exit)
 		slot->host->pdata->exit(id);
