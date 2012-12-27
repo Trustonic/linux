@@ -52,6 +52,7 @@
 #define ARM_FREQ_1100MHZ		1100000
 
 #define CHIP_ID_REG		(S5P_VA_CHIPID + 0x4)
+#define LOT_ID_REG		(S5P_VA_CHIPID + 0x14)
 
 enum exynos5250_fused_vol_lock_t {
 	FUSED_MIF_VOL_LOCK = 0,
@@ -245,11 +246,55 @@ unsigned int exynos5250_set_volt(enum asv_type_id target_type,
 	return -EINVAL;
 }
 
+static char *special_lot_id_list[] = {
+	"NZVPU",
+	"NZVR7",
+};
+
+static bool exynos5250_check_special_lot(void)
+{
+	unsigned int lid_reg = 0;
+	unsigned int rev_lid = 0;
+	unsigned int i;
+	unsigned int tmp;
+	char lot_id[5];
+
+	lid_reg = __raw_readl(LOT_ID_REG);
+
+	for (i = 0; i < 32; i++) {
+		tmp = (lid_reg >> i) & 0x1;
+		rev_lid += tmp << (31 - i);
+	}
+
+	lot_id[0] = 'N';
+	lid_reg = (rev_lid >> 11) & 0x1FFFFF;
+
+	for (i = 4; i >= 1; i--) {
+		tmp = lid_reg % 36;
+		lid_reg /= 36;
+		lot_id[i] = (tmp < 10) ? (tmp + '0') : ((tmp - 10) + 'A');
+	}
+
+	for (i = 0; i < ARRAY_SIZE(special_lot_id_list); i++) {
+		if (!strncmp(lot_id, special_lot_id_list[i],
+				ARRAY_SIZE(lot_id))) {
+			pr_info("Exynos5250 : Lot ID is %s\n", lot_id);
+			return true;
+		}
+	}
+
+	return false;
+}
+
 int exynos5250_init_asv(struct asv_common *asv_info)
 {
 	int i;
 	unsigned int tmp1, tmp2;
 	unsigned hpm_value, ids_value;
+
+	/* HACK: Do not support asv in case of special lot */
+	if (exynos5250_check_special_lot())
+		return 0;
 
 	/* read IDS and HPM value from  CHIP ID */
 	tmp1 = __raw_readl(CHIP_ID_REG);
