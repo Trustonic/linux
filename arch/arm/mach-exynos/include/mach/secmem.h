@@ -17,8 +17,11 @@
 #include <linux/ion.h>
 #endif
 
+#define MAX_NAME_LEN	20
+
 struct secchunk_info {
 	int		index;
+	char		name[MAX_NAME_LEN];
 	phys_addr_t	base;
 	size_t		size;
 };
@@ -52,5 +55,6 @@ void secmem_crypto_deregister(void);
 #if defined(CONFIG_SOC_EXYNOS5250)
 #define SECMEM_IOC_GET_FD_PHYS_ADDR    _IOWR('S', 8, struct secfd_info)
 #endif
+#define SECMEM_IOC_GET_CHUNK_NUM	_IOWR('S', 9, int)
 
 #endif /* __ASM_ARCH_SECMEM_H */

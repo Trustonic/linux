@@ -105,23 +105,33 @@ static int secmem_release(struct inode *inode, struct file *file)
 static long secmem_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	struct secmem_info *info = filp->private_data;
+	static int nbufs = 0;
 
 	switch (cmd) {
-	case SECMEM_IOC_CHUNKINFO:
+	case SECMEM_IOC_GET_CHUNK_NUM:
 	{
-		struct cma_info cinfo;
-		struct secchunk_info minfo;
 		char **mname;
-		int nbufs = 0;
 
+		nbufs = 0;
 		for (mname = secmem_regions; *mname != NULL; mname++)
 			nbufs++;
 
 		if (nbufs == 0)
 			return -ENOMEM;
 
+		if (copy_to_user((void __user *)arg, &nbufs, sizeof(int)))
+			return -EFAULT;
+		break;
+	}
+	case SECMEM_IOC_CHUNKINFO:
+	{
+		struct cma_info cinfo;
+		struct secchunk_info minfo;
+
 		if (copy_from_user(&minfo, (void __user *)arg, sizeof(minfo)))
 			return -EFAULT;
+
+		memset(&minfo.name, 0, MAX_NAME_LEN);
 
 		if (minfo.index < 0)
 			return -EINVAL;
@@ -136,6 +146,7 @@ static long secmem_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 			minfo.base = cinfo.lower_bound;
 			minfo.size = cinfo.total_size;
+			memcpy(minfo.name, secmem_regions[minfo.index], MAX_NAME_LEN);
 		}
 
 		if (copy_to_user((void __user *)arg, &minfo, sizeof(minfo)))
