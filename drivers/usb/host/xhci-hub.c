@@ -817,14 +817,11 @@ int xhci_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 			 * under test PORTPMSC register
 			 */
 			temp = xhci_readl(xhci, portpmsc_array[wIndex]);
-			xhci_info(xhci, "PORTPMSC: actual port %d status
-					& control = 0x%x\n", wIndex, temp);
-
 			temp |= PORT_TEST_PKT;
 			xhci_writel(xhci, temp, portpmsc_array[wIndex]);
 			temp = xhci_readl(xhci, portpmsc_array[wIndex]);
-			xhci_info(xhci, "PORTPMSC: Test Packet, actual port %d
-					status = 0x%x\n", wIndex, temp);
+			xhci_info(xhci, "PORTPMSC: port %d, status = 0x%x\n",
+					wIndex, temp);
 			break;
 #endif/* CONFIG_HOST_COMPLIANT_TEST */
 		case USB_PORT_FEAT_REMOTE_WAKE_MASK:
