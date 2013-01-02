@@ -435,24 +435,11 @@ static int s3c_adc_probe(struct platform_device *pdev)
 		goto err_reg;
 	}
 
-	adc->irq = platform_get_irq_byname(pdev, "samsung-adc");
-	if (adc->irq <= 0) {
-		dev_err(dev, "failed to get adc irq\n");
-		ret = -ENOENT;
-		goto err_ioremap;
-	}
-
-	ret = request_irq(adc->irq, s3c_adc_irq, 0, dev_name(dev), adc);
-	if (ret < 0) {
-		dev_err(dev, "failed to attach adc irq\n");
-		goto err_ioremap;
-	}
-
 	adc->clk = clk_get(dev, "adc");
 	if (IS_ERR(adc->clk)) {
 		dev_err(dev, "failed to get adc clock\n");
 		ret = PTR_ERR(adc->clk);
-		goto err_irq;
+		goto err_ioremap;
 	}
 
 	if (adc->vdd) {
@@ -479,6 +466,19 @@ static int s3c_adc_probe(struct platform_device *pdev)
 	writel(tmp, adc->regs + S3C2410_ADCCON);
 	writel(adc->delay, adc->regs + S3C2410_ADCDLY);
 
+	adc->irq = platform_get_irq_byname(pdev, "samsung-adc");
+	if (adc->irq <= 0) {
+		dev_err(dev, "failed to get adc irq\n");
+		ret = -ENOENT;
+		goto err_clk;
+	}
+
+	ret = request_irq(adc->irq, s3c_adc_irq, 0, dev_name(dev), adc);
+	if (ret < 0) {
+		dev_err(dev, "failed to attach adc irq\n");
+		goto err_clk;
+	}
+
 	dev_info(dev, "attached adc driver\n");
 
 	platform_set_drvdata(pdev, adc);
@@ -488,9 +488,6 @@ static int s3c_adc_probe(struct platform_device *pdev)
 
  err_clk:
 	clk_put(adc->clk);
-
- err_irq:
-	free_irq(adc->irq, adc);
  err_ioremap:
 	iounmap(adc->regs);
  err_reg:
