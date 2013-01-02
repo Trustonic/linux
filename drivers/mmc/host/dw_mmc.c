@@ -135,6 +135,38 @@ struct dw_mci_slot {
 	int			last_detect_state;
 };
 
+static void dw_mci_ciu_clk_en(struct dw_mci *host)
+{
+	if (!atomic_read(&host->cclk_cnt)) {
+		clk_enable(host->cclk);
+		atomic_inc_return(&host->cclk_cnt);
+	}
+}
+
+static void dw_mci_ciu_clk_dis(struct dw_mci *host)
+{
+	if (atomic_read(&host->cclk_cnt)) {
+		clk_disable(host->cclk);
+		atomic_dec_return(&host->cclk_cnt);
+	}
+}
+
+static void dw_mci_biu_clk_en(struct dw_mci *host)
+{
+	if (!atomic_read(&host->hclk_cnt)) {
+		clk_enable(host->hclk);
+		atomic_inc_return(&host->hclk_cnt);
+	}
+}
+
+static void dw_mci_biu_clk_dis(struct dw_mci *host)
+{
+	if (atomic_read(&host->hclk_cnt)) {
+		clk_disable(host->hclk);
+		atomic_dec_return(&host->hclk_cnt);
+	}
+}
+
 #if defined(CONFIG_DEBUG_FS)
 static int dw_mci_req_show(struct seq_file *s, void *v)
 {
@@ -1177,6 +1209,9 @@ static void dw_mci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 		 * core ios update when finding the minimum.
 		 */
 		slot->clock = ios->clock;
+		dw_mci_ciu_clk_en(slot->host);
+	} else {
+		dw_mci_ciu_clk_dis(slot->host);
 	}
 
 	switch (ios->power_mode) {
@@ -2492,7 +2527,9 @@ static void dw_mci_work_routine_card(struct work_struct *work)
 				sg_miter_stop(&host->sg_miter);
 				host->sg = NULL;
 
+				dw_mci_ciu_clk_en(host);
 				dw_mci_fifo_reset(&host->dev, host);
+				dw_mci_ciu_clk_dis(host);
 #ifdef CONFIG_MMC_DW_IDMAC
 				dw_mci_idma_reset_dma(host);
 #endif
@@ -2789,7 +2826,7 @@ int __devinit dw_mci_probe(struct dw_mci *host)
 		ret = PTR_ERR(host->hclk);
 		goto err_freehost;
 	}
-	clk_enable(host->hclk);
+	dw_mci_biu_clk_en(host);
 
 	host->cclk = clk_get(&host->dev, host->pdata->cclk_name);
 	if (IS_ERR(host->cclk)) {
@@ -2798,7 +2835,7 @@ int __devinit dw_mci_probe(struct dw_mci *host)
 		ret = PTR_ERR(host->cclk);
 		goto err_free_hclk;
 	}
-	clk_enable(host->cclk);
+	dw_mci_ciu_clk_en(host);
 
 	host->bus_hz = host->pdata->bus_hz;
 	host->quirks = host->pdata->quirks;
@@ -2835,8 +2872,9 @@ int __devinit dw_mci_probe(struct dw_mci *host)
 	/* Reset all blocks */
 	if (!mci_wait_reset(&host->dev, host)) {
 		ret = -ENODEV;
-		goto err_free_hclk;
+		goto err_free_cclk;
 	}
+	dw_mci_ciu_clk_dis(host);
 
 	host->dma_ops = host->pdata->dma_ops;
 	dw_mci_init_dma(host);
@@ -2955,11 +2993,12 @@ err_dmaunmap:
 		regulator_put(host->vmmc);
 	}
 
-	clk_disable(host->cclk);
+err_free_cclk:
+	dw_mci_ciu_clk_dis(host);
 	clk_put(host->cclk);
 
 err_free_hclk:
-	clk_disable(host->hclk);
+	dw_mci_biu_clk_dis(host);
 	clk_put(host->hclk);
 
 err_freehost:
@@ -3002,9 +3041,8 @@ void dw_mci_remove(struct dw_mci *host)
 		regulator_put(host->vmmc);
 	}
 
-	clk_disable(host->cclk);
 	clk_put(host->cclk);
-	clk_disable(host->hclk);
+	dw_mci_biu_clk_dis(host);
 	clk_put(host->hclk);
 }
 EXPORT_SYMBOL(dw_mci_remove);
@@ -3025,11 +3063,13 @@ int dw_mci_suspend(struct dw_mci *host)
 		if (!slot)
 			continue;
 		if (slot->mmc) {
+			dw_mci_ciu_clk_en(host);
 			clkena = mci_readl(host, CLKENA);
 			clkena &= ~((SDMMC_CLKEN_LOW_PWR) << slot->id);
 			mci_writel(host, CLKENA, clkena);
 			mci_send_cmd(slot,
 				SDMMC_CMD_UPD_CLK | SDMMC_CMD_PRV_DAT_WAIT, 0);
+			dw_mci_ciu_clk_dis(host);
 
 			slot->mmc->pm_flags |= slot->mmc->pm_caps;
 			ret = mmc_suspend_host(slot->mmc);
@@ -3058,10 +3098,15 @@ int dw_mci_resume(struct dw_mci *host)
 	if (host->vmmc)
 		regulator_enable(host->vmmc);
 
+	dw_mci_ciu_clk_en(host);
+
 	if (!mci_wait_reset(&host->dev, host)) {
+		dw_mci_ciu_clk_dis(host);
 		ret = -ENODEV;
 		return ret;
 	}
+
+	dw_mci_ciu_clk_dis(host);
 
 	if (host->dma_ops->init)
 		host->dma_ops->init(host);
@@ -3083,7 +3128,9 @@ int dw_mci_resume(struct dw_mci *host)
 		if (slot->mmc->pm_flags & MMC_PM_KEEP_POWER &&
 					dw_mci_get_cd(slot->mmc)) {
 			dw_mci_set_ios(slot->mmc, &slot->mmc->ios);
+			dw_mci_ciu_clk_en(host);
 			dw_mci_setup_bus(slot, 1);
+			dw_mci_ciu_clk_dis(host);
 		}
 
 		ret = mmc_resume_host(host->slot[i]->mmc);
