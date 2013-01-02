@@ -296,8 +296,8 @@ void dw_mci_reg_dump(struct dw_mci *host)
 	dev_err(&host->dev, ": ============== STATUS DUMP ================\n");
 	dev_err(&host->dev, ": cmd_status:      0x%08x\n", host->cmd_status);
 	dev_err(&host->dev, ": data_status:     0x%08x\n", host->data_status);
-	dev_err(&host->dev, ": pending_events:  0x%08x\n", host->pending_events);
-	dev_err(&host->dev, ": completed_events:0x%08x\n", host->completed_events);
+	dev_err(&host->dev, ": pending_events:  0x%08lx\n", host->pending_events);
+	dev_err(&host->dev, ": completed_events:0x%08lx\n", host->completed_events);
 	dev_err(&host->dev, ": ===========================================\n");
 }
 
