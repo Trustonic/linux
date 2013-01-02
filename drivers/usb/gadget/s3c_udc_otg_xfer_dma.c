@@ -813,7 +813,6 @@ static int s3c_ep0_write(struct s3c_udc *dev)
 {
 	struct s3c_request *req;
 	struct s3c_ep *ep = &dev->ep[0];
-	int ret;
 
 	if (list_empty(&ep->queue))
 		req = 0;
