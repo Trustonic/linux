@@ -295,7 +295,6 @@ static void complete_rx(struct s3c_udc *dev, u8 ep_num)
 		done(ep, req, 0);
 
 		if (ep_num == EP0_CON && dev->ep0state == DATA_STATE_RECV) {
-			done(ep, req, 0);
 			DEBUG_OUT_EP("	=> Send ZLP\n");
 			dev->ep0state = WAIT_FOR_OUT_STATUS;
 			s3c_udc_ep0_zlp(dev);
