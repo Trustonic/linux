@@ -1015,7 +1015,7 @@ static void __dw_mci_start_request(struct dw_mci *host,
 {
 	struct mmc_request *mrq;
 	struct mmc_data	*data;
-	u32 cmdflags;
+	u32 cmdflags, timeout = 0;
 
 	mrq = slot->mrq;
 	host->stop_cmdr = 0;
@@ -1025,8 +1025,6 @@ static void __dw_mci_start_request(struct dw_mci *host,
 
 	/* Slot specific timing and width adjustment */
 	dw_mci_setup_bus(slot, 0);
-
-	mod_timer(&host->timer, jiffies + msecs_to_jiffies(10000));
 
 	host->cur_slot = slot;
 	host->mrq = mrq;
@@ -1040,7 +1038,14 @@ static void __dw_mci_start_request(struct dw_mci *host,
 		dw_mci_set_timeout(host);
 		mci_writel(host, BYTCNT, data->blksz*data->blocks);
 		mci_writel(host, BLKSIZ, data->blksz);
+		timeout = data->timeout_ns / 1000000;
+	} else {
+		timeout = cmd->cmd_timeout_ms;
 	}
+
+	/* adds 2 second in s/w timeout value */
+	mod_timer(&host->timer, jiffies +
+			msecs_to_jiffies(timeout + 2000));
 
 	cmdflags = dw_mci_prepare_command(slot->mmc, cmd);
 
