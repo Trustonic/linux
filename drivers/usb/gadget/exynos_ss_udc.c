@@ -526,15 +526,6 @@ static int exynos_ss_udc_ep_queue(struct usb_ep *ep,
 			  req->length, req->buf, req->no_interrupt,
 			  req->zero, req->short_not_ok);
 
-	if (udc_ep->epnum == 0 && udc->ep0_state == EP0_WAIT_NRDY)
-		/*
-		 * Status Stage will be handled by XferNotReady event
-		 *
-		 * REVISIT: status request may have specific 'complete'
-		 * function, which will never be called in this case.
-		 */
-		return 0;
-
 	/* initialise status of the request */
 	INIT_LIST_HEAD(&udc_req->queue);
 
@@ -896,6 +887,8 @@ static int exynos_ss_udc_process_set_config(struct exynos_ss_udc *udc,
 	u16 config = le16_to_cpu(ctrl->wValue);
 
 	dev_dbg(udc->dev, "%s\n", __func__);
+
+	udc->our_status = false;
 
 	switch (udc->state) {
 	case USB_STATE_ADDRESS:
@@ -1454,6 +1447,8 @@ static void exynos_ss_udc_process_control(struct exynos_ss_udc *udc,
 	} else
 		udc->ep0_three_stage = 1;
 
+	udc->our_status = true;
+
 	if ((ctrl->bRequestType & USB_TYPE_MASK) == USB_TYPE_STANDARD) {
 		switch (ctrl->bRequest) {
 		case USB_REQ_SET_ADDRESS:
@@ -1487,6 +1482,13 @@ static void exynos_ss_udc_process_control(struct exynos_ss_udc *udc,
 	/* as a fallback, try delivering it to the driver to deal with */
 
 	if (ret == 0 && udc->driver) {
+		/*
+		 * Gadget is responsible for Status stage handling only
+		 * in case of two stage control transfer.
+		 */
+		if (!udc->ep0_three_stage)
+			udc->our_status = false;
+
 		ret = udc->driver->setup(&udc->gadget, ctrl);
 		if (ret < 0)
 			dev_dbg(udc->dev, "driver->setup() ret %d\n", ret);
@@ -1879,7 +1881,31 @@ static void exynos_ss_udc_xfer_notready(struct exynos_ss_udc *udc,
 
 			udc_ep->dir_in = direction;
 			udc->ep0_state = EP0_STATUS_PHASE;
-			exynos_ss_udc_enqueue_status(udc);
+
+			if (udc->our_status) {
+				exynos_ss_udc_enqueue_status(udc);
+			} else {
+				struct exynos_ss_udc_req *udc_req;
+				unsigned long irqflags;
+
+				if (list_empty(&udc_ep->req_queue))
+					/*
+					 * Request for Status stage will be
+					 * started as soon as gadget queues it.
+					 */
+					return;
+
+				/* Gadget already queued request; start it! */
+
+				spin_lock_irqsave(&udc_ep->lock, irqflags);
+
+				udc_req = get_ep_head(udc_ep);
+				exynos_ss_udc_start_req(udc, udc_ep,
+							udc_req, false);
+
+				spin_unlock_irqrestore(&udc_ep->lock, irqflags);
+			}
+
 			break;
 
 		case EP0_STATUS_PHASE:
