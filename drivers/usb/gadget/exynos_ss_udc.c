@@ -713,8 +713,6 @@ static void exynos_ss_udc_start_req(struct exynos_ss_udc *udc,
 		return;
 	}
 
-	udc_ep->req = udc_req;
-
 	/* Get type of TRB */
 	if (epnum == 0)
 		switch (udc->ep0_state) {
@@ -740,6 +738,8 @@ static void exynos_ss_udc_start_req(struct exynos_ss_udc *udc,
 		}
 	else
 		trb_type = NORMAL;
+
+	udc_ep->req = udc_req;
 
 	/* Get transfer length */
 	if (send_zlp)
