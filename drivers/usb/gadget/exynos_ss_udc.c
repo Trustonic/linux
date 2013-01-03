@@ -730,11 +730,16 @@ static void exynos_ss_udc_start_req(struct exynos_ss_udc *udc,
 			else
 				trb_type = CONTROL_STATUS_2;
 			break;
+
+		case EP0_WAIT_NRDY:
+			dev_dbg(udc->dev, "%s: wait XferNotReady for EP0\n",
+					   __func__);
+			return;
+
 		default:
-			dev_warn(udc->dev, "%s: Erroneous EP0 state (%d)",
+			dev_err(udc->dev, "%s: Erroneous EP0 state (%d)",
 					   __func__, udc->ep0_state);
 			return;
-			break;
 		}
 	else
 		trb_type = NORMAL;
