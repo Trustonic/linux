@@ -457,6 +457,7 @@ EXYNOS_SUB_GPD(exynos5_pd_fimd1, "pd-fimd1");
 EXYNOS_SUB_GPD(exynos5_pd_hdmi, "pd-hdmi");
 EXYNOS_SUB_GPD(exynos5_pd_mixer, "pd-mixer");
 EXYNOS_SUB_GPD(exynos5_pd_dp, "pd-dp");
+EXYNOS_SUB_GPD(exynos5_pd_mipi_dsim, "pd-mipi_dsim");
 EXYNOS_GPD(exynos5_pd_gscl, EXYNOS5_GSCL_CONFIGURATION, "pd-gscl",
 			"pclk_133_gscl", "aclk_266_gscl", "aclk_300_gscl");
 EXYNOS_SUB_GPD(exynos5_pd_gscl0, "pd-gscl0");
@@ -471,6 +472,7 @@ static struct exynos_pm_domain *exynos5_pm_domains[] = {
 	&exynos5_pd_maudio,
 	&exynos5_pd_disp1,
 	&exynos5_pd_fimd1,
+	&exynos5_pd_mipi_dsim,
 	&exynos5_pd_hdmi,
 	&exynos5_pd_mixer,
 	&exynos5_pd_dp,
@@ -491,6 +493,9 @@ EXYNOS_PM_DEV(maudio, maudio, &exynos5_device_i2s0, NULL);
 #endif
 #ifdef CONFIG_S5P_DEV_FIMD1
 EXYNOS_PM_DEV(fimd1, fimd1, &s5p_device_fimd1, "fimd");
+#endif
+#ifdef CONFIG_S5P_DEV_MIPI_DSIM
+EXYNOS_PM_DEV(dsim, mipi_dsim, &s5p_device_mipi_dsim, "dsim0");
 #endif
 #ifdef CONFIG_S5P_DEV_TV
 EXYNOS_PM_DEV(hdmi, hdmi, &s5p_device_hdmi, NULL);
@@ -521,6 +526,9 @@ static struct exynos_pm_dev *exynos_pm_devs[] = {
 #endif
 #ifdef CONFIG_S5P_DEV_FIMD1
 	&exynos5_pm_dev_fimd1,
+#endif
+#ifdef CONFIG_S5P_DEV_MIPI_DSIM
+	&exynos5_pm_dev_dsim,
 #endif
 #ifdef CONFIG_S5P_DEV_TV
 	&exynos5_pm_dev_hdmi,
@@ -609,6 +617,10 @@ static int __init exynos5_pm_init_power_domain(void)
 #ifdef CONFIG_S5P_DEV_FIMD1
 	exynos_pm_add_subdomain_to_genpd(&exynos5_pd_disp1.pd, &exynos5_pd_fimd1.pd);
 	exynos_pm_add_dev_to_genpd(&s5p_device_fimd1, &exynos5_pd_fimd1);
+#endif
+#ifdef CONFIG_S5P_DEV_MIPI_DSIM
+	exynos_pm_add_subdomain_to_genpd(&exynos5_pd_disp1.pd, &exynos5_pd_mipi_dsim.pd);
+	exynos_pm_add_dev_to_genpd(&s5p_device_mipi_dsim, &exynos5_pd_mipi_dsim);
 #endif
 #ifdef CONFIG_S5P_DEV_TV
 	exynos_pm_add_subdomain_to_genpd(&exynos5_pd_disp1.pd, &exynos5_pd_hdmi.pd);
