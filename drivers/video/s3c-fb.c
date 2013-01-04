@@ -801,19 +801,8 @@ static void s3c_fb_configure_lcd(struct s3c_fb *sfb,
 		struct fb_videomode *win_mode)
 {
 	int clkdiv = s3c_fb_calc_pixclk(sfb, win_mode->pixclock);
-	u32 data = sfb->pdata->vidcon0;
-	data &= ~(VIDCON0_CLKVAL_F_MASK | VIDCON0_CLKDIR);
-	if (clkdiv > 1)
-		data |= VIDCON0_CLKVAL_F(clkdiv-1) | VIDCON0_CLKDIR;
-	else
-		data &= ~VIDCON0_CLKDIR;
+	u32 data;
 
-	/* write the timing data to the panel */
-	if (sfb->variant.is_2443)
-		data |= (1 << 5);
-
-	data |= VIDCON0_ENVID | VIDCON0_ENVID_F;
-	writel(data, sfb->regs + VIDCON0);
 	data = readl(sfb->regs + VIDCON2);
 	data &= ~(VIDCON2_RGB_ORDER_E_MASK | VIDCON2_RGB_ORDER_O_MASK);
 	data |= VIDCON2_RGB_ORDER_E_BGR | VIDCON2_RGB_ORDER_O_BGR;
@@ -842,6 +831,20 @@ static void s3c_fb_configure_lcd(struct s3c_fb *sfb,
 			| VIDTCON2_HOZVAL_E(win_mode->xres - 1);
 	/* VIDTCON2 */
 	writel(data, sfb->regs + sfb->variant.vidtcon + 8);
+
+	data = sfb->pdata->vidcon0;
+	data &= ~(VIDCON0_CLKVAL_F_MASK | VIDCON0_CLKDIR);
+	if (clkdiv > 1)
+		data |= VIDCON0_CLKVAL_F(clkdiv-1) | VIDCON0_CLKDIR;
+	else
+		data &= ~VIDCON0_CLKDIR;
+
+	/* write the timing data to the panel */
+	if (sfb->variant.is_2443)
+		data |= (1 << 5);
+
+	data |= VIDCON0_ENVID | VIDCON0_ENVID_F;
+	writel(data, sfb->regs + VIDCON0);
 }
 
 static unsigned int s3c_fb_calc_bandwidth(u32 w, u32 h, u32 bits_per_pixel, int fps)
