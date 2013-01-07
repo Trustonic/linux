@@ -29,7 +29,7 @@ int s5p_mfc_wait_for_done_dev(struct s5p_mfc_dev *dev, int command)
 {
 	int ret;
 
-	ret = wait_event_interruptible_timeout(dev->queue,
+	ret = wait_event_timeout(dev->queue,
 		(dev->int_cond && (dev->int_type == command
 		|| dev->int_type == S5P_FIMV_R2H_CMD_ERR_RET)),
 		msecs_to_jiffies(MFC_INT_TIMEOUT));

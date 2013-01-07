@@ -818,12 +818,14 @@ static int s5p_mfc_set_enc_params(struct s5p_mfc_ctx *ctx)
 
 	/* multi-slice control */
 	/* multi-slice MB number or bit size */
-	WRITEL(p->slice_mode, S5P_FIMV_ENC_MSLICE_CTRL);
 	if (p->slice_mode == V4L2_MPEG_VIDEO_MULTI_SICE_MODE_MAX_MB) {
+		WRITEL(((0x0 << 1) | 0x1), S5P_FIMV_ENC_MSLICE_CTRL);
 		WRITEL(p->slice_mb, S5P_FIMV_ENC_MSLICE_MB);
 	} else if (p->slice_mode == V4L2_MPEG_VIDEO_MULTI_SICE_MODE_MAX_BYTES) {
+		WRITEL(((0x1 << 1) | 0x1), S5P_FIMV_ENC_MSLICE_CTRL);
 		WRITEL(p->slice_bit, S5P_FIMV_ENC_MSLICE_BIT);
 	} else {
+		WRITEL(0, S5P_FIMV_ENC_MSLICE_CTRL);
 		WRITEL(0, S5P_FIMV_ENC_MSLICE_MB);
 		WRITEL(0, S5P_FIMV_ENC_MSLICE_BIT);
 	}
@@ -1476,7 +1478,8 @@ static inline int s5p_mfc_run_dec_frame(struct s5p_mfc_ctx *ctx)
 
 	dev->curr_ctx = ctx->num;
 	s5p_mfc_clean_ctx_int_flags(ctx);
-	if (temp_vb->vb.v4l2_planes[0].bytesused == 0) {
+	if (temp_vb->vb.v4l2_planes[0].bytesused == 0 ||
+			temp_vb->vb.v4l2_buf.input == DEC_LAST_FRAME) {
 		last_frame = 1;
 		mfc_debug(2, "Setting ctx->state to FINISHING\n");
 		ctx->state = MFCINST_FINISHING;
@@ -1595,8 +1598,6 @@ static inline void s5p_mfc_run_init_enc(struct s5p_mfc_ctx *ctx)
 static inline int s5p_mfc_run_init_dec_buffers(struct s5p_mfc_ctx *ctx)
 {
 	struct s5p_mfc_dev *dev = ctx->dev;
-	unsigned long flags;
-	struct s5p_mfc_buf *temp_vb;
 	int ret;
 	/* Header was parsed now starting processing
 	 * First set the output frame buffers
@@ -1609,22 +1610,6 @@ static inline int s5p_mfc_run_init_dec_buffers(struct s5p_mfc_ctx *ctx)
 		return -EAGAIN;
 	}
 
-	spin_lock_irqsave(&dev->irqlock, flags);
-
-	if (list_empty(&ctx->src_queue)) {
-		mfc_err("Header has been deallocated in the middle of "
-							"initialization.\n");
-		spin_unlock_irqrestore(&dev->irqlock, flags);
-		return -EIO;
-	}
-
-	temp_vb = list_entry(ctx->src_queue.next, struct s5p_mfc_buf, list);
-	s5p_mfc_set_dec_desc_buffer(ctx);
-	mfc_debug(2, "Header size: %d\n", temp_vb->vb.v4l2_planes[0].bytesused);
-	s5p_mfc_set_dec_stream_buffer(ctx,
-			s5p_mfc_mem_plane_addr(ctx, &temp_vb->vb, 0),
-			0, temp_vb->vb.v4l2_planes[0].bytesused);
-	spin_unlock_irqrestore(&dev->irqlock, flags);
 	dev->curr_ctx = ctx->num;
 	s5p_mfc_clean_ctx_int_flags(ctx);
 	ret = s5p_mfc_set_dec_frame_buffer(ctx);

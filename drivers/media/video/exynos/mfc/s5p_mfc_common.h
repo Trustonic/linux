@@ -58,6 +58,8 @@
 #define MFC_VER_MAJOR(ver)	((ver >> 4) & 0xF)
 #define MFC_VER_MINOR(ver)	(ver & 0xF)
 
+#define DEC_LAST_FRAME		0x80000000
+
 /**
  * enum s5p_mfc_inst_type - The type of an MFC device node.
  */

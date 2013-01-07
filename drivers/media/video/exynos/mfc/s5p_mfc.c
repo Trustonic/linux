@@ -114,7 +114,7 @@ static inline void wake_up_dev(struct s5p_mfc_dev *dev, unsigned int reason,
 	dev->int_cond = 1;
 	dev->int_type = reason;
 	dev->int_err = err;
-	wake_up_interruptible(&dev->queue);
+	wake_up(&dev->queue);
 }
 
 void s5p_mfc_watchdog(unsigned long arg)
@@ -694,7 +694,8 @@ static irqreturn_t s5p_mfc_irq(int irq, void *priv)
 	case S5P_FIMV_R2H_CMD_ERR_RET:
 		/* An error has occured */
 		if (ctx->state == MFCINST_RUNNING) {
-			if (s5p_mfc_err_dec(err) >= S5P_FIMV_ERR_WARNINGS_START)
+			if ((s5p_mfc_err_dec(err) >= S5P_FIMV_ERR_WARNINGS_START) &&
+				(s5p_mfc_err_dec(err) <= S5P_FIMV_ERR_WARNINGS_END))
 				s5p_mfc_handle_frame(ctx, reason, err);
 			else
 				s5p_mfc_handle_frame_error(ctx, reason, err);

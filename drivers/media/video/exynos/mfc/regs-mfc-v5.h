@@ -377,6 +377,7 @@
 
 /* Error handling defines */
 #define S5P_FIMV_ERR_WARNINGS_START		145
+#define S5P_FIMV_ERR_WARNINGS_END		182
 #define S5P_FIMV_ERR_DEC_MASK			0xFFFF
 #define S5P_FIMV_ERR_DEC_SHIFT			0
 #define S5P_FIMV_ERR_DSPL_MASK			0xFFFF0000
