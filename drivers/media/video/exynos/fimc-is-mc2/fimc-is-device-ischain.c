@@ -75,6 +75,7 @@
 static struct pm_qos_request pm_qos_req_cpu;
 static struct exynos5_bus_int_handle *isp_int_handle_min;
 static struct exynos5_bus_mif_handle *isp_mif_handle_min;
+static struct exynos5_bus_mif_handle *isp_dzoom_lock_handle;
 
 #ifdef FW_DEBUG
 #define DEBUG_FS_ROOT_NAME	"fimc-is"
@@ -1890,6 +1891,11 @@ int fimc_is_ischain_open(struct fimc_is_device_ischain *this,
 	this->debug_cnt = 0;
 	this->dzoom_width = 0;
 
+	/* clocks for dzoom */
+	this->dz_lock = clk_get(&this->pdev->dev, "mout_aclk_400_isp");
+	this->dz_lock_par_new = clk_get(&this->pdev->dev, "mout_bpll_user");
+	this->dz_lock_par_prev = clk_get(&this->pdev->dev, "mout_mpll_user");
+
 	/* frame manager open */
 	fimc_is_interface_open(this->interface);
 
@@ -2015,6 +2021,20 @@ int fimc_is_ischain_close(struct fimc_is_device_ischain *this)
 	/* 7. Dealloc memroy */
 	fimc_is_ishcain_deinitmem(this);
 #endif
+
+	/* clocks for dzoom */
+	if (this->dz_lock) {
+		clk_put(this->dz_lock);
+		this->dz_lock = NULL;
+	}
+	if (this->dz_lock_par_new) {
+		clk_put(this->dz_lock_par_new);
+		this->dz_lock_par_new = NULL;
+	}
+	if (this->dz_lock_par_prev) {
+		clk_put(this->dz_lock_par_prev);
+		this->dz_lock_par_prev = NULL;
+	}
 
 	printk(KERN_INFO "---%s(%d)\n", __func__, ret);
 
@@ -3953,6 +3973,22 @@ int fimc_is_ischain_callback(struct fimc_is_device_ischain *this)
 		}
 	}
 #endif
+
+	if (this->chain0_width >=
+			(isp_frame->shot->ctl.scaler.cropRegion[2] << 1)) {
+		if (!isp_dzoom_lock_handle) {
+			isp_dzoom_lock_handle = exynos5_bus_mif_min(800000);
+			if (!isp_dzoom_lock_handle)
+				err("exynos5_bus_mif_min is fail");
+			clk_set_parent(this->dz_lock, this->dz_lock_par_new);
+		}
+	} else {
+		if (isp_dzoom_lock_handle) {
+			clk_set_parent(this->dz_lock, this->dz_lock_par_prev);
+			exynos5_bus_mif_put(isp_dzoom_lock_handle);
+			isp_dzoom_lock_handle = NULL;
+		}
+	}
 
 	crop_width = isp_frame->shot->ctl.scaler.cropRegion[2];
 	if (crop_width && (crop_width != this->dzoom_width)) {
