@@ -109,13 +109,8 @@ exynos_drd_switch_ases_vbus_ctrl(struct exynos_drd_switch *drd_switch, int on)
 	struct platform_device *pdev = to_platform_device(drd->dev);
 	struct dwc3_exynos_data *pdata = drd->pdata;
 
-	if (on) {
-		if (pdata->vbus_ctrl)
-			pdata->vbus_ctrl(pdev, 1);
-	} else {
-		if (pdata->vbus_ctrl)
-			pdata->vbus_ctrl(pdev, 0);
-	}
+	if (pdata->vbus_ctrl)
+		pdata->vbus_ctrl(pdev, on);
 }
 
 /**
