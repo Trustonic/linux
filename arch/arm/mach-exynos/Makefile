@@ -90,6 +90,18 @@ obj-$(CONFIG_MACH_MANTA)		+= board-manta-nfc.o
 obj-$(CONFIG_MACH_MANTA)		+= board-manta-bluetooth.o
 obj-$(CONFIG_MACH_MANTA)		+= board-manta-connector.o
 
+obj-$(CONFIG_MACH_ARNDALE)		+= mach-arndale.o
+obj-$(CONFIG_MACH_ARNDALE)		+= board-arndale-mmc.o
+obj-$(CONFIG_MACH_ARNDALE)		+= board-arndale-audio.o
+obj-$(CONFIG_MACH_ARNDALE)		+= board-arndale-input.o
+obj-$(CONFIG_MACH_ARNDALE)		+= board-arndale-usb.o
+obj-$(CONFIG_MACH_ARNDALE)		+= board-arndale-power.o
+obj-$(CONFIG_MACH_ARNDALE)		+= board-arndale-spi.o
+obj-$(CONFIG_MACH_ARNDALE)		+= board-arndale-display.o
+obj-$(CONFIG_MACH_ARNDALE)		+= board-arndale-media.o
+obj-$(CONFIG_MACH_ARNDALE)		+= board-arndale-tvout.o
+obj-$(CONFIG_MACH_ARNDALE)		+= board-arndale-camera.o
+
 # device support
 
 obj-y					+= dev-uart.o
