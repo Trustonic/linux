@@ -19,6 +19,7 @@
 /* TODO: adjust */
 #define ID_DEBOUNCE_DELAY	(HZ / 2)	/* 0.5 sec */
 #define VBUS_DEBOUNCE_DELAY	(HZ / 2)	/* 0.5 sec */
+#define EAGAIN_DELAY		100		/* msec */
 
 enum id_pin_state {
 	NA = -1,
@@ -47,7 +48,7 @@ struct exynos_drd_switch {
 	int vbus_irq;
 	int vbus_gpio;
 	struct timer_list vbus_db_timer;
-	struct work_struct work;
+	struct delayed_work work;
 	struct mutex mutex;
 	bool vbus_active;
 	enum id_pin_state id_state;

@@ -114,14 +114,16 @@ exynos_drd_switch_ases_vbus_ctrl(struct exynos_drd_switch *drd_switch, int on)
 }
 
 /**
- * exynos_drd_switch_schedule_work - schedule OTG state machine work.
+ * exynos_drd_switch_schedule_work - schedule OTG state machine work with delay.
  *
  * @work: Work to schedule.
+ * @msec: Delay in milliseconds.
  *
  * Prevents state machine running if ID state is N/A. Use this function
  * to schedule work.
  */
-static void exynos_drd_switch_schedule_work(struct work_struct *work)
+static void exynos_drd_switch_schedule_dwork(struct delayed_work *work,
+					     unsigned int msec)
 {
 	struct exynos_drd_switch *drd_switch;
 
@@ -129,8 +131,13 @@ static void exynos_drd_switch_schedule_work(struct work_struct *work)
 		drd_switch = container_of(work, struct exynos_drd_switch, work);
 
 		if (drd_switch->id_state != NA)
-			schedule_work(work);
+			schedule_delayed_work(work, msecs_to_jiffies(msec));
 	}
+}
+
+static inline void exynos_drd_switch_schedule_work(struct delayed_work *work)
+{
+	exynos_drd_switch_schedule_dwork(work, 0);
 }
 
 /**
@@ -537,9 +544,9 @@ int exynos_drd_switch_id_event(struct platform_device *pdev, int state)
 static void exynos_drd_switch_work(struct work_struct *w)
 {
 	struct exynos_drd_switch *drd_switch = container_of(w,
-					struct exynos_drd_switch, work);
+					struct exynos_drd_switch, work.work);
 	struct usb_phy *phy = drd_switch->otg.phy;
-	struct work_struct *work = &drd_switch->work;
+	struct delayed_work *work = &drd_switch->work;
 	int ret = 0;
 
 	/* provide serialization */
@@ -567,7 +574,8 @@ static void exynos_drd_switch_work(struct work_struct *w)
 				exynos_drd_switch_schedule_work(work);
 			} else if (ret == -EAGAIN) {
 				phy->state = OTG_STATE_UNDEFINED;
-				exynos_drd_switch_schedule_work(work);
+				exynos_drd_switch_schedule_dwork(work,
+								 EAGAIN_DELAY);
 			} else {
 				/* Fatal error */
 				dev_err(phy->dev,
@@ -599,7 +607,7 @@ static void exynos_drd_switch_work(struct work_struct *w)
 			exynos_drd_switch_schedule_work(work);
 		} else if (ret == -EAGAIN || ret == -EBUSY) {
 			phy->state = OTG_STATE_UNDEFINED;
-			exynos_drd_switch_schedule_work(work);
+			exynos_drd_switch_schedule_dwork(work, EAGAIN_DELAY);
 		} else {
 			/* Fatal error */
 			dev_err(phy->dev,
@@ -612,7 +620,8 @@ static void exynos_drd_switch_work(struct work_struct *w)
 			ret = exynos_drd_switch_start_host(&drd_switch->otg, 0);
 			/* Currently we ignore most of the errors */
 			if (ret == -EAGAIN) {
-				exynos_drd_switch_schedule_work(work);
+				exynos_drd_switch_schedule_dwork(work,
+								 EAGAIN_DELAY);
 			} else if (ret == -EINVAL) {
 				/* Fatal error */
 				dev_err(phy->dev,
@@ -834,7 +843,7 @@ int exynos_drd_switch_init(struct exynos_drd *drd)
 
 	exynos_drd_switch_reset(drd, 0);
 
-	INIT_WORK(&drd_switch->work, exynos_drd_switch_work);
+	INIT_DELAYED_WORK(&drd_switch->work, exynos_drd_switch_work);
 	mutex_init(&drd_switch->mutex);
 
 	if (drd_switch->id_irq >= 0) {
@@ -868,7 +877,7 @@ int exynos_drd_switch_init(struct exynos_drd *drd)
 	return 0;
 
 err_irq:
-	cancel_work_sync(&drd_switch->work);
+	cancel_delayed_work_sync(&drd_switch->work);
 
 	return ret;
 }
@@ -891,6 +900,6 @@ void exynos_drd_switch_exit(struct exynos_drd *drd)
 
 		sysfs_remove_group(&drd->dev->kobj,
 			&exynos_drd_switch_attr_group);
-		cancel_work_sync(&drd_switch->work);
+		cancel_delayed_work_sync(&drd_switch->work);
 	}
 }
