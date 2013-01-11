@@ -5,7 +5,7 @@
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
-*/
+ */
 
 #include <linux/delay.h>
 #include <linux/gpio.h>
@@ -42,62 +42,27 @@ static struct platform_device smdk5250_gpio_keys = {
 
 static void exynos5_smdk5250_touch_init(void)
 {
-#ifdef CONFIG_TOUCHSCREEN_COASIA
-	int gpio;
-
-	if (get_smdk5250_rev() == SMDK5250_REV_0_0)
-		gpio = EXYNOS5_GPX2(4);
-	else
-		gpio = EXYNOS5_GPX2(1);
-
-	if (gpio_request(gpio, "GPX2")) {
-		pr_err("%s : TS_RST request port error\n", __func__);
-	} else {
-		s3c_gpio_cfgpin(gpio, S3C_GPIO_OUTPUT);
-		gpio_direction_output(gpio, 0);
-		usleep_range(20000, 21000);
-		gpio_direction_output(gpio, 1);
-		gpio_free(gpio);
-	}
-#endif
+	// drive up gpios of i2c7
+	s5p_gpio_set_drvstr(EXYNOS5_GPB2(2), S5P_GPIO_DRVSTR_LV4);
+	s5p_gpio_set_drvstr(EXYNOS5_GPB2(3), S5P_GPIO_DRVSTR_LV4);
 }
 
-static struct i2c_board_info i2c_devs3[] __initdata = {
-	{
-		I2C_BOARD_INFO("pixcir_ts", 0x5C),
-	},
-};
-
 static struct i2c_board_info i2c_devs7[] __initdata = {
+#ifdef CONFIG_TOUCHSCREEN_UNIDISPLAY_TS
 	{
-		I2C_BOARD_INFO("egalax_i2c", 0x04),
-		.irq	= IRQ_EINT(25),
+		I2C_BOARD_INFO("unidisplay_ts", 0x41),
+		.irq	= IRQ_EINT(9),
 	},
-};
-
-struct s3c2410_platform_i2c i2c_data3 __initdata = {
-	.bus_num	= 3,
-	.flags		= 0,
-	.slave_addr	= 0x10,
-	.frequency	= 200*1000,
-	.sda_delay	= 100,
+#endif
 };
 
 static struct platform_device *smdk5250_input_devices[] __initdata = {
-	&s3c_device_i2c3,
 	&s3c_device_i2c7,
 	&smdk5250_gpio_keys,
 };
 
 void __init exynos5_smdk5250_input_init(void)
 {
-	s3c_i2c3_set_platdata(&i2c_data3);
-	if (get_smdk5250_rev() == SMDK5250_REV_0_0)
-		i2c_devs3[0].irq = IRQ_EINT(21);
-	else
-		i2c_devs3[0].irq = IRQ_EINT(18);
-	i2c_register_board_info(3, i2c_devs3, ARRAY_SIZE(i2c_devs3));
-
 	s3c_i2c7_set_platdata(NULL);
 	i2c_register_board_info(7, i2c_devs7, ARRAY_SIZE(i2c_devs7));
 
