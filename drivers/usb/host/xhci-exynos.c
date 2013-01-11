@@ -56,6 +56,9 @@ static int exynos_xhci_suspend(struct device *dev)
 	struct xhci_hcd		*xhci;
 	int			retval = 0;
 
+	dev_dbg(dev, "%s: usage_count = %d\n",
+		      __func__, atomic_read(&dev->power.usage_count));
+
 	exynos_xhci = dev_get_drvdata(dev);
 	if (!exynos_xhci)
 		return -EINVAL;
@@ -70,10 +73,14 @@ static int exynos_xhci_suspend(struct device *dev)
 			xhci->shared_hcd->state != HC_STATE_SUSPENDED)
 		dev_err(dev, "%s: HC state is not suspended!\n", __func__);
 #ifdef CONFIG_USB_SUSPEND
-	if (pm_runtime_suspended(dev))
+	if (pm_runtime_suspended(dev)) {
+		dev_dbg(dev, "xhci is runtime suspended\n");
 		return 0;
+	}
 #endif
 	retval = xhci_suspend(xhci);
+	if (retval < 0)
+		dev_err(dev, "%s: cannot stop xHC\n", __func__);
 
 	pm_runtime_put_sync(dev->parent);
 
@@ -89,6 +96,9 @@ static int exynos_xhci_resume(struct device *dev)
 	struct usb_hcd		*hcd;
 	struct xhci_hcd		*xhci;
 	int			retval = 0;
+
+	dev_dbg(dev, "%s: usage_count = %d\n",
+		      __func__, atomic_read(&dev->power.usage_count));
 
 	exynos_xhci = dev_get_drvdata(dev);
 	if (!exynos_xhci)
@@ -114,6 +124,8 @@ static int exynos_xhci_resume(struct device *dev)
 
 	xhci = hcd_to_xhci(hcd);
 	retval = xhci_resume(xhci, 0);
+	if (retval < 0)
+		dev_err(dev, "%s: cannot start xHC\n", __func__);
 
 	/* Update runtime PM status and clear runtime_error */
 	pm_runtime_disable(dev);
@@ -149,10 +161,14 @@ static int exynos_xhci_runtime_suspend(struct device *dev)
 	xhci = hcd_to_xhci(hcd);
 
 	if (hcd->state != HC_STATE_SUSPENDED ||
-			xhci->shared_hcd->state != HC_STATE_SUSPENDED)
+			xhci->shared_hcd->state != HC_STATE_SUSPENDED) {
+		dev_dbg(dev, "%s: HC state is not suspended!\n", __func__);
 		return -EAGAIN;
+	}
 
 	retval = xhci_suspend(xhci);
+	if (retval < 0)
+		dev_err(dev, "%s: cannot stop xHC\n", __func__);
 
 	pm_runtime_put_sync(exynos_xhci->dev->parent);
 
@@ -179,8 +195,10 @@ static int exynos_xhci_runtime_resume(struct device *dev)
 	if (!hcd)
 		return -EINVAL;
 
-	if (dev->power.is_suspended)
+	if (dev->power.is_suspended) {
+		dev_dbg(dev, "xhci is system suspended\n");
 		return 0;
+	}
 
 	/* Userspace may try to access host when DRD is in B-Dev mode */
 	if (exynos_drd_try_get(pdev)) {
@@ -206,6 +224,8 @@ static int exynos_xhci_runtime_resume(struct device *dev)
 
 	xhci = hcd_to_xhci(hcd);
 	retval = xhci_resume(xhci, 0);
+	if (retval < 0)
+		dev_err(dev, "%s: cannot start xHC\n", __func__);
 
 	return retval;
 }
