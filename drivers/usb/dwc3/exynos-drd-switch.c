@@ -182,11 +182,11 @@ static int exynos_drd_switch_start_host(struct usb_otg *otg, int on)
 	struct device *xhci_dev;
 	int ret = 0;
 
-	dev_dbg(otg->phy->dev, "%s: turn %s host %s\n",
-			__func__, on ? "on" : "off", otg->host->bus_name);
-
 	if (!otg->host)
 		return -EINVAL;
+
+	dev_dbg(otg->phy->dev, "Turn %s host %s\n",
+			on ? "on" : "off", otg->host->bus_name);
 
 	hcd = bus_to_hcd(otg->host);
 	xhci = hcd_to_xhci(hcd);
@@ -206,22 +206,14 @@ static int exynos_drd_switch_start_host(struct usb_otg *otg, int on)
 		pm_runtime_enable(xhci_dev);
 
 		ret = pm_runtime_get_sync(xhci_dev);
-		if (ret < 0) {
-			dev_dbg(otg->phy->dev, "%s: host resume failed (%d)\n",
-						__func__, ret);
+		if (ret < 0)
 			goto err;
-		}
 
 		exynos_drd_switch_ases_vbus_ctrl(drd_switch, 1);
 	} else {
 		exynos_drd_switch_ases_vbus_ctrl(drd_switch, 0);
 
 		ret = pm_runtime_put_sync(xhci_dev);
-		if (ret < 0) {
-			dev_dbg(otg->phy->dev, "%s: host suspend failed (%d)\n",
-						__func__, ret);
-			goto err;
-		}
 	}
 
 err:
@@ -243,8 +235,7 @@ static int exynos_drd_switch_set_host(struct usb_otg *otg, struct usb_bus *host)
 					struct exynos_drd_switch, otg);
 
 	if (host) {
-		dev_dbg(otg->phy->dev, "%s: binding host %s\n",
-					__func__, host->bus_name);
+		dev_dbg(otg->phy->dev, "Binding host %s\n", host->bus_name);
 		otg->host = host;
 
 		/*
@@ -255,7 +246,7 @@ static int exynos_drd_switch_set_host(struct usb_otg *otg, struct usb_bus *host)
 		if (otg->gadget || drd_switch->id_state == A_DEV)
 			exynos_drd_switch_schedule_work(&drd_switch->work);
 	} else {
-		dev_dbg(otg->phy->dev, "%s: set unbinding host\n", __func__);
+		dev_dbg(otg->phy->dev, "Unbinding host\n");
 
 		if (otg->phy->state == OTG_STATE_A_HOST) {
 			exynos_drd_switch_start_host(otg, 0);
@@ -282,28 +273,27 @@ static int exynos_drd_switch_start_peripheral(struct usb_otg *otg, int on)
 {
 	int ret;
 
-	dev_dbg(otg->phy->dev, "%s: turn %s gadget %s\n",
-			__func__, on ? "on" : "off", otg->gadget->name);
-
 	if (!otg->gadget)
 		return -EINVAL;
 
+	dev_dbg(otg->phy->dev, "Turn %s gadget %s\n",
+			on ? "on" : "off", otg->gadget->name);
+
 	if (on) {
 		/* Start device only if host is off */
-		if (!exynos_drd_switch_is_host_off(otg))
+		if (!exynos_drd_switch_is_host_off(otg)) {
 			/*
 			 * REVISIT: if host is not suspended shall we check
 			 * runtime_error flag and clear it, if it is set?
 			 * It will give an additional chance to the host
 			 * to be suspended if runtime error happened.
 			 */
+			dev_vdbg(otg->phy->dev, "%s: host is still active\n",
+						__func__);
 			return -EAGAIN;
+		}
 
 		ret = usb_gadget_vbus_connect(otg->gadget);
-		if (ret < 0)
-			dev_dbg(otg->phy->dev,
-				"%s: peripheral start failed (%d)\n",
-				__func__, ret);
 	} else {
 		ret = usb_gadget_vbus_disconnect(otg->gadget);
 		/* Currently always return 0 */
@@ -329,8 +319,7 @@ static int exynos_drd_switch_set_peripheral(struct usb_otg *otg,
 						struct exynos_drd, core);
 
 	if (gadget) {
-		dev_dbg(otg->phy->dev, "%s: binding gadget %s\n",
-					__func__, gadget->name);
+		dev_dbg(otg->phy->dev, "Binding gadget %s\n", gadget->name);
 		otg->gadget = gadget;
 
 		/*
@@ -343,7 +332,7 @@ static int exynos_drd_switch_set_peripheral(struct usb_otg *otg,
 				  drd_switch->id_state == B_DEV))
 			exynos_drd_switch_schedule_work(&drd_switch->work);
 	} else {
-		dev_dbg(otg->phy->dev, "%s: unbinding gadget\n", __func__);
+		dev_dbg(otg->phy->dev, "Unbinding gadget\n");
 
 		if (otg->phy->state == OTG_STATE_B_PERIPHERAL) {
 			exynos_drd_switch_start_peripheral(otg, 0);
@@ -370,7 +359,7 @@ static void exynos_drd_switch_debounce(unsigned long data)
 	struct usb_phy *phy = drd_switch->otg.phy;
 
 	exynos_drd_switch_schedule_work(&drd_switch->work);
-	dev_dbg(phy->dev, "id: %d, vbus: %d\n",
+	dev_dbg(phy->dev, "new state id: %d, vbus: %d\n",
 		drd_switch->id_state, drd_switch->vbus_active ? 1 : 0);
 }
 
@@ -383,6 +372,9 @@ static void exynos_drd_switch_debounce(unsigned long data)
 static void exynos_drd_switch_handle_vbus(struct exynos_drd_switch *drd_switch,
 					  bool vbus_active)
 {
+	struct device *dev = drd_switch->otg.phy->dev;
+	int res;
+
 	/* REVISIT: handle VBus Change Event only in B-device mode */
 	if (drd_switch->id_state != B_DEV)
 		return;
@@ -393,8 +385,10 @@ static void exynos_drd_switch_handle_vbus(struct exynos_drd_switch *drd_switch,
 		 * Debouncing: timer will not expire untill
 		 * gpio is stable.
 		 */
-		mod_timer(&drd_switch->vbus_db_timer,
+		res = mod_timer(&drd_switch->vbus_db_timer,
 				jiffies + VBUS_DEBOUNCE_DELAY);
+		if (res == 1)
+			dev_vdbg(dev, "vbus debouncing ...\n");
 	}
 }
 
@@ -407,6 +401,9 @@ static void exynos_drd_switch_handle_vbus(struct exynos_drd_switch *drd_switch,
 static void exynos_drd_switch_handle_id(struct exynos_drd_switch *drd_switch,
 					enum id_pin_state id_state)
 {
+	struct device *dev = drd_switch->otg.phy->dev;
+	int res;
+
 	if (id_state != drd_switch->id_state) {
 		drd_switch->id_state = id_state;
 		if ((drd_switch->otg.phy->state == OTG_STATE_B_IDLE) ||
@@ -423,8 +420,10 @@ static void exynos_drd_switch_handle_id(struct exynos_drd_switch *drd_switch,
 		 * Debouncing: timer will not expire untill
 		 * ID state is stable.
 		 */
-		mod_timer(&drd_switch->id_db_timer,
+		res = mod_timer(&drd_switch->id_db_timer,
 				jiffies + ID_DEBOUNCE_DELAY);
+		if (res == 1)
+			dev_vdbg(dev, "id debouncing ...\n");
 	}
 }
 
@@ -438,9 +437,12 @@ static irqreturn_t exynos_drd_switch_vbus_interrupt(int irq, void *_drdsw)
 {
 	struct exynos_drd_switch *drd_switch =
 				(struct exynos_drd_switch *)_drdsw;
+	struct device *dev = drd_switch->otg.phy->dev;
 	bool vbus_active;
 
 	vbus_active = exynos_drd_switch_get_bses_vld(drd_switch);
+
+	dev_vdbg(dev, "IRQ: VBUS: %sactive\n", vbus_active ? "" : "in");
 
 	exynos_drd_switch_handle_vbus(drd_switch, vbus_active);
 
@@ -457,6 +459,7 @@ static irqreturn_t exynos_drd_switch_id_interrupt(int irq, void *_drdsw)
 {
 	struct exynos_drd_switch *drd_switch =
 				(struct exynos_drd_switch *)_drdsw;
+	struct device *dev = drd_switch->otg.phy->dev;
 	enum id_pin_state id_state;
 
 	/*
@@ -464,6 +467,8 @@ static irqreturn_t exynos_drd_switch_id_interrupt(int irq, void *_drdsw)
 	 * function, switch from A to B or from B to A.
 	 */
 	id_state = exynos_drd_switch_get_id_state(drd_switch);
+
+	dev_vdbg(dev, "IRQ: ID: %d\n", id_state);
 
 	exynos_drd_switch_handle_id(drd_switch, id_state);
 
@@ -484,6 +489,8 @@ int exynos_drd_switch_vbus_event(struct platform_device *pdev, bool vbus_active)
 	struct exynos_drd *drd;
 	struct usb_otg *otg;
 	struct exynos_drd_switch *drd_switch;
+
+	dev_dbg(&pdev->dev, "EVENT: VBUS: %sactive\n", vbus_active ? "" : "in");
 
 	drd = platform_get_drvdata(pdev);
 	if (!drd)
@@ -515,6 +522,8 @@ int exynos_drd_switch_id_event(struct platform_device *pdev, int state)
 	struct usb_otg *otg;
 	struct exynos_drd_switch *drd_switch;
 	enum id_pin_state id_state;
+
+	dev_dbg(&pdev->dev, "EVENT: ID: %d\n", state);
 
 	drd = platform_get_drvdata(pdev);
 	if (!drd)
@@ -633,7 +642,7 @@ static void exynos_drd_switch_work(struct work_struct *w)
 		}
 		break;
 	default:
-		dev_err(phy->dev, "%s: invalid otg-state\n", __func__);
+		dev_err(phy->dev, "invalid otg-state\n");
 
 	}
 
@@ -668,6 +677,9 @@ void exynos_drd_switch_reset(struct exynos_drd *drd, int run)
 
 		if (run)
 			exynos_drd_switch_schedule_work(&drd_switch->work);
+
+		dev_dbg(drd->dev, "%s: id = %d, vbus = %d\n", __func__,
+				drd_switch->id_state, drd_switch->vbus_active);
 	}
 }
 
@@ -794,7 +806,7 @@ int exynos_drd_switch_init(struct exynos_drd *drd)
 	/* ID pin gpio IRQ */
 	drd_switch->id_irq = pdata->id_irq;
 	if (drd_switch->id_irq < 0)
-		dev_info(drd->dev, "cannot find ID irq\n");
+		dev_dbg(drd->dev, "cannot find ID irq\n");
 
 	init_timer(&drd_switch->id_db_timer);
 	drd_switch->id_db_timer.data = (unsigned long) drd_switch;
@@ -803,7 +815,7 @@ int exynos_drd_switch_init(struct exynos_drd *drd)
 	/* VBus pin gpio IRQ */
 	drd_switch->vbus_irq = pdata->vbus_irq;
 	if (drd_switch->vbus_irq < 0)
-		dev_info(drd->dev, "cannot find VBUS irq\n");
+		dev_dbg(drd->dev, "cannot find VBUS irq\n");
 
 	init_timer(&drd_switch->vbus_db_timer);
 	drd_switch->vbus_db_timer.data = (unsigned long) drd_switch;
@@ -872,7 +884,7 @@ int exynos_drd_switch_init(struct exynos_drd *drd)
 		goto err_irq;
 	}
 
-	dev_info(drd->dev, "DRD switch initialization finished normally\n");
+	dev_dbg(drd->dev, "DRD switch initialization finished normally\n");
 
 	return 0;
 
