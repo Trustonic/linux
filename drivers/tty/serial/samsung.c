@@ -1449,6 +1449,9 @@ static void s3c24xx_serial_resetport(struct uart_port *port,
 
 	/* some delay is required after fifo reset */
 	udelay(1);
+
+	/* enable all interrupts except TX */
+	wr_regl(port, S3C64XX_UINTM, S3C64XX_UINTM_TXD_MSK);
 }
 
 
@@ -1826,7 +1829,15 @@ s3c24xx_serial_console_txrdy(struct uart_port *port, unsigned int ufcon)
 static void
 s3c24xx_serial_console_putchar(struct uart_port *port, int ch)
 {
-	unsigned int ufcon = rd_regl(cons_uart, S3C2410_UFCON);
+	unsigned int ufcon;
+
+	if (!(rd_regl(cons_uart, S3C2410_UCON) & S3C2410_UCON_TXIRQMODE)) {
+		wr_regl(port, S3C64XX_UINTM, 0xf);
+		wr_regl(port, S3C64XX_UINTP, 0xf);
+		s3c24xx_serial_resetport(port, s3c24xx_port_to_cfg(port));
+	}
+
+	ufcon = rd_regl(cons_uart, S3C2410_UFCON);
 	while (!s3c24xx_serial_console_txrdy(port, ufcon))
 		barrier();
 	wr_regb(cons_uart, S3C2410_UTXH, ch);
