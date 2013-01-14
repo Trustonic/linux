@@ -154,35 +154,35 @@ static void mipi_lcd_set_power(struct plat_lcd_data *pd,
 				unsigned int power)
 {
 	/* reset */
-	gpio_request_one(EXYNOS5_GPX1(5), GPIOF_OUT_INIT_HIGH, "GPX1");
+	gpio_request_one(EXYNOS5_GPD1(6), GPIOF_OUT_INIT_HIGH, "GPD1");
 
 	mdelay(20);
 	if (power) {
 		/* fire nRESET on power up */
-		gpio_set_value(EXYNOS5_GPX1(5), 0);
+		gpio_set_value(EXYNOS5_GPD1(6), 0);
 		mdelay(20);
-		gpio_set_value(EXYNOS5_GPX1(5), 1);
+		gpio_set_value(EXYNOS5_GPD1(6), 1);
 		mdelay(20);
-		gpio_free(EXYNOS5_GPX1(5));
+		gpio_free(EXYNOS5_GPD1(6));
 	} else {
 		/* fire nRESET on power off */
-		gpio_set_value(EXYNOS5_GPX1(5), 0);
+		gpio_set_value(EXYNOS5_GPD1(6), 0);
 		mdelay(20);
-		gpio_set_value(EXYNOS5_GPX1(5), 1);
+		gpio_set_value(EXYNOS5_GPD1(6), 1);
 		mdelay(20);
-		gpio_free(EXYNOS5_GPX1(5));
+		gpio_free(EXYNOS5_GPD1(6));
 	}
 	mdelay(20);
 	/* power */
-	gpio_request_one(EXYNOS5_GPX3(0), GPIOF_OUT_INIT_LOW, "GPX3");
+	gpio_request_one(EXYNOS5_GPD1(3), GPIOF_OUT_INIT_LOW, "GPX3");
 	if (power) {
 		/* fire nRESET on power up */
-		gpio_set_value(EXYNOS5_GPX3(0), 1);
-		gpio_free(EXYNOS5_GPX3(0));
+		gpio_set_value(EXYNOS5_GPD1(3), 1);
+		gpio_free(EXYNOS5_GPD1(3));
 	} else {
 		/* fire nRESET on power off */
-		gpio_set_value(EXYNOS5_GPX3(0), 0);
-		gpio_free(EXYNOS5_GPX3(0));
+		gpio_set_value(EXYNOS5_GPD1(3), 0);
+		gpio_free(EXYNOS5_GPD1(3));
 	}
 }
 
@@ -203,11 +203,11 @@ static struct s3c_fb_pd_win smdk5250_fb_win0 = {
 		.lower_margin	= 4,
 		.hsync_len	= 4,
 		.vsync_len	= 4,
-		.xres		= 1280,
-		.yres		= 800,
+		.xres		= 1024,
+		.yres		= 600,
 	},
-	.virtual_x		= 1280,
-	.virtual_y		= 800 * 2,
+	.virtual_x		= 1024,
+	.virtual_y		= 640 * 2,
 	.width			= 223,
 	.height			= 125,
 	.max_bpp		= 32,
@@ -222,11 +222,11 @@ static struct s3c_fb_pd_win smdk5250_fb_win1 = {
 		.lower_margin	= 4,
 		.hsync_len	= 4,
 		.vsync_len	= 4,
-		.xres		= 1280,
-		.yres		= 800,
+		.xres		= 1024,
+		.yres		= 600,
 	},
-	.virtual_x		= 1280,
-	.virtual_y		= 800 * 2,
+	.virtual_x		= 1024,
+	.virtual_y		= 600 * 2,
 	.width			= 223,
 	.height			= 125,
 	.max_bpp		= 32,
@@ -240,11 +240,11 @@ static struct s3c_fb_pd_win smdk5250_fb_win2 = {
 		.lower_margin	= 4,
 		.hsync_len	= 4,
 		.vsync_len	= 4,
-		.xres		= 1280,
-		.yres		= 800,
+		.xres		= 1024,
+		.yres		= 600,
 	},
-	.virtual_x		= 1280,
-	.virtual_y		= 800 * 2,
+	.virtual_x		= 1024,
+	.virtual_y		= 600 * 3,
 	.width			= 223,
 	.height			= 125,
 	.max_bpp		= 32,
@@ -418,7 +418,7 @@ static struct mipi_dsim_config dsim_info = {
 	/* main frame fifo auto flush at VSYNC pulse */
 	.auto_flush	 = false,
 	.eot_disable	 = false,
-	.auto_vertical_cnt = false,
+	.auto_vertical_cnt = true,
 	.hse = false,
 	.hfp = false,
 	.hbp = false,
@@ -429,13 +429,13 @@ static struct mipi_dsim_config dsim_info = {
 	.e_burst_mode	 = DSIM_BURST,
 
 	.p = 3,
-	.m = 115,
+	.m = 80,
 	.s = 1,
 
 	/* D-PHY PLL stable time spec :min = 200usec ~ max 400usec */
 	.pll_stable_time = 500,
 
-	.esc_clk = 0.4 * 1000000,	/* escape clk : 10MHz */
+	.esc_clk = 10 * 1000000,		/* escape clk : 10MHz */
 
 	/* stop state holding counter after bta change count 0 ~ 0xfff */
 	.stop_holding_cnt	= 0x0f,
@@ -456,8 +456,8 @@ static struct mipi_dsim_lcd_config dsim_lcd_info = {
 	.cpu_timing.wr_setup	 = 1,
 	.cpu_timing.wr_act	 = 0,
 	.cpu_timing.wr_hold	 = 0,
-	.lcd_size.width		 = 1280,
-	.lcd_size.height	 = 800,
+	.lcd_size.width		 = 1024,
+	.lcd_size.height	 = 600,
 };
 #endif
 
