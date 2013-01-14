@@ -181,8 +181,20 @@ static struct s3c2410_uartcfg manta_uartcfgs[] __initdata = {
 		.ulcon		= MANTA_ULCON_DEFAULT,
 		.ufcon		= MANTA_UFCON_DEFAULT,
 	},
-	/* Do not initialize hwport 2, it will be handled by fiq_debugger */
+	/*
+	 * Don't need to initialize hwport 2, when FIQ debugger is
+	 * enabled. Because it will be handled by fiq_debugger.
+	 */
 	[2] = {
+#ifndef CONFIG_EXYNOS_FIQ_DEBUGGER
+		.hwport		= 2,
+		.flags		= 0,
+		.ucon		= MANTA_UCON_DEFAULT,
+		.ulcon		= MANTA_ULCON_DEFAULT,
+		.ufcon		= MANTA_UFCON_DEFAULT,
+	},
+	[3] = {
+#endif
 		.hwport		= 3,
 		.flags		= 0,
 		.ucon		= MANTA_UCON_DEFAULT,
@@ -789,7 +801,9 @@ static void __init manta_machine_init(void)
 	if (manta_hw_rev <= MANTA_REV_DOGFOOD02)
 		manta_bus_mif_platform_data.max_freq = 667000;
 
+#ifdef CONFIG_EXYNOS_FIQ_DEBUGGER
 	exynos_serial_debug_init(2, 0);
+#endif
 
 	manta_gpio_power_init();
 	platform_device_register(&manta_event_device);
