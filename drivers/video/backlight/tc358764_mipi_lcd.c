@@ -17,6 +17,78 @@
 #include <plat/dsim.h>
 #include <plat/mipi_dsi.h>
 
+#define LVDS_DORDER23456701
+
+#ifdef LVDS_DORDER23456701
+enum {
+	rgb_R2,
+	rgb_R3,
+	rgb_R4,
+	rgb_R5,
+	rgb_R6,
+	rgb_R7,
+	rgb_R0,
+	rgb_R1,
+
+	rgb_G2,
+	rgb_G3,
+	rgb_G4,
+	rgb_G5,
+	rgb_G6,
+	rgb_G7,
+	rgb_G0,
+	rgb_G1,
+
+	rgb_B2,
+	rgb_B3,
+	rgb_B4,
+	rgb_B5,
+	rgb_B6,
+	rgb_B7,
+	rgb_B0,
+	rgb_B1,
+
+	rgb_HS,
+	rgb_VS,
+	rgb_DE,
+	rgb_L0
+};
+#else
+enum {
+	rgb_R0,
+	rgb_R1,
+	rgb_R2,
+	rgb_R3,
+	rgb_R4,
+	rgb_R5,
+	rgb_R6,
+	rgb_R7,
+
+	rgb_G0,
+	rgb_G1,
+	rgb_G2,
+	rgb_G3,
+	rgb_G4,
+	rgb_G5,
+	rgb_G6,
+	rgb_G7,
+
+	rgb_B0,
+	rgb_B1,
+	rgb_B2,
+	rgb_B3,
+	rgb_B4,
+	rgb_B5,
+	rgb_B6,
+	rgb_B7,
+
+	rgb_HS,
+	rgb_VS,
+	rgb_DE,
+	rgb_L0
+};
+#endif
+
 unsigned char initcode_013c[6] = {0x3c, 0x01, 0x03, 0x00, 0x02, 0x00};
 unsigned char initcode_0114[6] = {0x14, 0x01, 0x02, 0x00, 0x00, 0x00};
 unsigned char initcode_0164[6] = {0x64, 0x01, 0x05, 0x00, 0x00, 0x00};
@@ -36,9 +108,16 @@ unsigned char initcode_0464[6] = {0x64, 0x04, 0x01, 0x00, 0x00, 0x00};
 unsigned char initcode_04a0_1[6] = {0xa0, 0x04, 0x06, 0x80, 0x44, 0x00};
 unsigned char initcode_04a0_2[6] = {0xa0, 0x04, 0x06, 0x80, 0x04, 0x00};
 unsigned char initcode_0504[6] = {0x04, 0x05, 0x04, 0x00, 0x00, 0x00};
+unsigned char initcode_0480[6] = {0x80, 0x04, rgb_R2, rgb_R3, rgb_R4, rgb_R5};
+unsigned char initcode_0484[6] = {0x84, 0x04, rgb_R6, rgb_R1, rgb_R7, rgb_G2};
+unsigned char initcode_0488[6] = {0x88, 0x04, rgb_G3, rgb_G4, rgb_G0, rgb_G1};
+unsigned char initcode_048c[6] = {0x8c, 0x04, rgb_G5, rgb_G6, rgb_G7, rgb_B2};
+unsigned char initcode_0490[6] = {0x90, 0x04, rgb_B0, rgb_B1, rgb_B3, rgb_B4};
+unsigned char initcode_0494[6] = {0x94, 0x04, rgb_B5, rgb_B6, rgb_B7, rgb_L0};
+unsigned char initcode_0498[6] = {0x98, 0x04, rgb_HS, rgb_VS, rgb_DE, rgb_R0};
 unsigned char initcode_049c[6] = {0x9c, 0x04, 0x0d, 0x00, 0x00, 0x00};
 
-unsigned int *initcode[20] = {
+unsigned int *initcode[27] = {
 	(unsigned int *)initcode_013c,
 	(unsigned int *)initcode_0114,
 	(unsigned int *)initcode_0164,
@@ -58,6 +137,13 @@ unsigned int *initcode[20] = {
 	(unsigned int *)initcode_04a0_1,
 	(unsigned int *)initcode_04a0_2,
 	(unsigned int *)initcode_0504,
+	(unsigned int *)initcode_0480,
+	(unsigned int *)initcode_0484,
+	(unsigned int *)initcode_0488,
+	(unsigned int *)initcode_048c,
+	(unsigned int *)initcode_0490,
+	(unsigned int *)initcode_0494,
+	(unsigned int *)initcode_0498,
 	(unsigned int *)initcode_049c
 };
 
@@ -65,7 +151,7 @@ static int init_lcd(struct mipi_dsim_device *dsim)
 {
 	int i;
 
-	for (i = 0; i <= 19; i++) {
+	for (i = 0; i < 27; i++) {
 		if (s5p_mipi_dsi_wr_data(dsim,
 			MIPI_DSI_GENERIC_LONG_WRITE,
 			(unsigned int)initcode[i], 6) == -1)
