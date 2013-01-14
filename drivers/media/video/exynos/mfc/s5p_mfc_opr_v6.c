@@ -1315,6 +1315,10 @@ int s5p_mfc_init_decode(struct s5p_mfc_ctx *ctx)
 	if (ctx->dst_fmt->fourcc == V4L2_PIX_FMT_NV12MT_16X16)
 		reg |= (0x1 << S5P_FIMV_D_OPT_TILE_MODE_SHIFT);
 
+	/* VC1 RCV: Discard to parse additional header as default */
+	if (ctx->codec_mode == S5P_FIMV_CODEC_VC1RCV_DEC)
+		reg |= (0x1 << S5P_FIMV_D_OPT_DISCARD_RCV_HEADER);
+
 	WRITEL(reg, S5P_FIMV_D_DEC_OPTIONS);
 
 	if (ctx->codec_mode == S5P_FIMV_CODEC_FIMV1_DEC) {

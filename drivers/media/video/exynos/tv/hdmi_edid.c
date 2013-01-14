@@ -133,7 +133,7 @@ static struct edid_3d_preset {
 static u32 preferred_preset = HDMI_DEFAULT_PRESET;
 static u32 edid_misc;
 static int max_audio_channels;
-static u32 source_phy_addr;
+static u32 source_phy_addr = 0;
 
 static int edid_i2c_read(struct hdmi_device *hdev, u8 segment, u8 offset,
 						   u8 *buf, size_t len)
@@ -361,17 +361,58 @@ static void edid_use_default_preset(void)
 	preferred_preset = HDMI_DEFAULT_PRESET;
 	for (i = 0; i < ARRAY_SIZE(edid_presets); i++)
 		edid_presets[i].supported =
-				(edid_presets[i].preset == preferred_preset);
+			(edid_presets[i].preset == preferred_preset);
 	max_audio_channels = 2;
+}
+
+void edid_extension_update(struct fb_monspecs *specs)
+{
+	struct edid_3d_preset *s3d_preset;
+	const struct edid_3d_mandatory_preset *s3d_mandatory
+					= edid_3d_mandatory_presets;
+	int i;
+
+	/* number of 128bytes blocks to follow */
+	source_phy_addr = specs->vsdb->phy_addr;
+
+	/* find 3D mandatory preset */
+	if (specs->vsdb->s3d_present) {
+		for (i = 0; i < ARRAY_SIZE(edid_3d_mandatory_presets);
+				i++, s3d_mandatory++) {
+			s3d_preset = edid_find_3d_mandatory_preset(s3d_mandatory);
+			if (s3d_preset) {
+				pr_info("EDID: found %s", s3d_preset->name);
+				s3d_preset->supported = true;
+			}
+		}
+	}
+
+	/* find 3D multi preset */
+	if (specs->vsdb->s3d_multi_present == EDID_3D_STRUCTURE_ALL)
+		for (i = 0; i < specs->videodb_len + 1; i++)
+			edid_find_3d_preset(&specs->videodb[i], specs->vsdb);
+	else if (specs->vsdb->s3d_multi_present == EDID_3D_STRUCTURE_MASK)
+		for (i = 0; i < specs->videodb_len + 1; i++)
+			if ((specs->vsdb->s3d_structure_mask & (1 << i)) >> i)
+				edid_find_3d_preset(&specs->videodb[i],
+						specs->vsdb);
+
+	/* find 3D more preset */
+	if (specs->vsdb->s3d_field) {
+		for (i = 0; i < specs->videodb_len + 1; i++) {
+			edid_find_3d_more_preset(&specs->videodb
+					[specs->vsdb->vic_order[i]],
+					specs->vsdb->s3d_structure[i]);
+			if (specs->vsdb->s3d_structure[i] > EDID_3D_TB + 1)
+				i++;
+		}
+	}
 }
 
 int edid_update(struct hdmi_device *hdev)
 {
 	struct fb_monspecs specs;
 	struct edid_preset *preset;
-	struct edid_3d_preset *s3d_preset;
-	const struct edid_3d_mandatory_preset *s3d_mandatory
-					= edid_3d_mandatory_presets;
 	bool first = true;
 	u8 *edid = NULL;
 	int channels_max = 0;
@@ -391,7 +432,6 @@ int edid_update(struct hdmi_device *hdev)
 	for (i = 1; i < ret; i++)
 		fb_edid_add_monspecs(edid + i * EDID_BLOCK_SIZE, &specs);
 
-	source_phy_addr = specs.vsdb->phy_addr;
 	preferred_preset = V4L2_DV_INVALID;
 	for (i = 0; i < ARRAY_SIZE(edid_presets); i++)
 		edid_presets[i].supported = false;
@@ -413,38 +453,9 @@ int edid_update(struct hdmi_device *hdev)
 		}
 	}
 
-	/* find 3D mandatory preset */
-	if (specs.vsdb->s3d_present) {
-		for (i = 0; i < ARRAY_SIZE(edid_3d_mandatory_presets);
-					i++, s3d_mandatory++) {
-			s3d_preset = edid_find_3d_mandatory_preset(s3d_mandatory);
-			if (s3d_preset) {
-				pr_info("EDID: found %s", s3d_preset->name);
-				s3d_preset->supported = true;
-			}
-		}
-	}
-
-	/* find 3D multi preset */
-	if (specs.vsdb->s3d_multi_present == EDID_3D_STRUCTURE_ALL)
-		for (i = 0; i < specs.videodb_len + 1; i++)
-			edid_find_3d_preset(&specs.videodb[i], specs.vsdb);
-	else if (specs.vsdb->s3d_multi_present == EDID_3D_STRUCTURE_MASK)
-		for (i = 0; i < specs.videodb_len + 1; i++)
-			if ((specs.vsdb->s3d_structure_mask & (1 << i)) >> i)
-				edid_find_3d_preset(&specs.videodb[i],
-							specs.vsdb);
-
-	/* find 3D more preset */
-	if (specs.vsdb->s3d_field) {
-		for (i = 0; i < specs.videodb_len + 1; i++) {
-			edid_find_3d_more_preset(&specs.videodb
-					[specs.vsdb->vic_order[i]],
-					specs.vsdb->s3d_structure[i]);
-			if (specs.vsdb->s3d_structure[i] > EDID_3D_TB + 1)
-				i++;
-		}
-	}
+	/* number of 128bytes blocks to follow */
+	if (ret > 1)
+		edid_extension_update(&specs);
 
 	edid_misc = specs.misc;
 	pr_info("EDID: misc flags %08x", edid_misc);

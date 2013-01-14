@@ -108,7 +108,7 @@ void mxr_release_video(struct mxr_device *mdev)
 	mdev->vb2->cleanup(mdev->alloc_ctx);
 }
 
-static void tv_graph_pipeline_stream(struct mxr_pipeline *pipe, int on)
+static int tv_graph_pipeline_stream(struct mxr_pipeline *pipe, int on)
 {
 	struct mxr_device *mdev = pipe->layer->mdev;
 	struct media_entity *me = &pipe->layer->vfd.entity;
@@ -121,8 +121,9 @@ static void tv_graph_pipeline_stream(struct mxr_pipeline *pipe, int on)
 
 	/* find remote pad through enabled link */
 	pad = media_entity_remote_source(pad);
-	if (media_entity_type(pad->entity) != MEDIA_ENT_T_V4L2_SUBDEV
-			|| pad == NULL)
+	if (pad == NULL)
+		return -EPIPE;
+	if (media_entity_type(pad->entity) != MEDIA_ENT_T_V4L2_SUBDEV)
 		mxr_warn(mdev, "cannot find remote pad\n");
 
 	sd = media_entity_to_v4l2_subdev(pad->entity);
@@ -131,6 +132,8 @@ static void tv_graph_pipeline_stream(struct mxr_pipeline *pipe, int on)
 	md_data.mxr_data_from = FROM_MXR_VD;
 	v4l2_set_subdevdata(sd, &md_data);
 	v4l2_subdev_call(sd, video, s_stream, on);
+
+	return 0;
 }
 
 static int mxr_querycap(struct file *file, void *priv,
@@ -1080,6 +1083,8 @@ static int buf_prepare(struct vb2_buffer *vb)
 
 			/* find sink pad of hdmi or sdo through enabled link*/
 			pad = media_entity_remote_source(pad);
+			if (pad == NULL)
+				return -EPIPE;
 			if (media_entity_type(pad->entity)
 					== MEDIA_ENT_T_V4L2_SUBDEV) {
 				enable = 1;
@@ -1146,9 +1151,9 @@ static int start_streaming(struct vb2_queue *vq, unsigned int count)
 	/* store starting entity ptr on the tv graphic pipeline */
 	pipe->layer = layer;
 	/* start streaming all entities on the tv graphic pipeline */
-	tv_graph_pipeline_stream(pipe, 1);
+	ret = tv_graph_pipeline_stream(pipe, 1);
 
-	return 0;
+	return ret;
 }
 
 static int stop_streaming(struct vb2_queue *vq)
@@ -1158,6 +1163,7 @@ static int stop_streaming(struct vb2_queue *vq)
 	unsigned long flags;
 	struct mxr_buffer *buf, *buf_tmp;
 	struct mxr_pipeline *pipe = &layer->pipe;
+	int ret = 0;
 
 	mxr_dbg(mdev, "%s\n", __func__);
 
@@ -1201,7 +1207,7 @@ static int stop_streaming(struct vb2_queue *vq)
 	/* starting entity on the pipeline */
 	pipe->layer = layer;
 	/* stop streaming all entities on the pipeline */
-	tv_graph_pipeline_stream(pipe, 0);
+	ret = tv_graph_pipeline_stream(pipe, 0);
 
 	/* allow changes in output configuration */
 	mxr_output_put(mdev);
@@ -1209,7 +1215,7 @@ static int stop_streaming(struct vb2_queue *vq)
 	/* disable mixer clock */
 	mxr_power_put(mdev);
 
-	return 0;
+	return ret;
 }
 
 static struct vb2_ops mxr_video_qops = {

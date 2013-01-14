@@ -162,6 +162,10 @@ struct fimc_is_device_ischain {
 	u32					indexes;
 
 	u32					private_data;
+
+	struct clk				*dz_lock;
+	struct clk				*dz_lock_par_new;
+	struct clk				*dz_lock_par_prev;
 };
 
 /*global function*/

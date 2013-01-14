@@ -3105,12 +3105,14 @@ static int s5p_mfc_stop_streaming(struct vb2_queue *q)
 	struct s5p_mfc_ctx *ctx = q->drv_priv;
 	struct s5p_mfc_dev *dev = ctx->dev;
 	int index = 0;
+	int aborted = 0;
 
 	if ((ctx->state == MFCINST_FINISHING ||
 		ctx->state ==  MFCINST_RUNNING) &&
 		test_bit(ctx->num, &dev->hw_lock)) {
 		ctx->state = MFCINST_ABORT;
 		s5p_mfc_wait_for_done_ctx(ctx, S5P_FIMV_R2H_CMD_FRAME_DONE_RET);
+		aborted = 1;
 	}
 
 	spin_lock_irqsave(&dev->irqlock, flags);
@@ -3144,6 +3146,9 @@ static int s5p_mfc_stop_streaming(struct vb2_queue *q)
 	}
 
 	spin_unlock_irqrestore(&dev->irqlock, flags);
+
+	if (aborted)
+		ctx->state = MFCINST_RUNNING;
 
 	return 0;
 }

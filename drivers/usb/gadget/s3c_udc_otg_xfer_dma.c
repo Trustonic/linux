@@ -327,6 +327,8 @@ static void complete_tx(struct s3c_udc *dev, u8 ep_num)
 	if (list_empty(&ep->queue)) {
 		DEBUG_IN_EP("%s: TX DMA done : NULL REQ on IN EP-%d\n",
 					__func__, ep_num);
+		if (dev->ep0state == DATA_STATE_XMIT)
+			dev->ep0state = WAIT_FOR_IN_STATUS;
 		return;
 	}
 
@@ -873,7 +875,7 @@ static int s3c_udc_get_status(struct s3c_udc *dev,
 	ep_ctrl = __raw_readl(dev->regs + S3C_UDC_OTG_DIEPCTL(EP0_CON));
 	__raw_writel(ep_ctrl|DEPCTL_EPENA|DEPCTL_CNAK,
 		dev->regs + S3C_UDC_OTG_DIEPCTL(EP0_CON));
-	dev->ep0state = WAIT_FOR_SETUP;
+	dev->ep0state = DATA_STATE_XMIT;
 
 	return 0;
 }
@@ -1187,6 +1189,7 @@ static inline void set_test_mode(struct s3c_udc *dev)
 		dctl = __raw_readl(dev->regs + S3C_UDC_OTG_DCTL);
 		__raw_writel((dctl & ~(TEST_CONTROL_MASK)) | TEST_PACKET_MODE,
 				dev->regs + S3C_UDC_OTG_DCTL);
+		dev->ep0state = DATA_STATE_XMIT;
 		break;
 	case TEST_FORCE_ENABLE_SEL:
 		/* some delay is necessary like printk() or udelay() */
