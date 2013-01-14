@@ -110,6 +110,14 @@ void s5p_mfc_enc_calc_src_size(struct s5p_mfc_ctx *ctx);
 					S5P_FIMV_DEC_STATUS_INTERLACE_MASK) == \
 					S5P_FIMV_DEC_STATUS_INTERLACE)
 
+#define s5p_mfc_get_dec_status()	(readl(dev->regs_base + \
+						S5P_FIMV_D_DECODED_STATUS) \
+						& S5P_FIMV_DECODED_FRAME_MASK)
+
+#define s5p_mfc_get_dec_frame()		(readl(dev->regs_base + \
+						S5P_FIMV_D_DECODED_FRAME_TYPE) \
+						& S5P_FIMV_DECODED_FRAME_MASK)
+
 #define mb_width(x_size)		((x_size + 15) / 16)
 #define mb_height(y_size)		((y_size + 15) / 16)
 #define s5p_mfc_dec_mv_size(x, y)	(mb_width(x) * (((mb_height(y)+1)/2)*2) * 64 + 128)

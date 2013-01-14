@@ -499,6 +499,7 @@ struct s5p_mfc_dec {
 
 	int loop_filter_mpeg4;
 	int display_delay;
+	int immediate_display;
 	int is_packedpb;
 	int slice_enable;
 	int mv_count;
@@ -517,7 +518,7 @@ struct s5p_mfc_dec {
 
 	enum v4l2_memory dst_memtype;
 	int sei_parse;
-	int eos_tag;
+	int stored_tag;
 
 	int internal_dpb;
 

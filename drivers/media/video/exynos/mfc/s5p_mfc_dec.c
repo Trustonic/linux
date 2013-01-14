@@ -297,6 +297,15 @@ static struct v4l2_queryctrl controls[] = {
 		.step = 1,
 		.default_value = 0,
 	},
+	{
+		.id = V4L2_CID_MPEG_VIDEO_DECODER_IMMEDIATE_DISPLAY,
+		.type = V4L2_CTRL_TYPE_BOOLEAN,
+		.name = "Immediate Display Enable",
+		.minimum = 0,
+		.maximum = 1,
+		.step = 1,
+		.default_value = 0,
+	},
 };
 
 #define NUM_CTRLS ARRAY_SIZE(controls)
@@ -871,7 +880,7 @@ static int dec_set_buf_ctrls_val(struct s5p_mfc_ctx *ctx, struct list_head *head
 		buf_ctrl->updated = 1;
 
 		if (buf_ctrl->id == V4L2_CID_MPEG_MFC51_VIDEO_FRAME_TAG)
-			dec->eos_tag = buf_ctrl->val;
+			dec->stored_tag = buf_ctrl->val;
 
 		mfc_debug(8, "Set buffer control "\
 				"id: 0x%08x val: %d\n",
@@ -1771,6 +1780,9 @@ static int vidioc_s_ctrl(struct file *file, void *priv,
 		else
 			dec->sei_parse = 0;
 		break;
+	case V4L2_CID_MPEG_VIDEO_DECODER_IMMEDIATE_DISPLAY:
+		dec->immediate_display = ctrl->value;
+		break;
 	default:
 		list_for_each_entry(ctx_ctrl, &ctx->ctrls, list) {
 			if (!(ctx_ctrl->type & MFC_CTRL_TYPE_SET))
@@ -2355,6 +2367,7 @@ int s5p_mfc_init_dec_ctx(struct s5p_mfc_ctx *ctx)
 	dec->display_delay = -1;
 	dec->is_packedpb = 0;
 	dec->is_interlaced = 0;
+	dec->immediate_display = 0;
 
 	/* Init videobuf2 queue for OUTPUT */
 	ctx->vq_src.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;

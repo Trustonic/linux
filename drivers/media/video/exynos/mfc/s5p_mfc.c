@@ -250,7 +250,7 @@ static void s5p_mfc_handle_frame_all_extracted(struct s5p_mfc_ctx *ctx)
 			call_cop(ctx, get_buf_update_val, ctx,
 				&ctx->dst_ctrls[index],
 				V4L2_CID_MPEG_MFC51_VIDEO_FRAME_TAG,
-				dec->eos_tag);
+				dec->stored_tag);
 			is_first = 0;
 		} else {
 			call_cop(ctx, get_buf_update_val, ctx,
@@ -295,12 +295,18 @@ static void s5p_mfc_handle_frame_new(struct s5p_mfc_ctx *ctx, unsigned int err)
 	unsigned int index;
 	unsigned int frame_type = s5p_mfc_get_disp_frame_type();
 	int mvc_view_id = s5p_mfc_get_mvc_disp_view_id();
+	unsigned int dst_frame_status;
 
 	if (ctx->codec_mode == S5P_FIMV_CODEC_H264_MVC_DEC) {
 		if (mvc_view_id == 0)
 			ctx->sequence++;
 	} else {
 		ctx->sequence++;
+	}
+
+	if (dec->immediate_display == 1) {
+		dspl_y_addr = MFC_GET_ADR(DEC_DECODED_Y);
+		frame_type = s5p_mfc_get_dec_frame_type();
 	}
 
 	/* If frame is same as previous then skip and do not dequeue */
@@ -360,6 +366,23 @@ static void s5p_mfc_handle_frame_new(struct s5p_mfc_ctx *ctx, unsigned int err)
 			index = dst_buf->vb.v4l2_buf.index;
 			if (call_cop(ctx, get_buf_ctrls_val, ctx, &ctx->dst_ctrls[index]) < 0)
 				mfc_err("failed in get_buf_ctrls_val\n");
+
+			if (dec->immediate_display == 1) {
+				dst_frame_status = s5p_mfc_get_dec_status()
+					& S5P_FIMV_DEC_STATUS_DECODING_STATUS_MASK;
+
+				call_cop(ctx, get_buf_update_val, ctx,
+						&ctx->dst_ctrls[index],
+						V4L2_CID_MPEG_MFC51_VIDEO_DISPLAY_STATUS,
+						dst_frame_status);
+
+				call_cop(ctx, get_buf_update_val, ctx,
+					&ctx->dst_ctrls[index],
+					V4L2_CID_MPEG_MFC51_VIDEO_FRAME_TAG,
+					dec->stored_tag);
+
+				dec->immediate_display = 0;
+			}
 
 			vb2_buffer_done(&dst_buf->vb,
 				s5p_mfc_err_dspl(err) ?
@@ -451,6 +474,11 @@ static void s5p_mfc_handle_frame(struct s5p_mfc_ctx *ctx,
 	res_change = (s5p_mfc_get_dspl_status()
 				& S5P_FIMV_DEC_STATUS_RESOLUTION_MASK)
 				>> S5P_FIMV_DEC_STATUS_RESOLUTION_SHIFT;
+
+	if (dec->immediate_display == 1)
+		dst_frame_status = s5p_mfc_get_dec_status()
+				& S5P_FIMV_DEC_STATUS_DECODING_STATUS_MASK;
+
 	mfc_debug(2, "Frame Status: %x\n", dst_frame_status);
 	mfc_debug(2, "frame packing sei available status: %x\n", s5p_mfc_get_sei_avail_status());
 
