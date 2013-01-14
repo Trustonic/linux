@@ -1754,13 +1754,9 @@ static int __devexit s3c24xx_serial_remove(struct platform_device *dev)
 
 /* UART power management code */
 #ifdef CONFIG_PM_SLEEP
-unsigned int s3c24xx_serial_mask_save[CONFIG_SERIAL_SAMSUNG_UARTS];
-
 static int s3c24xx_serial_suspend(struct device *dev)
 {
 	struct uart_port *port = s3c24xx_dev_to_port(dev);
-
-	s3c24xx_serial_mask_save[port -> line] = rd_regl(port, S3C64XX_UINTM);
 
 	if (port)
 		uart_suspend_port(&s3c24xx_uart_drv, port);
@@ -1775,7 +1771,13 @@ static int s3c24xx_serial_resume(struct device *dev)
 
 	if (port) {
 		clk_enable(ourport->clk);
-		wr_regl(port, S3C64XX_UINTM, s3c24xx_serial_mask_save[port->line]);
+
+		/* Clear pending interrupts and mask all interrupts */
+		if (s3c24xx_serial_has_interrupt_mask(port)) {
+			wr_regl(port, S3C64XX_UINTM, 0xf);
+			wr_regl(port, S3C64XX_UINTP, 0xf);
+		}
+
 		s3c24xx_serial_resetport(port, s3c24xx_port_to_cfg(port));
 		clk_disable(ourport->clk);
 
