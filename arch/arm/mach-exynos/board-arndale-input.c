@@ -21,11 +21,47 @@
 
 static struct gpio_keys_button smdk5250_button[] = {
 	{
-		.code		= KEY_POWER,
-		.gpio		= EXYNOS5_GPX0(0),
-		.active_low	= 1,
-		.wakeup		= 1,
-	}
+		.code = KEY_MENU,
+		.gpio = EXYNOS5_GPX1(4),
+		.active_low = 1,
+		.wakeup = 0,
+	},
+	{
+		.code = KEY_HOME,
+		.gpio = EXYNOS5_GPX1(5),
+		.active_low = 1,
+		.wakeup = 0,
+	},
+	{
+		.code = KEY_VOLUMEUP,
+		.gpio = EXYNOS5_GPX1(6),
+		.active_low = 1,
+		.wakeup = 0,
+	},
+	{
+		.code = KEY_VOLUMEDOWN,
+		.gpio = EXYNOS5_GPX1(7),
+		.active_low = 1,
+		.wakeup = 0,
+	},
+	{
+		.code = KEY_BACK,
+		.gpio = EXYNOS5_GPX2(0),
+		.active_low = 1,
+		.wakeup = 0,
+	},
+	{
+		.code = KEY_SEARCH,
+		.gpio = EXYNOS5_GPX2(1),
+		.active_low = 1,
+		.wakeup = 0,
+	},
+	{
+		.code = KEY_POWER,
+		.gpio = EXYNOS5_GPX1(3),
+		.active_low = 1,
+		.wakeup = 1,
+	},
 };
 
 static struct gpio_keys_platform_data smdk5250_gpiokeys_platform_data = {
