@@ -129,6 +129,13 @@ static int exynos_xhci_resume(struct device *dev)
 	if (retval < 0)
 		dev_err(dev, "%s: cannot start xHC\n", __func__);
 
+	/*
+	 * In xhci_resume(), config values(AHB bus and los_bias) are intialized.
+	 * So after called xhci_resume(), set the config values again.
+	 */
+	if (exynos_xhci->core->ops->config)
+		exynos_xhci->core->ops->config(exynos_xhci->core);
+
 	/* Update runtime PM status and clear runtime_error */
 	pm_runtime_disable(dev);
 	pm_runtime_set_active(dev);
@@ -228,6 +235,13 @@ static int exynos_xhci_runtime_resume(struct device *dev)
 	retval = xhci_resume(xhci, 0);
 	if (retval < 0)
 		dev_err(dev, "%s: cannot start xHC\n", __func__);
+
+	/*
+	 * In xhci_resume(), config values(AHB bus and los_bias) are intialized.
+	 * So after called xhci_resume(), set the config values again.
+	 */
+	if (exynos_xhci->core->ops->config)
+		exynos_xhci->core->ops->config(exynos_xhci->core);
 
 	return retval;
 }
