@@ -507,6 +507,7 @@ static int exynos4_usb_phy20_init(struct platform_device *pdev)
 	atomic_inc(&host_usage);
 
 	if (exynos4_usb_phy20_is_on()) {
+		exynos4_usb_phy1_resume(pdev);
 		dev_err(&pdev->dev, "Already power on PHY\n");
 		return 0;
 	}
@@ -675,6 +676,7 @@ static int exynos5_usb_phy20_init(struct platform_device *pdev)
 	atomic_inc(&host_usage);
 
 	if (exynos5_usb_phy20_is_on()) {
+		exynos5_usb_phy_host_resume(pdev);
 		dev_err(&pdev->dev, "Already power on PHY\n");
 		return 0;
 	}
