@@ -974,6 +974,7 @@ static bool dw_mci_wait_data_busy(struct dw_mci *host, struct mmc_request *mrq)
 		if (host->cur_slot)
 			mci_send_cmd(host->cur_slot,
 				SDMMC_CMD_UPD_CLK | SDMMC_CMD_PRV_DAT_WAIT, 0);
+		timeout = jiffies + msecs_to_jiffies(1000);
 	} while (--try);
 
 	dev_err(&host->dev, "Data[0]: data is busy\n");
