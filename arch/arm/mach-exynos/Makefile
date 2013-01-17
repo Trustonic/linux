@@ -101,6 +101,7 @@ obj-$(CONFIG_MACH_ARNDALE)		+= board-arndale-display.o
 obj-$(CONFIG_MACH_ARNDALE)		+= board-arndale-media.o
 obj-$(CONFIG_MACH_ARNDALE)		+= board-arndale-tvout.o
 obj-$(CONFIG_MACH_ARNDALE)		+= board-arndale-camera.o
+obj-$(CONFIG_MACH_ARNDALE)		+= board-arndale-wifi.o
 
 # device support
 

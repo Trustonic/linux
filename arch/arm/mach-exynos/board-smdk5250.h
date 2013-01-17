@@ -49,5 +49,6 @@ void exynos5_smdk5250_display_init(void);
 void exynos5_smdk5250_media_init(void);
 void exynos5_smdk5250_tvout_init(void);
 void exynos5_smdk5250_camera_init(void);
+void exynos5_arndale_wifi_init(void);
 
 #endif
