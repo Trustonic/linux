@@ -963,7 +963,8 @@ static bool dw_mci_wait_data_busy(struct dw_mci *host, struct mmc_request *mrq)
 
 		dw_mci_wait_reset(&host->dev, host, SDMMC_CTRL_RESET);
 		/* After CTRL Reset, Should be needed clk val to CIU */
-		mci_send_cmd(host->cur_slot,
+		if (host->cur_slot)
+			mci_send_cmd(host->cur_slot,
 				SDMMC_CMD_UPD_CLK | SDMMC_CMD_PRV_DAT_WAIT, 0);
 	} while (--try);
 
