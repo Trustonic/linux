@@ -562,8 +562,10 @@ void __init exynos5_smdk5250_display_init(void)
 		gpio_export(EXYNOS5_GPH1(2), true);
 	}
 
+#ifdef CONFIG_S5P_DP
 	/* LED_BACKLIGHT_RESET: GPX1_5 */
 	gpio_request_one(EXYNOS5_GPX1(5), GPIOF_OUT_INIT_LOW, "GPX1");
+#endif
 
 	/* LCD_PWM_IN_2.8V: LCD_B_PWM, GPB2_0 */
 	gpio_request_one(EXYNOS5_GPB2(0), GPIOF_OUT_INIT_LOW, "GPB2");
