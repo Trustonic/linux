@@ -354,6 +354,9 @@ static int exynos_drd_create_udc(struct exynos_drd *drd)
 	const char		*udc_name;
 	int			ret = -ENOMEM;
 
+	if (pdata->quirks & SKIP_UDC)
+		return 0;
+
 	if (pdata->udc_name) {
 		udc_name = pdata->udc_name;
 	} else {
@@ -410,6 +413,9 @@ static int exynos_drd_create_xhci(struct exynos_drd *drd)
 	struct platform_device	*xhci;
 	const char		*xhci_name;
 	int			ret = -ENOMEM;
+
+	if (pdata->quirks & SKIP_XHCI)
+		return 0;
 
 	if (pdata->xhci_name) {
 		xhci_name = pdata->xhci_name;

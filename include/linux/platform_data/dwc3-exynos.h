@@ -37,6 +37,10 @@ struct dwc3_exynos_data {
 #define FORCE_INIT_PERIPHERAL	(1 << 3)
 /* Do not create udc and xhci child devices */
 #define DUMMY_DRD		(1 << 4)
+/* Do not create udc child device */
+#define SKIP_UDC		(1 << 5)
+/* Do not create xhci child device */
+#define SKIP_XHCI		(1 << 6)
 	int id_irq;
 	int vbus_irq;
 	unsigned long irq_flags;
