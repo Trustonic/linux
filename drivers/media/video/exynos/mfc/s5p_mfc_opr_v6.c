@@ -339,7 +339,8 @@ int s5p_mfc_alloc_dev_context_buffer(struct s5p_mfc_dev *dev)
 	mfc_debug_enter();
 
 #ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
-	alloc_ctx = dev->alloc_ctx_drm;
+	if (dev->num_drm_inst)
+		alloc_ctx = dev->alloc_ctx_drm;
 #endif
 	dev->ctx_buf.alloc = s5p_mfc_mem_alloc(alloc_ctx, buf_size->dev_ctx);
 	if (IS_ERR(dev->ctx_buf.alloc)) {
@@ -349,8 +350,11 @@ int s5p_mfc_alloc_dev_context_buffer(struct s5p_mfc_dev *dev)
 
 	dev->ctx_buf.ofs = s5p_mfc_mem_daddr(dev->ctx_buf.alloc);
 #ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
-	iovmm_map_oto(&dev->plat_dev->dev, dev->ctx_buf.ofs,
-			buf_size->dev_ctx);
+	if (dev->num_drm_inst) {
+		iovmm_map_oto(&dev->plat_dev->dev, dev->ctx_buf.ofs,
+				buf_size->dev_ctx);
+		dev->buf_oto_status |= OTO_BUF_COMMON_CTX;
+	}
 #endif
 	dev->ctx_buf.virt = s5p_mfc_mem_vaddr(dev->ctx_buf.alloc);
 	if (!dev->ctx_buf.virt) {
@@ -374,7 +378,10 @@ void s5p_mfc_release_dev_context_buffer(struct s5p_mfc_dev *dev)
 {
 	if (dev->ctx_buf.alloc) {
 #ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
-		iovmm_unmap_oto(&dev->plat_dev->dev, dev->ctx_buf.ofs);
+		if (dev->buf_oto_status & OTO_BUF_COMMON_CTX) {
+			iovmm_unmap_oto(&dev->plat_dev->dev, dev->ctx_buf.ofs);
+			dev->buf_oto_status &= ~OTO_BUF_COMMON_CTX;
+		}
 #endif
 		s5p_mfc_mem_free(dev->ctx_buf.alloc);
 		dev->ctx_buf.alloc = NULL;

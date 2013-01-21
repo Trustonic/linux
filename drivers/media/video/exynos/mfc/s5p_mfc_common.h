@@ -220,6 +220,8 @@ struct s5p_mfc_extra_buf {
 	dma_addr_t	dma;
 };
 
+#define OTO_BUF_FW		(1 << 0)
+#define OTO_BUF_COMMON_CTX	(1 << 1)
 /**
  * struct s5p_mfc_dev - The struct containing driver internal parameters.
  */
@@ -279,6 +281,7 @@ struct s5p_mfc_dev {
 	int curr_ctx_drm;
 	int fw_status;
 	int num_drm_inst;
+	int buf_oto_status;
 	struct s5p_mfc_extra_buf drm_info;
 	struct vb2_alloc_ctx *alloc_ctx_fw;
 	struct vb2_alloc_ctx *alloc_ctx_sh;

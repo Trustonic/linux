@@ -1099,6 +1099,8 @@ static int s5p_mfc_open(struct file *file)
 		ret = s5p_mfc_load_firmware(dev);
 		if (ret)
 			goto err_fw_load;
+
+		s5p_mfc_alloc_dev_context_buffer(dev);
 #endif
 		mfc_debug(2, "power on\n");
 		ret = s5p_mfc_power_on();
@@ -1123,9 +1125,8 @@ err_hw_init:
 	s5p_mfc_power_off();
 
 err_pwr_enable:
-#ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
 	s5p_mfc_release_dev_context_buffer(dev);
-#endif
+
 err_fw_load:
 #ifndef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
 	/* only release the firmware buffers when DRM is not possible */
@@ -1231,9 +1232,10 @@ static int s5p_mfc_release(struct file *file)
 		s5p_mfc_deinit_hw(dev);
 
 		/* reset <-> F/W release */
-#ifndef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
 		s5p_mfc_release_firmware(dev);
-#endif
+		s5p_mfc_release_dev_context_buffer(dev);
+		dev->fw_status = 0;
+
 		del_timer_sync(&dev->watchdog_timer);
 
 		mfc_debug(2, "power off\n");

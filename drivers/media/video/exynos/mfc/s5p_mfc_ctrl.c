@@ -86,7 +86,8 @@ int s5p_mfc_alloc_firmware(struct s5p_mfc_dev *dev)
 	mfc_debug(2, "Allocating memory for firmware.\n");
 
 #ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
-	alloc_ctx = dev->alloc_ctx_fw;
+	if (dev->num_drm_inst)
+		alloc_ctx = dev->alloc_ctx_fw;
 #endif
 
 	s5p_mfc_bitproc_buf = s5p_mfc_mem_alloc(alloc_ctx, firmware_size);
@@ -107,8 +108,11 @@ int s5p_mfc_alloc_firmware(struct s5p_mfc_dev *dev)
 	}
 
 #ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
-	iovmm_map_oto(&dev->plat_dev->dev, s5p_mfc_bitproc_phys,
-			firmware_size);
+	if (dev->num_drm_inst) {
+		dev->buf_oto_status |= OTO_BUF_FW;
+		iovmm_map_oto(&dev->plat_dev->dev, s5p_mfc_bitproc_phys,
+				firmware_size);
+	}
 #endif
 	if (!dev->num_drm_inst) {
 		s5p_mfc_bitproc_virt = s5p_mfc_mem_vaddr(s5p_mfc_bitproc_buf);
@@ -225,7 +229,10 @@ int s5p_mfc_release_firmware(struct s5p_mfc_dev *dev)
 				 FIRMWARE_CODE_SIZE, DMA_TO_DEVICE);
 	*/
 #ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
-	iovmm_unmap_oto(&dev->plat_dev->dev, s5p_mfc_bitproc_phys);
+	if (dev->buf_oto_status & OTO_BUF_FW) {
+		iovmm_unmap_oto(&dev->plat_dev->dev, s5p_mfc_bitproc_phys);
+		dev->buf_oto_status &= ~OTO_BUF_FW;
+	}
 #endif
 	s5p_mfc_mem_free(s5p_mfc_bitproc_buf);
 
@@ -445,8 +452,6 @@ void s5p_mfc_deinit_hw(struct s5p_mfc_dev *dev)
 	s5p_mfc_clock_on();
 
 	s5p_mfc_reset(dev);
-	if (IS_MFCV6(dev))
-		s5p_mfc_release_dev_context_buffer(dev);
 
 	s5p_mfc_clock_off();
 }
