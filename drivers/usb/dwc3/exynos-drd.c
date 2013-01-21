@@ -596,10 +596,10 @@ static int exynos_drd_suspend(struct device *dev)
 {
 	struct exynos_drd *drd = dev_get_drvdata(dev);
 
+#ifdef CONFIG_PM_RUNTIME
 	dev_dbg(dev, "%s: usage_count = %d\n",
 		      __func__, atomic_read(&dev->power.usage_count));
 
-#ifdef CONFIG_PM_RUNTIME
 	if (pm_runtime_suspended(dev)) {
 		dev_dbg(dev, "DRD is runtime suspended\n");
 		return 0;
@@ -615,8 +615,10 @@ static int exynos_drd_resume(struct device *dev)
 {
 	struct exynos_drd *drd = dev_get_drvdata(dev);
 
+#ifdef CONFIG_PM_RUNTIME
 	dev_dbg(dev, "%s: usage_count = %d\n",
 		      __func__, atomic_read(&dev->power.usage_count));
+#endif
 
 	pm_runtime_resume(dev);
 	clk_enable(drd->clk);
