@@ -56,9 +56,10 @@ static int exynos_xhci_suspend(struct device *dev)
 	struct xhci_hcd		*xhci;
 	int			retval = 0;
 
+#ifdef CONFIG_PM_RUNTIME
 	dev_dbg(dev, "%s: usage_count = %d\n",
 		      __func__, atomic_read(&dev->power.usage_count));
-
+#endif
 	exynos_xhci = dev_get_drvdata(dev);
 	if (!exynos_xhci)
 		return -EINVAL;
@@ -97,9 +98,10 @@ static int exynos_xhci_resume(struct device *dev)
 	struct xhci_hcd		*xhci;
 	int			retval = 0;
 
+#ifdef CONFIG_PM_RUNTIME
 	dev_dbg(dev, "%s: usage_count = %d\n",
 		      __func__, atomic_read(&dev->power.usage_count));
-
+#endif
 	exynos_xhci = dev_get_drvdata(dev);
 	if (!exynos_xhci)
 		return -EINVAL;
