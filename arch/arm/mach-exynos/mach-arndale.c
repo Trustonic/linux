@@ -490,6 +490,7 @@ static void __init smdk5250_machine_init(void)
 
 	exynos5_smdk5250_sysfs_soc_init();
 	exynos5_arndale_wifi_init();
+	exynos5_arndale_sensors_init();
 }
 
 MACHINE_START(ARNDALE, "ARNDALE")
