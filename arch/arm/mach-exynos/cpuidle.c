@@ -59,7 +59,7 @@
 #endif
 
 static bool allow_coupled_idle = true;
-static bool allow_lpa = false;
+static bool allow_lpa = true;
 module_param(allow_coupled_idle, bool, 0644);
 module_param(allow_lpa, bool, 0644);
 
