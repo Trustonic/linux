@@ -1080,6 +1080,7 @@ static void __dw_mci_start_request(struct dw_mci *host,
 
 	host->pending_events = 0;
 	host->completed_events = 0;
+	host->cmd_status = 0;
 	host->data_status = 0;
 
 	data = cmd->data;
