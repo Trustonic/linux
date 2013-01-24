@@ -2674,8 +2674,16 @@ static int exynos_ss_udc_vbus_session(struct usb_gadget *gadget, int is_active)
 					struct exynos_ss_udc, gadget);
 	int ret;
 
+	is_active = !!is_active;
+
 	dev_dbg(udc->dev, "%s: pullup = %d, vbus = %d\n",
 			   __func__, udc->pullup_state, is_active);
+
+	if (is_active == udc->vbus_state) {
+		dev_dbg(udc->dev, "vbus is already %sactive\n",
+				   is_active ? "" : "in");
+		return 0;
+	}
 
 	if (!is_active)
 		ret = exynos_ss_udc_disable(udc);
@@ -2683,7 +2691,7 @@ static int exynos_ss_udc_vbus_session(struct usb_gadget *gadget, int is_active)
 		ret = exynos_ss_udc_enable(udc);
 
 	if (!ret)
-		udc->vbus_state = !!is_active;
+		udc->vbus_state = is_active;
 
 	return ret;
 }
@@ -2698,10 +2706,18 @@ static int exynos_ss_udc_pullup(struct usb_gadget *gadget, int is_on)
 	struct exynos_ss_udc *udc = container_of(gadget,
 					struct exynos_ss_udc, gadget);
 
+	is_on = !!is_on;
+
 	dev_dbg(udc->dev, "%s: pullup = %d, vbus = %d\n",
 			   __func__, is_on, udc->vbus_state);
 
-	udc->pullup_state = !!is_on;
+	if (is_on == udc->pullup_state) {
+		dev_dbg(udc->dev, "pullup is already %s\n",
+				   is_on ? "on" : "off");
+		return 0;
+	}
+
+	udc->pullup_state = is_on;
 
 	/*
 	 * Start controller if vbus is active.
