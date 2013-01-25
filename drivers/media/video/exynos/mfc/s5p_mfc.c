@@ -1089,9 +1089,6 @@ static int s5p_mfc_release(struct file *file)
 	v4l2_fh_del(&ctx->fh);
 	v4l2_fh_exit(&ctx->fh);
 
-	vb2_queue_release(&ctx->vq_src);
-	vb2_queue_release(&ctx->vq_dst);
-
 	/* Mark context as idle */
 	spin_lock_irqsave(&dev->condlock, flags);
 	clear_bit(ctx->num, &dev->ctx_work_bits);
@@ -1128,6 +1125,9 @@ static int s5p_mfc_release(struct file *file)
 			s5p_mfc_release_instance_buffer(ctx);
 	}
 	dev->num_inst--;
+
+	vb2_queue_release(&ctx->vq_src);
+	vb2_queue_release(&ctx->vq_dst);
 
 	if (dev->num_inst == 0) {
 		s5p_mfc_deinit_hw(dev);
