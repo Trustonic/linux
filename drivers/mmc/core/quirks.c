@@ -33,11 +33,13 @@
 /*
  * This hook just adds a quirk for all sdio devices
  */
+#if !defined(CONFIG_ARM_EXYNOS5410_BUS_DEVFREQ)
 static void add_quirk_for_sdio_devices(struct mmc_card *card, int data)
 {
 	if (mmc_card_sdio(card))
 		card->quirks |= data;
 }
+#endif
 
 static const struct mmc_fixup mmc_fixup_methods[] = {
 	/* by default sdio devices are considered CLK_GATING broken */
