@@ -23,6 +23,9 @@
 #include <linux/regulator/consumer.h>
 #include <linux/module.h>
 #include <linux/pm_qos.h>
+#include <linux/debugfs.h>
+#include <linux/jiffies.h>
+#include <asm/cputime.h>
 
 #include <mach/map.h>
 #include <mach/regs-clock.h>
@@ -71,6 +74,9 @@ struct busfreq_data_mif {
 	struct clk *mclk_cdrex;
 	struct clk *mout_mpll;
 	struct clk *mout_bpll;
+
+	cputime64_t time_in_state[_LV_END];
+	unsigned long long last_time;
 };
 
 struct mif_bus_opp_table {
@@ -102,6 +108,27 @@ static DEFINE_MUTEX(exynos5_bus_mif_requests_lock);
 static DEFINE_MUTEX(exynos5_bus_mif_upper_freq_lock);
 static bool multiple_windows = false;
 static unsigned int used_dev_cnt = 0;
+
+void update_devfreq_mif_stat(struct busfreq_data_mif *data, unsigned int freq)
+{
+	int index;
+	unsigned long long cur_time;
+
+	for (index = LV_0; index < _LV_END; index++) {
+		if (freq == exynos5_mif_opp_table[index].clk)
+			break;
+	}
+
+	if (index == _LV_END)
+		return 0;
+
+	cur_time = get_jiffies_64();
+
+	if (data->last_time)
+		data->time_in_state[index] += cur_time - data->last_time;
+
+	data->last_time = cur_time;
+}
 
 static void exynos5_mif_check_upper_freq(void)
 {
@@ -347,6 +374,8 @@ static int exynos5_busfreq_mif_target(struct device *dev, unsigned long *_freq,
 	rcu_read_unlock();
 
 	old_freq = data->curr_freq;
+
+	update_devfreq_mif_stat(data, old_freq);
 
 	if (old_freq == freq)
 		goto out;
@@ -615,6 +644,43 @@ static struct devfreq_pm_qos_data exynos5_devfreq_mif_pm_qos_data = {
 	.pm_qos_class = PM_QOS_MEMORY_THROUGHPUT,
 };
 
+static int exynos5_busfreq_mif_show(struct seq_file *s, void *d)
+{
+	int i;
+
+	seq_printf(s, "exynos5_devfreq_mif time in state\n");
+
+	mutex_lock(&exynos5_bus_mif_data->lock);
+	for (i = LV_0; i < _LV_END; i++)
+		seq_printf(s, "%lu %llu\n", exynos5_mif_opp_table[i].clk,
+			(unsigned long long)cputime64_to_clock_t
+			(exynos5_bus_mif_data->time_in_state[i]));
+	mutex_unlock(&exynos5_bus_mif_data->lock);
+	seq_printf(s, "\n");
+
+	return 0;
+}
+
+static int
+exynos5_devfreq_mif_debug_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, exynos5_busfreq_mif_show, inode->i_private);
+}
+
+const static struct file_operations exynos5_devfreq_mif_debug_fops = {
+	.open		= exynos5_devfreq_mif_debug_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+static int exynos5_devfreq_mif_init(struct busfreq_data_mif *data)
+{
+	debugfs_create_file("exynos5_devfreq_mif_time_in_state",
+		S_IRUGO, NULL, NULL, &exynos5_devfreq_mif_debug_fops);
+	return 0;
+}
+
 static __devinit int exynos5_busfreq_mif_probe(struct platform_device *pdev)
 {
 	struct busfreq_data_mif *data;
@@ -743,6 +809,8 @@ static __devinit int exynos5_busfreq_mif_probe(struct platform_device *pdev)
 	mutex_lock(&exynos5_bus_mif_data_lock);
 	exynos5_bus_mif_data = data;
 	mutex_unlock(&exynos5_bus_mif_data_lock);
+
+	exynos5_devfreq_mif_init(data);
 
 	data->v_offset = 0;
 	data->set_volt_offset_notifier.notifier_call =
