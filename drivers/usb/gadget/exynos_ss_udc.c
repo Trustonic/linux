@@ -776,6 +776,11 @@ static void exynos_ss_udc_start_req(struct exynos_ss_udc *udc,
 
 	dev_vdbg(udc->dev, "%s: %s, req %p\n", __func__, udc_ep->name, ureq);
 
+	if (!udc_ep->enabled) {
+		dev_warn(udc->dev, "%s: ep is disabled\n", __func__);
+		return;
+	}
+
 	/* If endpoint is stalled, we will restart request later */
 	if (udc_ep->halted) {
 		dev_vdbg(udc->dev, "%s: ep is stalled\n", __func__);
