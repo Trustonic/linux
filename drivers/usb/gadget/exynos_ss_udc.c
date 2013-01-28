@@ -1266,6 +1266,8 @@ static int exynos_ss_udc_process_clr_feature(struct exynos_ss_udc *udc,
 				if (ret < 0)
 					return ret;
 
+				spin_lock(&udc_ep->lock);
+
 				/* If we have pending request, then start it */
 				restart = !list_empty(&udc_ep->req_queue);
 				if (restart) {
@@ -1273,6 +1275,8 @@ static int exynos_ss_udc_process_clr_feature(struct exynos_ss_udc *udc,
 					exynos_ss_udc_start_req(udc, udc_ep,
 								udc_req, false);
 				}
+
+				spin_unlock(&udc_ep->lock);
 			}
 			break;
 
@@ -1816,6 +1820,8 @@ static void exynos_ss_udc_ep_cmd_complete(struct exynos_ss_udc *udc,
 	if (cmdtyp == EXYNOS_USB3_DEPCMDx_CmdTyp_DEPENDXFER) {
 		/* End Transfer command complete */
 
+		spin_lock(&udc_ep->lock);
+
 		udc_ep->not_ready = 0;
 
 		/* Issue all pending commands for endpoint */
@@ -1844,6 +1850,8 @@ static void exynos_ss_udc_ep_cmd_complete(struct exynos_ss_udc *udc,
 							udc_req, false);
 			}
 		}
+
+		spin_unlock(&udc_ep->lock);
 
 	} else if (cmdtyp == EXYNOS_USB3_DEPCMDx_CmdTyp_DEPSTRTXFER) {
 		/* Start Transfer command complete */
