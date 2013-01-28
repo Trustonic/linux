@@ -1269,7 +1269,8 @@ static int exynos_ss_udc_process_clr_feature(struct exynos_ss_udc *udc,
 				spin_lock(&udc_ep->lock);
 
 				/* If we have pending request, then start it */
-				restart = !list_empty(&udc_ep->req_queue);
+				restart = !list_empty(&udc_ep->req_queue) &&
+					   list_empty(&udc_ep->req_started);
 				if (restart) {
 					udc_req = get_ep_head(udc_ep);
 					exynos_ss_udc_start_req(udc, udc_ep,
@@ -1842,7 +1843,7 @@ static void exynos_ss_udc_ep_cmd_complete(struct exynos_ss_udc *udc,
 		/* If we have pending request, then start it */
 		if (desc && usb_endpoint_xfer_isoc(desc)) {
 			; /* Do nothing for isochronous endpoints */
-		} else {
+		} else if (list_empty(&udc_ep->req_started)) {
 			restart = !list_empty(&udc_ep->req_queue);
 			if (restart) {
 				udc_req = get_ep_head(udc_ep);
