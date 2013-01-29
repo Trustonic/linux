@@ -33,10 +33,15 @@
 #include <linux/mmc/mmc.h>
 #include <linux/mmc/sd.h>
 
+#include <linux/blkdev.h>
+#include <linux/types.h>
+#include <linux/blktrace_api.h>
+#include <trace/events/block.h>
 #include "core.h"
 #include "bus.h"
 #include "host.h"
 #include "sdio_bus.h"
+#include "../card/queue.h"
 
 #include "mmc_ops.h"
 #include "sd_ops.h"
@@ -332,6 +337,9 @@ static int mmc_wait_for_data_req_done(struct mmc_host *host,
 					mmc_card_removed(host->card)) {
 				err = host->areq->err_check(host->card,
 						host->areq);
+
+				mmc_add_trace(__MMC_TA_EAO_REV_DONE,
+							host->mqrq_prev);
 				break; /* return err */
 			} else {
 				pr_info("%s: req failed (CMD%u): %d, retrying...\n",
@@ -2660,6 +2668,67 @@ void mmc_init_context_info(struct mmc_host *host)
 	host->context_info.is_waiting_last_req = false;
 	init_waitqueue_head(&host->context_info.wait);
 }
+
+#ifdef CONFIG_BLK_DEV_IO_TRACE
+static const struct {
+	const char *act[2];
+	/* This function is to action something for preparation */
+	int	   (*prefunc)(void);
+} ta_info[] = {
+	[__MMC_TA_EAO_REV_DONE] = {{ "eC", "completion_done" }, NULL },
+	[__MMC_TA_EAO_FETCH_NEW_REQ] = {{  "eN", "fetch_new_reqest" }, NULL },
+	[__MMC_TA_EAO_FETCH_REQ] = {{ "eF", "fetch_request" }, NULL },
+};
+
+static inline struct request *__get_request(struct mmc_queue_req *mqrq)
+{
+	return mqrq ? mqrq->req : NULL;
+}
+
+static inline struct request_queue *__get_request_queue(struct request *req)
+{
+	return req ? req->q : NULL;
+}
+
+void mmc_add_trace(unsigned int type, struct mmc_queue_req *mqrq)
+{
+	struct request *req;
+	struct request_queue *q;
+	struct blk_trace *bt;
+	struct mmc_trace mt;
+	struct request_list *rl;
+
+	req = __get_request(mqrq);
+	if (unlikely(!req))
+		return;
+
+	q = __get_request_queue(req);
+	if (unlikely(!q))
+		return;
+
+	bt = q->blk_trace;
+
+	if (likely(!bt) || unlikely(bt->trace_state != Blktrace_running))
+		return;
+
+	/* trace type */
+	mt.ta_type = type;
+
+	memcpy(mt.ta_info, ta_info[type].act[0], 3);
+
+	/* request information */
+	rl = &q->rq;
+
+	/* async, sync info update for trace */
+	mt.cnt_sync = rl->count[BLK_RW_SYNC];
+	mt.cnt_async = rl->count[BLK_RW_ASYNC];
+
+	/* add trace point */
+	blk_add_driver_data(q, req, &mt, sizeof(struct mmc_trace));
+}
+EXPORT_SYMBOL(mmc_add_trace);
+#endif /* CONFIG_BLK_DEV_IO_TRACE */
+
 
 static int __init mmc_init(void)
 {

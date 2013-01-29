@@ -363,6 +363,8 @@ struct mmc_host {
 		int				num_funcs;
 	} embedded_sdio_data;
 #endif
+	struct mmc_queue_req			*mqrq_cur;
+	struct mmc_queue_req			*mqrq_prev;
 
 	unsigned long		private[0] ____cacheline_aligned;
 };

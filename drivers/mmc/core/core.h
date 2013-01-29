@@ -77,5 +77,38 @@ void mmc_add_card_debugfs(struct mmc_card *card);
 void mmc_remove_card_debugfs(struct mmc_card *card);
 
 void mmc_init_context_info(struct mmc_host *host);
-#endif
 
+#if defined(CONFIG_BLK_DEV_IO_TRACE)
+
+extern void mmc_add_trace(unsigned int type, struct mmc_queue_req *mqrq);
+#define mmc_add_trace_msg(q, fmt, ...)				\
+	do {							\
+		struct blk_trace *bt;				\
+		if (likely(q)) {				\
+			bt = (q)->blk_trace;			\
+			if (unlikely(bt))			\
+				__trace_note_message(bt,	\
+					fmt, ##__VA_ARGS__);	\
+		}						\
+	} while (0)
+
+enum mmc_trace_act {
+	__MMC_TA_EAO_REV_DONE,		/* completion done of previous op */
+	__MMC_TA_EAO_FETCH_NEW_REQ,	/* fetch by arrived new request */
+	__MMC_TA_EAO_FETCH_REQ,		/* fetch by normal queue thread */
+};
+
+struct mmc_trace {
+	u32		ta_type;	/* action type */
+	char		ta_info[3];	/* action info to output */
+	u32		cnt_async;	/* info for counting req of req list */
+	u32		cnt_sync;
+};
+
+#else
+#define mmc_add_trace(type, mqrq)		do {} while (0)
+#define mmc_add_trace_msg(q, fmt, ...)		do {} while (0)
+
+#endif /* CONFIG_BLK_DEV_IO_TRACE */
+
+#endif
