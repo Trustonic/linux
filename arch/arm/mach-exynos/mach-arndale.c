@@ -43,7 +43,7 @@
 
 #include "../../../drivers/staging/android/ram_console.h"
 #include "common.h"
-#include "board-smdk5250.h"
+#include "board-arndale.h"
 #include "resetreason.h"
 
 #define SMDK5250_CPU0_DEBUG_PA		0x10890000
