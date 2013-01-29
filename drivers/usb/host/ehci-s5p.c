@@ -148,7 +148,6 @@ static int s5p_ehci_resume(struct device *dev)
 	struct ehci_hcd *ehci = hcd_to_ehci(hcd);
 
 	clk_enable(s5p_ehci->clk);
-	pm_runtime_resume(&pdev->dev);
 
 	s5p_ehci_phy_init(pdev);
 
@@ -188,7 +187,27 @@ static int s5p_ehci_resume(struct device *dev)
 	ehci_port_power(ehci, 1);
 
 	ehci->rh_state = EHCI_RH_SUSPENDED;
+
+	/* Update runtime PM status and clear runtime_error */
+	pm_runtime_disable(dev);
+	pm_runtime_set_active(dev);
+	pm_runtime_enable(dev);
+
+	/* Prevent device from runtime suspend during resume time */
+	pm_runtime_get_sync(dev);
+
 	return 0;
+}
+
+int s5p_ehci_bus_suspend(struct usb_hcd *hcd)
+{
+	int ret;
+	ret = ehci_bus_suspend(hcd);
+
+	/* Decrease pm_count that was increased at s5p_ehci_resume func. */
+	pm_runtime_put_noidle(hcd->self.controller);
+
+	return ret;
 }
 
 int s5p_ehci_bus_resume(struct usb_hcd *hcd)
@@ -283,7 +302,7 @@ static const struct hc_driver s5p_ehci_hc_driver = {
 
 	.hub_status_data	= ehci_hub_status_data,
 	.hub_control		= ehci_hub_control,
-	.bus_suspend		= ehci_bus_suspend,
+	.bus_suspend		= s5p_ehci_bus_suspend,
 	.bus_resume		= s5p_ehci_bus_resume,
 
 	.relinquish_port	= ehci_relinquish_port,
@@ -342,6 +361,12 @@ static ssize_t store_ehci_power(struct device *dev,
 			dev_err(dev, "Power On Fail\n");
 			goto exit;
 		}
+
+		/*
+		 * EHCI root hubs are expected to handle remote wakeup.
+		 * So, wakeup flag init defaults for root hubs.
+		 */
+		device_wakeup_enable(&hcd->self.root_hub->dev);
 
 		s5p_ehci->power_on = 1;
 		pm_runtime_allow(dev);
@@ -451,12 +476,19 @@ static int __devinit s5p_ehci_probe(struct platform_device *pdev)
 		goto fail;
 	}
 
+	/*
+	 * EHCI root hubs are expected to handle remote wakeup.
+	 * So, wakeup flag init defaults for root hubs.
+	 */
+	device_wakeup_enable(&hcd->self.root_hub->dev);
+
 	create_ehci_sys_file(ehci);
 	s5p_ehci->power_on = 1;
 
 #ifdef CONFIG_USB_SUSPEND
 	pm_runtime_set_active(&pdev->dev);
 	pm_runtime_enable(&pdev->dev);
+	pm_runtime_get(hcd->self.controller);
 #endif
 	return 0;
 
@@ -480,6 +512,7 @@ static int __devexit s5p_ehci_remove(struct platform_device *pdev)
 	struct usb_hcd *hcd = s5p_ehci->hcd;
 
 #ifdef CONFIG_USB_SUSPEND
+	pm_runtime_put(hcd->self.controller);
 	pm_runtime_disable(&pdev->dev);
 #endif
 	s5p_ehci->power_on = 0;

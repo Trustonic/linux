@@ -128,7 +128,6 @@ static int exynos_ohci_resume(struct device *dev)
 	struct exynos4_ohci_platdata *pdata = pdev->dev.platform_data;
 
 	clk_enable(exynos_ohci->clk);
-	pm_runtime_resume(&pdev->dev);
 	if (pdata && pdata->phy_init)
 		pdata->phy_init(pdev, S5P_USB_PHY_HOST);
 
@@ -137,8 +136,28 @@ static int exynos_ohci_resume(struct device *dev)
 
 	ohci_finish_controller_resume(hcd);
 
+	/*Update runtime PM status and clear runtime_error */
+	pm_runtime_disable(dev);
+	pm_runtime_set_active(dev);
+	pm_runtime_enable(dev);
+
+	/* Prevent device from runtime suspend during resume time */
+	pm_runtime_get_sync(dev);
+
 	return 0;
 }
+
+static int exynos_ohci_bus_suspend(struct usb_hcd *hcd)
+{
+	int ret;
+	ret = ohci_bus_suspend(hcd);
+
+	/* Decrease pm_count that was increased at s5p_ehci_resume func. */
+	pm_runtime_put_noidle(hcd->self.controller);
+
+	return ret;
+}
+
 static int exynos_ohci_bus_resume(struct usb_hcd *hcd)
 {
 	/* When suspend is failed, re-enable clocks & PHY */
@@ -174,7 +193,7 @@ static const struct hc_driver exynos_ohci_hc_driver = {
 	.hub_status_data	= ohci_hub_status_data,
 	.hub_control		= ohci_hub_control,
 #ifdef	CONFIG_PM
-	.bus_suspend		= ohci_bus_suspend,
+	.bus_suspend		= exynos_ohci_bus_suspend,
 	.bus_resume		= exynos_ohci_bus_resume,
 #endif
 	.start_port_reset	= ohci_start_port_reset,
@@ -231,6 +250,12 @@ static ssize_t store_ohci_power(struct device *dev,
 			dev_err(dev, "Power On Fail\n");
 			goto exit;
 		}
+
+		/*
+		 * OHCI root hubs are expected to handle remote wakeup.
+		 * So, wakeup flag init defaults for root hubs.
+		 */
+		device_wakeup_enable(&hcd->self.root_hub->dev);
 
 		exynos_ohci->power_on = 1;
 		pm_runtime_allow(dev);
@@ -334,14 +359,22 @@ static int __devinit exynos_ohci_probe(struct platform_device *pdev)
 		goto fail;
 	}
 
+	/*
+	 * OHCI root hubs are expected to handle remote wakeup.
+	 * So, wakeup flag init defaults for root hubs.
+	 */
+	device_wakeup_enable(&hcd->self.root_hub->dev);
+
 	platform_set_drvdata(pdev, exynos_ohci);
 
 	create_ohci_sys_file(ohci);
 	exynos_ohci->power_on = 1;
 
+#ifdef CONFIG_USB_SUSPEND
 	pm_runtime_set_active(&pdev->dev);
 	pm_runtime_enable(&pdev->dev);
-
+	pm_runtime_get(hcd->self.controller);
+#endif
 	return 0;
 
 fail:
@@ -366,6 +399,10 @@ static int __devexit exynos_ohci_remove(struct platform_device *pdev)
 	if (pdata && pdata->phy_resume)
 		pdata->phy_resume(pdev, S5P_USB_PHY_HOST);
 
+#ifdef CONFIG_USB_SUSPEND
+	pm_runtime_put(hcd->self.controller);
+	pm_runtime_disable(&pdev->dev);
+#endif
 	usb_remove_hcd(hcd);
 
 	exynos_ohci->power_on = 0;

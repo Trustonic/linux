@@ -26,6 +26,7 @@
 #include <mach/exynos5_bus.h>
 #include <mach/videonode-exynos5.h>
 #include <media/exynos_mc.h>
+#include <linux/kthread.h>
 
 MODULE_AUTHOR("Tomasz Stanislawski, <t.stanislaws@samsung.com>");
 MODULE_DESCRIPTION("Samsung MIXER");
@@ -1365,8 +1366,17 @@ static int mxr_create_links(struct mxr_device *mdev)
 	return 0;
 }
 
-/* --------- DRIVER INITIALIZATION ---------- */
+static ssize_t mxr_vsync_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct mxr_device *mdev = to_mdev(dev);
+	return scnprintf(buf, PAGE_SIZE, "%llu\n",
+			ktime_to_ns(mdev->vsync_info.timestamp));
+}
 
+static DEVICE_ATTR(mxr_vsync, S_IRUGO, mxr_vsync_show, NULL);
+
+/* --------- DRIVER INITIALIZATION ---------- */
 static int __devinit mxr_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -1401,7 +1411,7 @@ static int __devinit mxr_probe(struct platform_device *pdev)
 	mutex_init(&mdev->mutex);
 	mutex_init(&mdev->s_mutex);
 	spin_lock_init(&mdev->reg_slock);
-	init_waitqueue_head(&mdev->vsync_wait);
+	init_waitqueue_head(&mdev->vsync_info.wait);
 
 	mdev->update_wq = create_singlethread_workqueue("hdmi-mixer");
 	if (mdev->update_wq == NULL) {
@@ -1435,6 +1445,17 @@ static int __devinit mxr_probe(struct platform_device *pdev)
 	ret = mxr_create_links(mdev);
 	if (ret)
 		goto fail_entity;
+
+	ret = device_create_file(dev, &dev_attr_mxr_vsync);
+	if (ret)
+		goto fail_entity;
+
+	mdev->vsync_info.thread = kthread_run(mxr_wait_for_vsync_thread,
+			mdev, "s5p-mixer-vsync");
+	if (mdev->vsync_info.thread == ERR_PTR(-ENOMEM)) {
+		dev_err(mdev->dev, "failed to run vsync thread\n");
+		mdev->vsync_info.thread = NULL;
+	}
 
 	dev_set_drvdata(dev, mdev);
 
@@ -1474,6 +1495,9 @@ static int __devexit mxr_remove(struct platform_device *pdev)
 	pm_runtime_disable(dev);
 
 	destroy_workqueue(mdev->update_wq);
+	if (mdev->vsync_info.thread)
+		kthread_stop(mdev->vsync_info.thread);
+	device_remove_file(dev, &dev_attr_mxr_vsync);
 	mxr_release_layers(mdev);
 	mxr_release_video(mdev);
 	mxr_release_resources(mdev);

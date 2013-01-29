@@ -140,6 +140,7 @@ static void exynos_drd_phy_set(struct exynos_drd_core *core)
 	struct exynos_drd *drd = container_of(core, struct exynos_drd, core);
 	struct platform_device *pdev = to_platform_device(drd->dev);
 	struct dwc3_exynos_data *pdata = drd->pdata;
+	int err;
 
 	/*
 	 *	The reset values:
@@ -154,8 +155,13 @@ static void exynos_drd_phy_set(struct exynos_drd_core *core)
 		EXYNOS_USB3_GUSB3PIPECTLx_PHYSoftRst);
 
 	/* PHY initialization */
-	if (pdata->phy_init)
-		pdata->phy_init(pdev, pdata->phy_type);
+	if (pdata->phy_init) {
+		err = pdata->phy_init(pdev, pdata->phy_type);
+		if (err)
+			dev_warn(drd->dev, "PHY init failed!\n");
+	} else {
+		dev_warn(drd->dev, "PHY init routine is N/A\n");
+	}
 
 	if (drd->active_child && pdata->phy_tune)
 		pdata->phy_tune(drd->active_child, pdata->phy_type);
@@ -177,9 +183,9 @@ static void exynos_drd_phy_set(struct exynos_drd_core *core)
 	__bic32(drd->regs + EXYNOS_USB3_GUSB3PIPECTL(0),
 		EXYNOS_USB3_GUSB3PIPECTLx_SuspSSPhy);
 
-	dev_dbg(drd->dev, "GUSB2PHYCFG(0)=0x%08x, GUSB3PIPECTL(0)=0x%08x",
-			  readl(drd->regs + EXYNOS_USB3_GUSB2PHYCFG(0)),
-			  readl(drd->regs + EXYNOS_USB3_GUSB3PIPECTL(0)));
+	dev_vdbg(drd->dev, "GUSB2PHYCFG(0)=0x%08x, GUSB3PIPECTL(0)=0x%08x",
+			    readl(drd->regs + EXYNOS_USB3_GUSB2PHYCFG(0)),
+			    readl(drd->regs + EXYNOS_USB3_GUSB3PIPECTL(0)));
 }
 
 /*
@@ -190,6 +196,7 @@ static void exynos_drd_phy_unset(struct exynos_drd_core *core)
 	struct exynos_drd *drd = container_of(core, struct exynos_drd, core);
 	struct platform_device *pdev = to_platform_device(drd->dev);
 	struct dwc3_exynos_data *pdata = drd->pdata;
+	int err;
 
 	__orr32(drd->regs + EXYNOS_USB3_GUSB2PHYCFG(0),
 		EXYNOS_USB3_GUSB2PHYCFGx_SusPHY |
@@ -197,12 +204,17 @@ static void exynos_drd_phy_unset(struct exynos_drd_core *core)
 	__orr32(drd->regs + EXYNOS_USB3_GUSB3PIPECTL(0),
 		EXYNOS_USB3_GUSB3PIPECTLx_SuspSSPhy);
 
-	if (pdata->phy_exit)
-		pdata->phy_exit(pdev, pdata->phy_type);
+	if (pdata->phy_exit) {
+		err = pdata->phy_exit(pdev, pdata->phy_type);
+		if (err)
+			dev_warn(drd->dev, "PHY exit failed!\n");
+	} else {
+		dev_warn(drd->dev, "PHY exit routine is N/A\n");
+	}
 
-	dev_dbg(drd->dev, "GUSB2PHYCFG(0)=0x%08x, GUSB3PIPECTL(0)=0x%08x",
-			  readl(drd->regs + EXYNOS_USB3_GUSB2PHYCFG(0)),
-			  readl(drd->regs + EXYNOS_USB3_GUSB3PIPECTL(0)));
+	dev_vdbg(drd->dev, "GUSB2PHYCFG(0)=0x%08x, GUSB3PIPECTL(0)=0x%08x",
+			    readl(drd->regs + EXYNOS_USB3_GUSB2PHYCFG(0)),
+			    readl(drd->regs + EXYNOS_USB3_GUSB3PIPECTL(0)));
 }
 
 static void exynos_drd_config(struct exynos_drd_core *core)
@@ -301,6 +313,8 @@ void exynos_drd_put(struct platform_device *child)
 	spin_lock(&drd->lock);
 	drd->active_child = NULL;
 	spin_unlock(&drd->lock);
+
+	dev_dbg(dev, "DRD released by %s\n", dev_name(&child->dev));
 }
 
 int exynos_drd_try_get(struct platform_device *child)
@@ -316,6 +330,9 @@ int exynos_drd_try_get(struct platform_device *child)
 	else
 		ret = -EBUSY;
 	spin_unlock(&drd->lock);
+
+	dev_dbg(dev, "DRD %s %s\n",
+		ret < 0 ? "busy for" : "acquired by", dev_name(&child->dev));
 
 	return ret;
 }
@@ -336,6 +353,9 @@ static int exynos_drd_create_udc(struct exynos_drd *drd)
 	struct platform_device	*udc;
 	const char		*udc_name;
 	int			ret = -ENOMEM;
+
+	if (pdata->quirks & SKIP_UDC)
+		return 0;
 
 	if (pdata->udc_name) {
 		udc_name = pdata->udc_name;
@@ -376,6 +396,8 @@ static int exynos_drd_create_udc(struct exynos_drd *drd)
 		goto err1;
 	}
 
+	dev_dbg(drd->dev, "udc %s created successfully\n", dev_name(&udc->dev));
+
 	return 0;
 
 err1:
@@ -391,6 +413,9 @@ static int exynos_drd_create_xhci(struct exynos_drd *drd)
 	struct platform_device	*xhci;
 	const char		*xhci_name;
 	int			ret = -ENOMEM;
+
+	if (pdata->quirks & SKIP_XHCI)
+		return 0;
 
 	if (pdata->xhci_name) {
 		xhci_name = pdata->xhci_name;
@@ -430,6 +455,8 @@ static int exynos_drd_create_xhci(struct exynos_drd *drd)
 		dev_err(&pdev->dev, "failed to register xhci device\n");
 		goto err1;
 	}
+
+	dev_dbg(drd->dev, "xhci %s created successfully\n", dev_name(&xhci->dev));
 
 	return 0;
 
@@ -576,8 +603,13 @@ static int exynos_drd_suspend(struct device *dev)
 	struct exynos_drd *drd = dev_get_drvdata(dev);
 
 #ifdef CONFIG_PM_RUNTIME
-	if (pm_runtime_suspended(dev))
+	dev_dbg(dev, "%s: usage_count = %d\n",
+		      __func__, atomic_read(&dev->power.usage_count));
+
+	if (pm_runtime_suspended(dev)) {
+		dev_dbg(dev, "DRD is runtime suspended\n");
 		return 0;
+	}
 #endif
 	exynos_drd_phy_unset(&drd->core);
 	clk_disable(drd->clk);
@@ -588,6 +620,11 @@ static int exynos_drd_suspend(struct device *dev)
 static int exynos_drd_resume(struct device *dev)
 {
 	struct exynos_drd *drd = dev_get_drvdata(dev);
+
+#ifdef CONFIG_PM_RUNTIME
+	dev_dbg(dev, "%s: usage_count = %d\n",
+		      __func__, atomic_read(&dev->power.usage_count));
+#endif
 
 	pm_runtime_resume(dev);
 	clk_enable(drd->clk);
@@ -614,6 +651,8 @@ static int exynos_drd_runtime_suspend(struct device *dev)
 {
 	struct exynos_drd *drd = dev_get_drvdata(dev);
 
+	dev_dbg(dev, "%s\n", __func__);
+
 	exynos_drd_phy_unset(&drd->core);
 	clk_disable(drd->clk);
 	disable_irq(drd->irq);
@@ -624,9 +663,13 @@ static int exynos_drd_runtime_resume(struct device *dev)
 {
 	struct exynos_drd *drd = dev_get_drvdata(dev);
 
+	dev_dbg(dev, "%s\n", __func__);
+
 	enable_irq(drd->irq);
-	if (dev->power.is_suspended)
+	if (dev->power.is_suspended) {
+		dev_dbg(dev, "DRD is system suspended\n");
 		return 0;
+	}
 	clk_enable(drd->clk);
 	exynos_drd_phy_set(&drd->core);
 

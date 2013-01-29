@@ -812,6 +812,8 @@ int xhci_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 			xhci_info(xhci, "running XHCI test %x on port %x\n",
 					selector, wIndex);
 
+			xhci_halt(xhci);
+
 			/*
 			 * Set the Port Test Control field in the port
 			 * under test PORTPMSC register

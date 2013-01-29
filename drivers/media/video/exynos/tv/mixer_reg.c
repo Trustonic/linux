@@ -20,6 +20,7 @@
 #include <linux/ratelimit.h>
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
+#include <linux/kthread.h>
 
 /* Register access subroutines */
 
@@ -563,8 +564,8 @@ irqreturn_t mxr_irq_handler(int irq, void *dev_data)
 
 	/* wake up process waiting for VSYNC */
 	if (val & MXR_INT_STATUS_VSYNC) {
-		mdev->vsync_timestamp = ktime_get();
-		wake_up_interruptible_all(&mdev->vsync_wait);
+		mdev->vsync_info.timestamp  = ktime_get();
+		wake_up_interruptible_all(&mdev->vsync_info.wait);
 	}
 
 	/* clear interrupts.
@@ -620,11 +621,11 @@ static int mxr_update_pending(struct mxr_device *mdev)
 
 int mxr_reg_wait4update(struct mxr_device *mdev)
 {
-	ktime_t timestamp = mdev->vsync_timestamp;
+	ktime_t timestamp = mdev->vsync_info.timestamp;
 	int ret;
 
-	ret = wait_event_interruptible_timeout(mdev->vsync_wait,
-		!ktime_equal(timestamp, mdev->vsync_timestamp)
+	ret = wait_event_interruptible_timeout(mdev->vsync_info.wait,
+		!ktime_equal(timestamp, mdev->vsync_info.timestamp)
 				&& !mxr_update_pending(mdev),
 		msecs_to_jiffies(100));
 	if (ret > 0)
@@ -633,6 +634,22 @@ int mxr_reg_wait4update(struct mxr_device *mdev)
 		return ret;
 	mxr_warn(mdev, "no vsync detected - timeout\n");
 	return -ETIME;
+}
+
+int mxr_wait_for_vsync_thread(void *data)
+{
+	struct mxr_device *mdev = data;
+
+	while (!kthread_should_stop()) {
+		ktime_t timestamp = mdev->vsync_info.timestamp;
+		int ret = wait_event_interruptible(mdev->vsync_info.wait,
+			!ktime_equal(timestamp, mdev->vsync_info.timestamp));
+
+		if (!ret)
+			sysfs_notify(&mdev->dev->kobj, NULL, "mxr_vsync");
+	}
+
+	return 0;
 }
 
 void mxr_reg_set_mbus_fmt(struct mxr_device *mdev,

@@ -514,6 +514,8 @@ struct s5p_mfc_dec {
 	int sei_parse;
 	int eos_tag;
 
+	int internal_dpb;
+
 	/* For 6.x */
 	int remained;
 };
@@ -640,6 +642,8 @@ struct s5p_mfc_ctx {
 				(dev->variant->port_num ? 1 : 0) : 0) : 0)
 #define IS_TWOPORT(dev)		(dev->variant->port_num == 2 ? 1 : 0)
 #define IS_MFCV6(dev)		(dev->variant->version >= 0x60 ? 1 : 0)
+#define FW_HAS_INITBUF_TILE_MODE(dev)		(dev->fw.date >= 0x120629)
+#define FW_HAS_INITBUF_LOOP_FILTER(dev)		(dev->fw.date >= 0x120831)
 
 struct s5p_mfc_fmt {
 	char *name;

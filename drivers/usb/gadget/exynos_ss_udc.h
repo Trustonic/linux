@@ -434,6 +434,8 @@ struct exynos_ss_udc_ep {
  * @eps_enabled: Set if new configuration for physical endpoints > 1 started.
  * @ep0_state: State of EP0.
  * @ep0_three_stage: Set if control transfer has three stages.
+ * @our_status: Indicate that UDC driver (not gadget) is responsible for Status
+ *		stage handling.
  * @ep0_buff: Buffer for EP0 data.
  * @ep0_buff_dma: EP0 data buffer DMA address.
  * @ctrl_buff: Buffer for EP0 control requests.
@@ -463,6 +465,7 @@ struct exynos_ss_udc {
 	bool			eps_enabled;
 	enum ctrl_ep_state	ep0_state;
 	int			ep0_three_stage;
+	bool			our_status;
 
 	unsigned int		pullup_state:1;
 	unsigned int		vbus_state:1;

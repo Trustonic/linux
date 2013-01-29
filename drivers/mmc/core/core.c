@@ -249,12 +249,12 @@ mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
  * mmc_wait_data_done() - done callback for data request
  * @mrq: done data request
  *
- * Wakes up mmc context, passed as callback to host controller driver
+ * Wakes up mmc context, passed as a callback to host controller driver
  */
 static void mmc_wait_data_done(struct mmc_request *mrq)
 {
-	mrq->context_info->is_done_rcv = true;
-	wake_up_interruptible(&mrq->context_info->wait);
+	mrq->host->context_info.is_done_rcv = true;
+	wake_up_interruptible(&mrq->host->context_info.wait);
 }
 
 static void mmc_wait_done(struct mmc_request *mrq)
@@ -267,14 +267,16 @@ static void mmc_wait_done(struct mmc_request *mrq)
  * @host: MMC host to start the request
  * @mrq: data request to start
  *
- * Fills done callback that will be used when request are done by card.
+ * Sets the done callback to be called when request is completed by the card.
  * Starts data mmc request execution
  */
 static int __mmc_start_data_req(struct mmc_host *host, struct mmc_request *mrq)
 {
 	mrq->done = mmc_wait_data_done;
+	mrq->host = host;
 	if (mmc_card_removed(host->card)) {
 		mrq->cmd->error = -ENOMEDIUM;
+		mmc_wait_data_done(mrq);
 		return -ENOMEDIUM;
 	}
 	mmc_start_request(host, mrq);
@@ -296,22 +298,22 @@ static int __mmc_start_req(struct mmc_host *host, struct mmc_request *mrq)
 }
 
 /*
- * mmc_wait_for_data_req_done() - wait for request completed or new
- *				  request notification arrives
+ * mmc_wait_for_data_req_done() - wait for request completed
  * @host: MMC host to prepare the command.
  * @mrq: MMC request to wait for
  *
  * Blocks MMC context till host controller will ack end of data request
- * execution or new request arrives from block layer. Handles
- * command retries.
+ * execution or new request notification arrives from the block layer.
+ * Handles command retries.
  *
  * Returns enum mmc_blk_status after checking errors.
  */
 static int mmc_wait_for_data_req_done(struct mmc_host *host,
-				      struct mmc_request *mrq)
+				      struct mmc_request *mrq,
+				      struct mmc_async_req *next_req)
 {
 	struct mmc_command *cmd;
-	struct mmc_context_info *context_info = mrq->context_info;
+	struct mmc_context_info *context_info = &host->context_info;
 	int err;
 	unsigned long flags;
 
@@ -342,8 +344,10 @@ static int mmc_wait_for_data_req_done(struct mmc_host *host,
 			}
 		} else if (context_info->is_new_req) {
 			context_info->is_new_req = false;
-			err = MMC_BLK_NEW_REQUEST;
-			break; /* return err */
+			if (!next_req) {
+				err = MMC_BLK_NEW_REQUEST;
+				break; /* return err */
+			}
 		}
 	} /* while */
 	return err;
@@ -411,17 +415,23 @@ static void mmc_post_req(struct mmc_host *host, struct mmc_request *mrq,
 }
 
 /**
- * mmc_start_req - start a non-blocking data request
- * @host: MMC host to start the command
- * @areq: async request to start
- * @error: out parameter; returns 0 for success, otherwise non zero
+ *	mmc_start_req - start a non-blocking request
+ *	@host: MMC host to start command
+ *	@areq: async request to start
+ *	@error: out parameter returns 0 for success, otherwise non zero
  *
- * Wait for the ongoing request (previoulsy started) to complete and
- * return the completed request. If there is no ongoing request, NULL
- * is returned without waiting. NULL is not an error condition.
+ *	Start a new MMC custom command request for a host.
+ *	If there is on ongoing async request wait for completion
+ *	of that request and start the new one and return.
+ *	Does not wait for the new request to complete.
+ *
+ *      Returns the completed request, NULL in case of none completed.
+ *	Wait for the an ongoing request (previoulsy started) to complete and
+ *	return the completed request. If there is no ongoing request, NULL
+ *	is returned without waiting. NULL is not an error condition.
  */
 struct mmc_async_req *mmc_start_req(struct mmc_host *host,
-					 struct mmc_async_req *areq, int *error)
+				    struct mmc_async_req *areq, int *error)
 {
 	int err = 0;
 	int start_err = 0;
@@ -436,13 +446,9 @@ struct mmc_async_req *mmc_start_req(struct mmc_host *host,
 	}
 
 	if (host->areq) {
-		err = mmc_wait_for_data_req_done(host, host->areq->mrq);
+		err = mmc_wait_for_data_req_done(host, host->areq->mrq,
+				areq);
 		if (err == MMC_BLK_NEW_REQUEST) {
-			if (areq) {
-				pr_err("%s: new request while areq = %p",
-						mmc_hostname(host), areq);
-				BUG();
-			}
 			if (error)
 				*error = err;
 			/*
@@ -473,7 +479,6 @@ struct mmc_async_req *mmc_start_req(struct mmc_host *host,
 
 	if (error)
 		*error = err;
-
 	return data;
 }
 EXPORT_SYMBOL(mmc_start_req);
@@ -2638,6 +2643,23 @@ bkops_out:
 	return err;
 }
 EXPORT_SYMBOL(mmc_bkops_enable);
+
+/**
+ * mmc_init_context_info() - init synchronization context
+ * @host: mmc host
+ *
+ * Init struct context_info needed to implement asynchronous
+ * request mechanism, used by mmc core, host driver and mmc requests
+ * supplier.
+ */
+void mmc_init_context_info(struct mmc_host *host)
+{
+	spin_lock_init(&host->context_info.lock);
+	host->context_info.is_new_req = false;
+	host->context_info.is_done_rcv = false;
+	host->context_info.is_waiting_last_req = false;
+	init_waitqueue_head(&host->context_info.wait);
+}
 
 static int __init mmc_init(void)
 {

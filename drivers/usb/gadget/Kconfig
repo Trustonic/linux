@@ -282,8 +282,7 @@ config USB_S3C_OTGD
 
 config USB_EXYNOS_SS_UDC
 	tristate "EXYNOS SuperSpeed USB 3.0 Device controller"
-	depends on EXYNOS5_DEV_USB3_DRD
-	select USB_EXYNOS_DRD
+	depends on USB_EXYNOS_DRD
 	select USB_GADGET_DUALSPEED
 	help
 	  The Samsung Exynos SuperSpeed USB 3.0 device controller

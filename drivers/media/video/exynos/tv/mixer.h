@@ -334,6 +334,18 @@ struct mxr_vb2 {
 	void (*set_cacheable)(void *alloc_ctx, bool cacheable);
 };
 
+/**
+ * struct mixer_vsync - vsync information
+ * @wait:		a queue for processes waiting for vsync
+ * @timestamp:		the time of the last vsync interrupt
+ * @thread:		notification-generating thread
+ */
+struct mixer_vsync {
+	wait_queue_head_t	wait;
+	ktime_t			timestamp;
+	struct task_struct	*thread;
+};
+
 /** sub-mixer 0,1 drivers instance */
 struct sub_mxr_device {
 	/** state of each layer */
@@ -369,9 +381,8 @@ struct mxr_device {
 	/** context of allocator */
 	void *alloc_ctx;
 
-	/** vsync wait queue */
-	wait_queue_head_t vsync_wait;
-	ktime_t           vsync_timestamp;
+	/** vsync wait queue structure */
+	struct mixer_vsync	vsync_info;
 
 	/** spinlock for protection of registers */
 	spinlock_t reg_slock;
@@ -555,6 +566,7 @@ void mxr_reg_s_output(struct mxr_device *mdev, int cookie);
 void mxr_reg_streamon(struct mxr_device *mdev);
 void mxr_reg_streamoff(struct mxr_device *mdev);
 int mxr_reg_wait4update(struct mxr_device *mdev);
+int mxr_wait_for_vsync_thread(void *data);
 void mxr_reg_set_mbus_fmt(struct mxr_device *mdev,
 	struct v4l2_mbus_framefmt *fmt, u32 dvi_mode);
 void mxr_reg_local_path_clear(struct mxr_device *mdev);
