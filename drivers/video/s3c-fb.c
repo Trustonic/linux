@@ -3935,7 +3935,6 @@ static int s3c_fb_disable(struct s3c_fb *sfb)
 {
 	u32 vidcon0;
 	int ret = 0;
-	int i;
 
 	mutex_lock(&sfb->output_lock);
 
