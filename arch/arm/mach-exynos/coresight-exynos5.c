@@ -318,7 +318,7 @@ static int __init cs_exynos5_init(void)
 	int i;
 	int ret;
 
-#if defined(CONFIG_MACH_SMDK5250)
+#if defined(CONFIG_MACH_SMDK5250) || defined(CONFIG_MACH_ARNDALE)
 	/* HACK */
 	return 0;
 #endif
