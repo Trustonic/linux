@@ -205,11 +205,21 @@ static struct list_head dev_list = LIST_HEAD_INIT(dev_list);
 int exynos_add_lpa_device(enum lpa_check_device_t cdev)
 {
 	struct cpuidle_lpa_device *lpa_device;
+	struct cpuidle_lpa_device *lpa_cdev, *next;
 	int ret = 0;
 
 	if (cdev < 0 || cdev >= LPA_CDEV_END) {
 		ret = -EINVAL;
 		goto cdev_err;
+	}
+
+	list_for_each_entry_safe(lpa_cdev, next, &dev_list, node) {
+		if (lpa_cdev->cdev == cdev) {
+			pr_err("already registered cpuidle_lpa_device(%d)\n",
+				cdev);
+			ret = -EINVAL;
+			goto cdev_err;
+		}
 	}
 
 	lpa_device = kzalloc(sizeof(struct cpuidle_lpa_device), GFP_KERNEL);
