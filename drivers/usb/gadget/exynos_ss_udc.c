@@ -2084,7 +2084,7 @@ static void exynos_ss_udc_irq_ulstchng(struct exynos_ss_udc *udc, u32 event)
 	}
 
 	/* Disconnect event detection for SMDK5250 EVT0 */
-#if defined(CONFIG_MACH_SMDK5250)
+#if defined(CONFIG_MACH_SMDK5250) || defined(CONFIG_MACH_ARNDALE)
 	if (udc->core->release == 0x185a) {
 		if (link_state == EXYNOS_USB3_DEVT_EvtInfo_Suspend ||
 		    link_state == EXYNOS_USB3_DEVT_EvtInfo_SS_DIS) {

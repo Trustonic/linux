@@ -123,7 +123,7 @@ static struct dw_mci_board exynos_dwmci0_pdata __initdata = {
 	.get_bus_wd		= exynos_dwmci0_get_bus_wd,
 	.sdr_timing		= 0x03020001,
 	.ddr_timing		= 0x03030002,
-	.clk_drv		= 0x3,
+	.clk_drv		= 0x1,
 };
 
 static int exynos_dwmci_get_ro(u32 slot_id)
