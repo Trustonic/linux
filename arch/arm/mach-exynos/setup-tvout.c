@@ -41,13 +41,13 @@ struct platform_device; /* don't need the contents */
 void s5p_int_src_hdmi_hpd(struct platform_device *pdev)
 {
 	s3c_gpio_cfgpin(HDMI_GPX(7), S3C_GPIO_SFN(0x3));
-	s3c_gpio_setpull(HDMI_GPX(7), S3C_GPIO_PULL_DOWN);
+	s3c_gpio_setpull(HDMI_GPX(7), S3C_GPIO_PULL_NONE);
 }
 
 void s5p_int_src_ext_hpd(struct platform_device *pdev)
 {
 	s3c_gpio_cfgpin(HDMI_GPX(7), S3C_GPIO_SFN(0xf));
-	s3c_gpio_setpull(HDMI_GPX(7), S3C_GPIO_PULL_DOWN);
+	s3c_gpio_setpull(HDMI_GPX(7), S3C_GPIO_PULL_NONE);
 }
 
 int s5p_hpd_read_gpio(struct platform_device *pdev)
@@ -63,13 +63,13 @@ int s5p_v4l2_hpd_read_gpio(void)
 void s5p_v4l2_int_src_hdmi_hpd(void)
 {
 	s3c_gpio_cfgpin(HDMI_GPX(7), S3C_GPIO_SFN(0x3));
-	s3c_gpio_setpull(HDMI_GPX(7), S3C_GPIO_PULL_DOWN);
+	s3c_gpio_setpull(HDMI_GPX(7), S3C_GPIO_PULL_NONE);
 }
 
 void s5p_v4l2_int_src_ext_hpd(void)
 {
 	s3c_gpio_cfgpin(HDMI_GPX(7), S3C_GPIO_SFN(0xf));
-	s3c_gpio_setpull(HDMI_GPX(7), S3C_GPIO_PULL_DOWN);
+	s3c_gpio_setpull(HDMI_GPX(7), S3C_GPIO_PULL_NONE);
 }
 
 void s5p_cec_cfg_gpio(struct platform_device *pdev)
