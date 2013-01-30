@@ -1270,8 +1270,7 @@ static int vidioc_s_fmt_vid_out_mplane(struct file *file, void *priv,
 			mfc_err("Err returning instance.\n");
 		}
 		/* Free resources */
-		if (!ctx->is_drm)
-			s5p_mfc_release_instance_buffer(ctx);
+		s5p_mfc_release_instance_buffer(ctx);
 		s5p_mfc_release_dec_desc_buffer(ctx);
 
 		ctx->state = MFCINST_INIT;
@@ -1317,8 +1316,7 @@ static int vidioc_s_fmt_vid_out_mplane(struct file *file, void *priv,
 		}
 	}
 
-	if (!ctx->is_drm)
-		s5p_mfc_alloc_instance_buffer(ctx);
+	s5p_mfc_alloc_instance_buffer(ctx);
 	s5p_mfc_alloc_dec_temp_buffers(ctx);
 
 	spin_lock_irqsave(&dev->condlock, flags);

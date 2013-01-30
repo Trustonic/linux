@@ -272,19 +272,21 @@ int s5p_mfc_alloc_instance_buffer(struct s5p_mfc_ctx *ctx)
 
 	ctx->ctx.ofs = OFFSETA(s5p_mfc_mem_daddr(ctx->ctx.alloc));
 
-	ctx->ctx.virt = s5p_mfc_mem_vaddr(ctx->ctx.alloc);
-	if (!ctx->ctx.virt) {
-		s5p_mfc_mem_free(ctx->ctx.alloc);
-		ctx->ctx.alloc = NULL;
-		ctx->ctx.ofs = 0;
-		ctx->ctx.virt = NULL;
+	if (!ctx->is_drm) {
+		ctx->ctx.virt = s5p_mfc_mem_vaddr(ctx->ctx.alloc);
+		if (!ctx->ctx.virt) {
+			s5p_mfc_mem_free(ctx->ctx.alloc);
+			ctx->ctx.alloc = NULL;
+			ctx->ctx.ofs = 0;
+			ctx->ctx.virt = NULL;
 
-		mfc_err("Remapping context buffer failed.\n");
-		return -ENOMEM;
+			mfc_err("Remapping context buffer failed.\n");
+			return -ENOMEM;
+		}
+
+		memset(ctx->ctx.virt, 0, ctx->ctx_buf_size);
+		s5p_mfc_cache_clean_priv(ctx->ctx.alloc);
 	}
-
-	memset(ctx->ctx.virt, 0, ctx->ctx_buf_size);
-	s5p_mfc_cache_clean_priv(ctx->ctx.alloc);
 	/*
 	ctx->ctx.dma = dma_map_single(ctx->dev->v4l2_dev.dev,
 					  ctx->ctx.virt, ctx->ctx_buf_size,

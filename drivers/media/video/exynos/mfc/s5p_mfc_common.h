@@ -34,6 +34,7 @@
 #define MFC_FRAME_PLANES	2
 
 #define MFC_NUM_CONTEXTS	16
+#define MFC_MAX_DRM_CTX		2
 /* Interrupt timeout */
 #define MFC_INT_TIMEOUT		2000
 /* Busy wait timeout */

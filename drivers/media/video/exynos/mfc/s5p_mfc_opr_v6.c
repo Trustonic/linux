@@ -280,10 +280,8 @@ int s5p_mfc_alloc_instance_buffer(struct s5p_mfc_ctx *ctx)
 		break;
 	}
 
-	if (ctx->is_drm) {
-		ctx->ctx_buf_size = buf_size->h264_dec_ctx;
+	if (ctx->is_drm)
 		alloc_ctx = dev->alloc_ctx_drm;
-	}
 
 	ctx->ctx.alloc = s5p_mfc_mem_alloc(alloc_ctx, ctx->ctx_buf_size);
 	if (IS_ERR(ctx->ctx.alloc)) {
@@ -365,8 +363,6 @@ int s5p_mfc_alloc_dev_context_buffer(struct s5p_mfc_dev *dev)
 		mfc_err("Remapping DESC buffer failed.\n");
 		return -ENOMEM;
 	}
-
-	s5p_mfc_cache_inv_priv(dev->ctx_buf.alloc);
 
 	mfc_debug_leave();
 

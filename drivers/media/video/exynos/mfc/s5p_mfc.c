@@ -61,15 +61,20 @@ static struct proc_dir_entry *mfc_proc_entry;
 #define MFC_DRM_MAGIC_CHUNK2	0x5e87f4f5
 #define MFC_DRM_MAGIC_CHUNK3	0x3bd05317
 
-static bool check_magic(unsigned char *addr)
+static int check_magic(unsigned char *addr)
 {
 	if (((u32)*(u32 *)(addr) == MFC_DRM_MAGIC_CHUNK0) &&
 	    ((u32)*(u32 *)(addr + 0x4) == MFC_DRM_MAGIC_CHUNK1) &&
 	    ((u32)*(u32 *)(addr + 0x8) == MFC_DRM_MAGIC_CHUNK2) &&
 	    ((u32)*(u32 *)(addr + 0xC) == MFC_DRM_MAGIC_CHUNK3))
-		return true;
+		return 0;
+	else if (((u32)*(u32 *)(addr + 0x10) == MFC_DRM_MAGIC_CHUNK0) &&
+	    ((u32)*(u32 *)(addr + 0x14) == MFC_DRM_MAGIC_CHUNK1) &&
+	    ((u32)*(u32 *)(addr + 0x18) == MFC_DRM_MAGIC_CHUNK2) &&
+	    ((u32)*(u32 *)(addr + 0x1C) == MFC_DRM_MAGIC_CHUNK3))
+		return 0x10;
 	else
-		return false;
+		return -1;
 }
 
 static inline void clear_magic(unsigned char *addr)
@@ -974,6 +979,7 @@ static int s5p_mfc_open(struct file *file)
 	unsigned long flags;
 	int ret = 0;
 	enum s5p_mfc_node_type node;
+	int magic_offset;
 
 	mfc_debug_enter();
 
@@ -984,13 +990,6 @@ static int s5p_mfc_open(struct file *file)
 		goto err_node_type;
 	}
 
-#ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
-	if (dev->num_drm_inst > 0) {
-		mfc_err("DRM instance was activated, cannot open no more instance\n");
-		ret = -EINVAL;
-		goto err_drm_playback;
-	}
-#endif
 	dev->num_inst++;	/* It is guarded by mfc_mutex in vfd */
 	if (dev->num_inst == 1)
 		__pm_stay_awake(&dev->mfc_ws);
@@ -1042,17 +1041,30 @@ static int s5p_mfc_open(struct file *file)
 	}
 
 #ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
-	if (check_magic(dev->drm_info.virt)) {
-		if (dev->num_inst == 1) {
+	/* Multi-instance is supported for same DRM type */
+	magic_offset = check_magic(dev->drm_info.virt);
+	if (magic_offset >= 0) {
+		clear_magic(dev->drm_info.virt + magic_offset);
+		if (dev->num_drm_inst < MFC_MAX_DRM_CTX) {
 			mfc_debug(1, "DRM instance opened\n");
 
 			dev->num_drm_inst++;
 			ctx->is_drm = 1;
-
-			s5p_mfc_alloc_instance_buffer(ctx);
 		} else {
-			clear_magic(dev->drm_info.virt);
-			mfc_err("MFC instances are not cleared before DRM instance!\n");
+			mfc_err("Too many instance are opened for DRM\n");
+			ret = -EINVAL;
+			goto err_drm_start;
+		}
+		if (dev->num_inst != dev->num_drm_inst) {
+			mfc_err("Can not open DRM instance\n");
+			mfc_err("Non-DRM instance is already opened.\n");
+			ret = -EINVAL;
+			goto err_drm_inst;
+		}
+	} else {
+		if (dev->num_drm_inst) {
+			mfc_err("Can not open non-DRM instance\n");
+			mfc_err("DRM instance is already opened.\n");
 			ret = -EINVAL;
 			goto err_drm_start;
 		}
@@ -1065,9 +1077,7 @@ static int s5p_mfc_open(struct file *file)
 					msecs_to_jiffies(MFC_WATCHDOG_INTERVAL);
 		add_timer(&dev->watchdog_timer);
 #ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
-		if (check_magic(dev->drm_info.virt)) {
-			clear_magic(dev->drm_info.virt);
-
+		if (ctx->is_drm) {
 			if (!dev->fw_status) {
 				ret = s5p_mfc_alloc_firmware(dev);
 				if (ret)
@@ -1088,8 +1098,6 @@ static int s5p_mfc_open(struct file *file)
 				dev->fw_status = 1;
 			}
 		}
-
-		s5p_mfc_alloc_dev_context_buffer(dev);
 #else
 		/* Load the FW */
 		ret = s5p_mfc_alloc_firmware(dev);
@@ -1100,8 +1108,9 @@ static int s5p_mfc_open(struct file *file)
 		if (ret)
 			goto err_fw_load;
 
-		s5p_mfc_alloc_dev_context_buffer(dev);
 #endif
+		s5p_mfc_alloc_dev_context_buffer(dev);
+
 		mfc_debug(2, "power on\n");
 		ret = s5p_mfc_power_on();
 		if (ret < 0) {
@@ -1135,12 +1144,11 @@ err_fw_load:
 
 err_fw_alloc:
 	del_timer_sync(&dev->watchdog_timer);
-	if (ctx->is_drm) {
-		s5p_mfc_release_instance_buffer(ctx);
-		dev->num_drm_inst--;
-	}
-
 #ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
+err_drm_inst:
+	if (ctx->is_drm)
+		dev->num_drm_inst--;
+
 err_drm_start:
 #endif
 	call_cop(ctx, cleanup_ctx_ctrls, ctx);
@@ -1164,9 +1172,6 @@ err_ctx_alloc:
 	if (dev->num_inst == 0)
 		__pm_relax(&dev->mfc_ws);
 
-#ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
-err_drm_playback:
-#endif
 err_node_type:
 	mfc_debug_leave();
 
@@ -1207,8 +1212,7 @@ static int s5p_mfc_release(struct file *file)
 		}
 		/* Free resources */
 		s5p_mfc_release_codec_buffers(ctx);
-		if (!ctx->is_drm)
-			s5p_mfc_release_instance_buffer(ctx);
+		s5p_mfc_release_instance_buffer(ctx);
 		if (ctx->type == MFCINST_DECODER)
 			s5p_mfc_release_dec_desc_buffer(ctx);
 
@@ -1218,11 +1222,8 @@ static int s5p_mfc_release(struct file *file)
 	if (dev->curr_ctx == ctx->num)
 		clear_bit(ctx->num, &dev->hw_lock);
 
-	if (ctx->is_drm) {
+	if (ctx->is_drm)
 		dev->num_drm_inst--;
-		if (dev->num_drm_inst == 0)
-			s5p_mfc_release_instance_buffer(ctx);
-	}
 	dev->num_inst--;
 
 	vb2_queue_release(&ctx->vq_src);

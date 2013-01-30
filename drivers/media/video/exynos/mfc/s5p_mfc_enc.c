@@ -1893,8 +1893,7 @@ static int vidioc_s_fmt(struct file *file, void *priv, struct v4l2_format *f)
 
 		ctx->capture_state = QUEUE_FREE;
 
-		if (!ctx->is_drm)
-			s5p_mfc_alloc_instance_buffer(ctx);
+		s5p_mfc_alloc_instance_buffer(ctx);
 
 		spin_lock_irqsave(&dev->condlock, flags);
 		set_bit(ctx->num, &dev->ctx_work_bits);
