@@ -2155,6 +2155,7 @@ static int s5p_mfc_stop_streaming(struct vb2_queue *q)
 	struct s5p_mfc_dev *dev = ctx->dev;
 	int aborted = 0;
 	int index = 0;
+	int prev_state;
 
 	if ((ctx->state == MFCINST_FINISHING ||
 		ctx->state ==  MFCINST_RUNNING) &&
@@ -2202,6 +2203,17 @@ static int s5p_mfc_stop_streaming(struct vb2_queue *q)
 
 	spin_unlock_irqrestore(&dev->irqlock, flags);
 
+	if (IS_MFCV6(dev) && q->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
+		prev_state = ctx->state;
+		ctx->state = MFCINST_DPB_FLUSHING;
+		spin_lock_irq(&dev->condlock);
+		set_bit(ctx->num, &dev->ctx_work_bits);
+		spin_unlock_irq(&dev->condlock);
+		s5p_mfc_try_run(dev);
+		if (s5p_mfc_wait_for_done_ctx(ctx,
+				S5P_FIMV_R2H_CMD_DPB_FLUSH_RET));
+		ctx->state = prev_state;
+	}
 	return 0;
 }
 

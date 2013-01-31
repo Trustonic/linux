@@ -374,6 +374,7 @@
 #define S5P_FIMV_D_NUM_MV			-1
 #define S5P_FIMV_MFC_VERSION			0
 #define S5P_FIMV_ERR_FRAME_CONCEAL		-1
+#define S5P_FIMV_R2H_CMD_DPB_FLUSH_RET		-2
 
 /* Error handling defines */
 #define S5P_FIMV_ERR_WARNINGS_START		145

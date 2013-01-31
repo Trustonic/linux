@@ -774,12 +774,24 @@ static irqreturn_t s5p_mfc_irq(int irq, void *priv)
 		ctx->inst_no = s5p_mfc_get_inst_no();
 		ctx->state = MFCINST_GOT_INST;
 		clear_work_bit(ctx);
+		if (test_and_clear_bit(ctx->num, &dev->hw_lock) == 0)
+			BUG();
 		wake_up_ctx(ctx, reason, err);
 		goto irq_cleanup_hw;
 		break;
 	case S5P_FIMV_R2H_CMD_CLOSE_INSTANCE_RET:
 		clear_work_bit(ctx);
 		ctx->state = MFCINST_FREE;
+		if (test_and_clear_bit(ctx->num, &dev->hw_lock) == 0)
+			BUG();
+		wake_up_ctx(ctx, reason, err);
+		goto irq_cleanup_hw;
+		break;
+	case S5P_FIMV_R2H_CMD_DPB_FLUSH_RET:
+		ctx->state = MFCINST_ABORT;
+		clear_work_bit(ctx);
+		if (test_and_clear_bit(ctx->num, &dev->hw_lock) == 0)
+			BUG();
 		wake_up_ctx(ctx, reason, err);
 		goto irq_cleanup_hw;
 		break;
@@ -848,8 +860,6 @@ done:
 
 irq_cleanup_hw:
 	s5p_mfc_clear_int_flags();
-	if (test_and_clear_bit(ctx->num, &dev->hw_lock) == 0)
-		mfc_err("Failed to unlock hw.\n");
 
 	s5p_mfc_clock_off();
 
