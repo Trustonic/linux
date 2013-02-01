@@ -167,22 +167,22 @@ static long secmem_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 		client = ion_client_create(ion_exynos, "DRM");
 		if (IS_ERR(client))
-			printk(KERN_ERR "%s: Failed to get ion_client of DRM\n",
+			pr_err("%s: Failed to get ion_client of DRM\n",
 				__func__);
 
 		data.fd = fd_info.fd;
 		data.handle = ion_import_dma_buf(client, data.fd);
-		printk(KERN_DEBUG "%s: fd from user space = %d\n",
+		pr_debug("%s: fd from user space = %d\n",
 				__func__, fd_info.fd);
 		if (IS_ERR(data.handle))
-			printk(KERN_ERR "%s: Failed to get ion_handle of DRM\n",
+			pr_err("%s: Failed to get ion_handle of DRM\n",
 				__func__);
 
 		if (ion_phys(client, data.handle, &fd_info.phys, &len))
-			printk(KERN_ERR "%s: Failed to get phys. addr of DRM\n",
+			pr_err("%s: Failed to get phys. addr of DRM\n",
 				__func__);
 
-		printk(KERN_DEBUG "%s: physical addr from kernel space = 0x%08x\n",
+		pr_debug("%s: physical addr from kernel space = 0x%08x\n",
 				__func__, (unsigned int)fd_info.phys);
 
 		ion_free(client, data.handle);
@@ -228,7 +228,7 @@ static long secmem_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 				ret = crypto_driver->lock();
 				if (ret == 0)
 					break;
-				printk(KERN_ERR "%s : Retry to get sync lock.\n",
+				pr_err("%s : Retry to get sync lock.\n",
 					__func__);
 			}
 			return ret;
@@ -279,7 +279,7 @@ static int __init secmem_init(void)
 
 	ret = misc_register(&secmem);
 	if (ret) {
-		printk(KERN_ERR "%s: SECMEM can't register misc on minor=%d\n",
+		pr_err("%s: SECMEM can't register misc on minor=%d\n",
 			__func__, MISC_DYNAMIC_MINOR);
 		return ret;
 	}
