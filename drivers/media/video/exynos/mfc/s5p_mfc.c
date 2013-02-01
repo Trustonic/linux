@@ -432,13 +432,15 @@ static void s5p_mfc_handle_frame_new(struct s5p_mfc_ctx *ctx, unsigned int err)
 				dec->immediate_display = 0;
 			}
 
-			ctx->last_framerate =
-				get_framerate(&ctx->last_timestamp,
-					&dst_buf->vb.v4l2_buf.timestamp);
+			if (!dec->is_dts_mode) {
+				ctx->last_framerate =
+					get_framerate(&ctx->last_timestamp,
+						&dst_buf->vb.v4l2_buf.timestamp);
 
-			memcpy(&ctx->last_timestamp,
-				&dst_buf->vb.v4l2_buf.timestamp,
-				sizeof(struct timeval));
+				memcpy(&ctx->last_timestamp,
+					&dst_buf->vb.v4l2_buf.timestamp,
+					sizeof(struct timeval));
+			}
 
 			vb2_buffer_done(&dst_buf->vb,
 				s5p_mfc_err_dspl(err) ?

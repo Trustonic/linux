@@ -306,6 +306,15 @@ static struct v4l2_queryctrl controls[] = {
 		.step = 1,
 		.default_value = 0,
 	},
+	{
+		.id = V4L2_CID_MPEG_VIDEO_DECODER_DECODING_TIMESTAMP_MODE,
+		.type = V4L2_CTRL_TYPE_BOOLEAN,
+		.name = "Decoding Timestamp Mode Enable",
+		.minimum = 0,
+		.maximum = 1,
+		.step = 1,
+		.default_value = 0,
+	},
 };
 
 #define NUM_CTRLS ARRAY_SIZE(controls)
@@ -1495,6 +1504,7 @@ static int vidioc_querybuf(struct file *file, void *priv,
 static int vidioc_qbuf(struct file *file, void *priv, struct v4l2_buffer *buf)
 {
 	struct s5p_mfc_ctx *ctx = fh_to_mfc_ctx(file->private_data);
+	struct s5p_mfc_dec *dec = ctx->dec_priv;
 
 	mfc_debug_enter();
 
@@ -1504,10 +1514,19 @@ static int vidioc_qbuf(struct file *file, void *priv, struct v4l2_buffer *buf)
 		return -EIO;
 	}
 
-	if (buf->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE)
+	if (buf->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE) {
+		if (dec->is_dts_mode) {
+			ctx->last_framerate =
+				get_framerate(&ctx->last_timestamp,
+						&buf->timestamp);
+
+			memcpy(&ctx->last_timestamp, &buf->timestamp,
+				sizeof(struct timeval));
+		}
 		return vb2_qbuf(&ctx->vq_src, buf);
-	else
+	} else {
 		return vb2_qbuf(&ctx->vq_dst, buf);
+	}
 
 	mfc_debug_leave();
 	return -EINVAL;
@@ -1782,6 +1801,9 @@ static int vidioc_s_ctrl(struct file *file, void *priv,
 		break;
 	case V4L2_CID_MPEG_VIDEO_DECODER_IMMEDIATE_DISPLAY:
 		dec->immediate_display = ctrl->value;
+		break;
+	case V4L2_CID_MPEG_VIDEO_DECODER_DECODING_TIMESTAMP_MODE:
+		dec->is_dts_mode = ctrl->value;
 		break;
 	default:
 		list_for_each_entry(ctx_ctrl, &ctx->ctrls, list) {
@@ -2368,6 +2390,7 @@ int s5p_mfc_init_dec_ctx(struct s5p_mfc_ctx *ctx)
 	dec->is_packedpb = 0;
 	dec->is_interlaced = 0;
 	dec->immediate_display = 0;
+	dec->is_dts_mode = 0;
 
 	/* Init videobuf2 queue for OUTPUT */
 	ctx->vq_src.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;

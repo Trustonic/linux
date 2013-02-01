@@ -504,6 +504,7 @@ struct s5p_mfc_dec {
 	int slice_enable;
 	int mv_count;
 	int is_interlaced;
+	int is_dts_mode;
 
 	int crc_enable;
 	int crc_luma0;
