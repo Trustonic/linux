@@ -587,11 +587,11 @@ static inline void s5p_mfc_handle_error(struct s5p_mfc_ctx *ctx,
 	case MFCINST_RETURN_INST:
 		/* This error had to happen while releasing instance */
 		clear_work_bit(ctx);
-		wake_up_ctx(ctx, reason, err);
 		if (test_and_clear_bit(ctx->num, &dev->hw_lock) == 0)
 			BUG();
 
 		s5p_mfc_clock_off();
+		wake_up_ctx(ctx, reason, err);
 
 		break;
 	case MFCINST_FINISHING:

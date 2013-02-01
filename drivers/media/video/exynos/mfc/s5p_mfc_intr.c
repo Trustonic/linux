@@ -23,6 +23,8 @@
 #include "s5p_mfc_intr.h"
 #include "s5p_mfc_debug.h"
 
+#define is_err_cond(x) ((x->int_cond) && (x->int_type == S5P_FIMV_R2H_CMD_ERR_RET))
+
 int s5p_mfc_wait_for_done_dev(struct s5p_mfc_dev *dev, int command)
 {
 	int ret;
@@ -66,6 +68,13 @@ int s5p_mfc_wait_for_done_ctx(struct s5p_mfc_ctx *ctx, int command)
 		mfc_err("Interrupt (ctx->int_type:%d, command:%d) timed out.\n",
 							ctx->int_type, command);
 		return 1;
+	} else if (ret > 0) {
+		if (is_err_cond(ctx)) {
+			mfc_err("Finished (ctx->int_type:%d, command: %d).\n",
+					ctx->int_type, command);
+			mfc_err("But error (ctx->int_err:%d).\n", ctx->int_err);
+			return -1;
+		}
 	}
 	mfc_debug(1, "Finished waiting (ctx->int_type:%d, command: %d).\n",
 							ctx->int_type, command);
