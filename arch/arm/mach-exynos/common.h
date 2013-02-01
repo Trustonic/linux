@@ -13,6 +13,7 @@
 #define __ARCH_ARM_MACH_EXYNOS_COMMON_H
 
 extern struct sys_timer exynos4_timer;
+extern int s3c_irq_wake(struct irq_data *d , unsigned int i);
 
 void exynos_init_io(struct map_desc *mach_desc, int size);
 void exynos_register_audss_clocks(void);
