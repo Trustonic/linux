@@ -34,7 +34,6 @@ struct miscdevice secmem;
 struct secmem_crypto_driver_ftn *crypto_driver;
 
 static char *secmem_regions[] = {
-#if defined(CONFIG_SOC_EXYNOS5250)
 	"mfc_sh",	/* 0 */
 	"msgbox_sh",	/* 1 */
 	"fimd_video",	/* 2 */
@@ -42,7 +41,6 @@ static char *secmem_regions[] = {
 	"mfc_input",	/* 4 */
 	"mfc_fw",	/* 5 */
 	"sectbl",	/* 6 */
-#endif
 	NULL
 };
 
