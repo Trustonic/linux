@@ -810,8 +810,6 @@ static void exynos_ss_udc_start_req(struct exynos_ss_udc *udc,
 	const struct usb_endpoint_descriptor *desc = udc_ep->ep.desc;
 	struct exynos_ss_udc_ep_command epcmd = {{0}, };
 	struct usb_request *ureq = &udc_req->req;
-	struct exynos_ss_udc_trb *trb;
-	dma_addr_t trb_dma;
 	enum trb_control trb_type = NORMAL;
 	int epnum = udc_ep->epnum;
 	int xfer_length;
@@ -863,25 +861,17 @@ static void exynos_ss_udc_start_req(struct exynos_ss_udc *udc,
 	else
 		trb_type = NORMAL;
 
-	/* Get TRB */
-	if (!send_zlp) {
-		trb = exynos_ss_udc_get_free_trb(udc_ep, &trb_dma);
-	} else {
-		/* For ZLP reuse request's TRB */
-		trb = udc_req->trb;
-		trb_dma = udc_req->trb_dma;
-	}
-
-	if (!trb) {
+	/* Get TRB; for ZLP reuse request's TRB */
+	if (!send_zlp)
+		udc_req->trb = exynos_ss_udc_get_free_trb(udc_ep,
+							 &udc_req->trb_dma);
+	if (!udc_req->trb) {
 		dev_dbg(udc->dev, "%s: no available TRB\n", __func__);
 		return;
 	}
 
-	if (!send_zlp) {
-		udc_req->trb = trb;
-		udc_req->trb_dma = trb_dma;
+	if (!send_zlp)
 		list_move_tail(&udc_req->queue, &udc_ep->req_started);
-	}
 
 	/* Get transfer length */
 	if (send_zlp)
@@ -890,24 +880,24 @@ static void exynos_ss_udc_start_req(struct exynos_ss_udc *udc,
 		xfer_length = ureq->length & EXYNOS_USB3_TRB_BUFSIZ_MASK;
 
 	/* Fill TRB */
-	trb->buff_ptr_low = (u32) ureq->dma;
-	trb->buff_ptr_high = 0;
-	trb->param1 = EXYNOS_USB3_TRB_BUFSIZ(xfer_length);
-	trb->param2 = EXYNOS_USB3_TRB_TRBCTL(trb_type);
+	udc_req->trb->buff_ptr_low = (u32) ureq->dma;
+	udc_req->trb->buff_ptr_high = 0;
+	udc_req->trb->param1 = EXYNOS_USB3_TRB_BUFSIZ(xfer_length);
+	udc_req->trb->param2 = EXYNOS_USB3_TRB_TRBCTL(trb_type);
 
 	if (desc && usb_endpoint_xfer_isoc(desc))
-		trb->param2 |= EXYNOS_USB3_TRB_ISP_IMI |
-			       EXYNOS_USB3_TRB_CSP |
-			       EXYNOS_USB3_TRB_IOC;
+		udc_req->trb->param2 |= EXYNOS_USB3_TRB_ISP_IMI |
+					EXYNOS_USB3_TRB_CSP |
+					EXYNOS_USB3_TRB_IOC;
 	else
-		trb->param2 |= EXYNOS_USB3_TRB_LST;
+		udc_req->trb->param2 |= EXYNOS_USB3_TRB_LST;
 
-	trb->param2 |= EXYNOS_USB3_TRB_HWO;
+	udc_req->trb->param2 |= EXYNOS_USB3_TRB_HWO;
 
 	/* Start/update Transfer */
 	epcmd.ep = get_phys_epnum(udc_ep);
 	epcmd.param0 = 0;
-	epcmd.param1 = trb_dma;
+	epcmd.param1 = udc_req->trb_dma;
 
 	if (desc && usb_endpoint_xfer_isoc(desc)) {
 		if (udc_ep->tri) {
