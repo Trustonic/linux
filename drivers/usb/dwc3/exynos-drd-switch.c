@@ -193,6 +193,9 @@ static int exynos_drd_switch_start_host(struct usb_otg *otg, int on)
 	xhci_dev = hcd->self.controller;
 
 	if (on) {
+		if (xhci_dev->power.is_suspended)
+			return -EAGAIN;
+
 		/*
 		 * Clear runtime_error flag. The flag could be
 		 * set when user space accessed the host while DRD
