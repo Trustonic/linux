@@ -33,7 +33,7 @@
 #define MFC_MAX_REF_BUFS	2
 #define MFC_FRAME_PLANES	2
 
-#define MFC_NUM_CONTEXTS	4
+#define MFC_NUM_CONTEXTS	16
 /* Interrupt timeout */
 #define MFC_INT_TIMEOUT		2000
 /* Busy wait timeout */
