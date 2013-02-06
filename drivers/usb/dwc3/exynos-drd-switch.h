@@ -38,6 +38,7 @@ enum id_pin_state {
  * @work: OTG state machine work.
  * @vbus_active: true if VBus is applied in device mode, false otherwise.
  * @id_state: last value of ID GPIO.
+ * @lock: lock to protect the switch state.
  */
 struct exynos_drd_switch {
 	struct exynos_drd_core *core;
@@ -52,6 +53,7 @@ struct exynos_drd_switch {
 	struct mutex mutex;
 	bool vbus_active;
 	enum id_pin_state id_state;
+	spinlock_t lock;
 };
 
 int exynos_drd_switch_init(struct exynos_drd *drd);
