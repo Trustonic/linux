@@ -117,8 +117,14 @@ void s5p_cec_unmask_tx_interrupts(void)
 
 void s5p_cec_reset(void)
 {
+	u8 reg;
+
 	writeb(S5P_CES_RX_CTRL_RESET, cec_base + S5P_CES_RX_CTRL);
 	writeb(S5P_CES_TX_CTRL_RESET, cec_base + S5P_CES_TX_CTRL);
+
+	reg = readb(cec_base + 0xc4);
+	reg &= ~0x1;
+	writeb(reg, cec_base + 0xc4);
 }
 
 void s5p_cec_tx_reset(void)
@@ -128,7 +134,13 @@ void s5p_cec_tx_reset(void)
 
 void s5p_cec_rx_reset(void)
 {
+	u8 reg;
+
 	writeb(S5P_CES_RX_CTRL_RESET, cec_base + S5P_CES_RX_CTRL);
+
+	reg = readb(cec_base + 0xc4);
+	reg &= ~0x1;
+	writeb(reg, cec_base + 0xc4);
 }
 
 void s5p_cec_threshold(void)
