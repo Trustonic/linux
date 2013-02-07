@@ -253,7 +253,6 @@ static unsigned int exynos_thermal_lower_speed(void)
 
 int exynos_thermal_throttle_min_freq(unsigned int freq)
 {
-	struct cpufreq_frequency_table *freq_table = exynos_info->freq_table;
 	struct cpufreq_policy *policy = cpufreq_cpu_get(0);
 	unsigned int index, cur;
 	int ret = 0;
@@ -266,7 +265,7 @@ int exynos_thermal_throttle_min_freq(unsigned int freq)
 	if (!freq)
 		min_thermal_freq = min_freq;
 
-	if (cpufreq_frequency_table_target(policy, freq_table,
+	if (cpufreq_frequency_table_target(policy, exynos_info->freq_table,
 					   freq, 0, &index)) {
 		ret = -EINVAL;
 		goto out;
