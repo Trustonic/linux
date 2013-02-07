@@ -273,6 +273,7 @@ static irqreturn_t s5p_cec_irq_handler(int irq, void *dev_id)
 		if (status & CEC_STATUS_RX_ERROR) {
 			tvout_dbg(" CEC_STATUS_RX_ERROR!\n");
 			s5p_cec_rx_reset();
+			s5p_cec_enable_rx();
 
 		} else {
 			u32 size;
