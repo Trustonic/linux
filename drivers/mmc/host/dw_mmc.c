@@ -3150,14 +3150,25 @@ int dw_mci_resume(struct dw_mci *host)
 
 	for (i = 0; i < host->num_slots; i++) {
 		struct dw_mci_slot *slot = host->slot[i];
+		struct mmc_ios ios;
 		if (!slot)
 			continue;
 
 		if (slot->mmc->pm_flags & MMC_PM_KEEP_POWER &&
 					dw_mci_get_cd(slot->mmc)) {
+			memcpy(&ios, &slot->mmc->ios,
+						sizeof(struct mmc_ios));
+			ios.timing = MMC_TIMING_LEGACY;
+			dw_mci_set_ios(slot->mmc, &ios);
 			dw_mci_set_ios(slot->mmc, &slot->mmc->ios);
 			dw_mci_ciu_clk_en(host);
 			dw_mci_setup_bus(slot, 1);
+			if (host->pdata->tuned) {
+				dw_mci_set_sampling(host,
+						host->pdata->clk_smpl);
+				mci_writel(host, CDTHRCTL,
+						host->cd_rd_thr << 16 | 1);
+			}
 			dw_mci_ciu_clk_dis(host);
 		}
 
