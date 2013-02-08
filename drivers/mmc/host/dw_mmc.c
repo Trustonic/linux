@@ -543,7 +543,8 @@ static bool dw_mci_fifo_reset(struct device *dev, struct dw_mci *host)
 					mci_writel(host, RINTSTS, ctrl);
 
 				/* After CTRL Reset, Should be needed clk val to CIU */
-				mci_send_cmd(host->cur_slot,
+				if (host->cur_slot)
+					mci_send_cmd(host->cur_slot,
 						SDMMC_CMD_UPD_CLK |
 						SDMMC_CMD_PRV_DAT_WAIT, 0);
 				return true;
@@ -1743,7 +1744,6 @@ static void dw_mci_tasklet_func(unsigned long priv)
 						&host->pending_events))
 				break;
 
-			host->data = NULL;
 			set_bit(EVENT_DATA_COMPLETE, &host->completed_events);
 			status = host->data_status;
 
@@ -1795,6 +1795,8 @@ static void dw_mci_tasklet_func(unsigned long priv)
 				data->bytes_xfered = data->blocks * data->blksz;
 				data->error = 0;
 			}
+
+			host->data = NULL;
 
 			if (!data->stop && !host->stop_snd) {
 				dw_mci_request_end(host, host->mrq);
