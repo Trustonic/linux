@@ -394,6 +394,7 @@ void exynos_sys_powerdown_conf(enum sys_powerdown mode)
 
 void exynos_xxti_sys_powerdown(bool enable)
 {
+	unsigned int i;
 	unsigned int value;
 	void __iomem *base;
 
@@ -408,6 +409,19 @@ void exynos_xxti_sys_powerdown(bool enable)
 		value &= ~EXYNOS_SYS_PWR_CFG;
 
 	__raw_writel(value, base);
+
+	for (i = 0; (exynos_pmu_config[i].reg != PMU_TABLE_END); i++) {
+		if (exynos_pmu_config[i].reg == base) {
+			if (enable)
+				exynos_pmu_config[i].val[SYS_SLEEP] = 0x1;
+			else
+				exynos_pmu_config[i].val[SYS_SLEEP] = 0x0;
+			break;
+		}
+	}
+
+	pr_debug("xxti_control: %u\n",
+			exynos_pmu_config[i].val[SYS_SLEEP]);
 }
 
 void exynos_reset_assert_ctrl(bool on)
