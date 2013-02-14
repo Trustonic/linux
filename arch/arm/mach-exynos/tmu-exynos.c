@@ -230,6 +230,12 @@ static void tmu_monitor(struct work_struct *work)
 		enable_irq(info->irq);
 		goto out;
 	case TMU_STATUS_THROTTLED:
+		if (info->mif_vol_offset_state) {
+			exynos5_busfreq_mif_request_voltage_offset(0);
+
+			info->mif_vol_offset_state = false;
+			pr_debug("tmu: restore mif voltage compensation\n");
+		}
 		if (cur_temp >= data->ts.start_tripping)
 			info->tmu_state = TMU_STATUS_TRIPPED;
 		else if (cur_temp > data->ts.stop_throttle)
@@ -241,6 +247,12 @@ static void tmu_monitor(struct work_struct *work)
 		if (cur_temp >= data->ts.start_emergency)
 			panic("Emergency thermal shutdown: temp=%d\n",
 			      cur_temp);
+		if (info->mif_vol_offset_state) {
+			exynos5_busfreq_mif_request_voltage_offset(0);
+
+			info->mif_vol_offset_state = false;
+			pr_debug("tmu: restore mif voltage compensation\n");
+		}
 		if (cur_temp >= data->ts.start_tripping) {
 			pr_err("thermal tripped: temp=%d\n", cur_temp);
 			/* Throttle twice while tripping */
@@ -589,12 +601,33 @@ static int tmu_suspend(struct platform_device *pdev, pm_message_t state)
 	struct tmu_info *info = platform_get_drvdata(pdev);
 
 	pm_tmu_save(info);
+
+	if (!info->mif_vol_offset_state) {
+		exynos5_busfreq_mif_request_voltage_offset(37500);
+		info->mif_vol_offset_state = true;
+		pr_debug("tmu: mif voltage compensation (+37.5 mV)\n");
+
+		exynos_thermal_unthrottle();
+	}
+
 	return 0;
 }
 
 static int tmu_resume(struct platform_device *pdev)
 {
 	struct tmu_info *info = platform_get_drvdata(pdev);
+
+	if (info->tmu_state == TMU_STATUS_INIT ||
+		info->tmu_state == TMU_STATUS_NORMAL ||
+		info->tmu_state == TMU_STATUS_THROTTLED ||
+		info->tmu_state == TMU_STATUS_TRIPPED) {
+		if (info->mif_vol_offset_state) {
+			exynos5_busfreq_mif_request_voltage_offset(0);
+
+			info->mif_vol_offset_state = false;
+			pr_debug("tmu: restore mif voltage compensation\n");
+		}
+	}
 
 	pm_tmu_restore(info);
 	return 0;
