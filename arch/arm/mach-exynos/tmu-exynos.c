@@ -109,6 +109,7 @@ static int exynos_tc_freq_lock(struct tmu_info *info, int enable)
 		if (ret)
 			goto err_lock;
 
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 		/* locking the mif frequency */
 		info->mif_handle = exynos5_bus_mif_min(info->miflevel_tc);
 		if (!info->mif_handle) {
@@ -122,6 +123,7 @@ static int exynos_tc_freq_lock(struct tmu_info *info, int enable)
 			ret = -EINVAL;
 			goto err_lock;
 		}
+#endif
 
 		/* locking the g3d frequency */
 		mali_dvfs_freq_under_lock(1);
@@ -133,6 +135,7 @@ static int exynos_tc_freq_lock(struct tmu_info *info, int enable)
 		if (ret)
 			goto err_lock;
 
+#ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
 		/* unlocking the mif frequency */
 		if (info->mif_handle) {
 			ret = exynos5_bus_mif_put(info->mif_handle);
@@ -146,6 +149,7 @@ static int exynos_tc_freq_lock(struct tmu_info *info, int enable)
 			if (ret)
 				goto err_lock;
 		}
+#endif
 
 		/* unlocking the g3d frequency */
 		mali_dvfs_freq_under_unlock();
