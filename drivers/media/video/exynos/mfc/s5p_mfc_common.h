@@ -534,6 +534,7 @@ struct s5p_mfc_dec {
 	dma_addr_t y_addr_for_pb;
 
 	int internal_dpb;
+	int cr_left, cr_right, cr_top, cr_bot;
 
 	/* For 6.x */
 	int remained;
