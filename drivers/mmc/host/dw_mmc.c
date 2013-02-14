@@ -518,6 +518,17 @@ static void mci_send_cmd(struct dw_mci_slot *slot, u32 cmd, u32 arg)
 		cmd, arg, cmd_status);
 }
 
+static void dw_mci_ciu_reset(struct device *dev, struct dw_mci *host)
+{
+	struct dw_mci_slot *slot = host->cur_slot;
+
+	if (slot) {
+		dw_mci_wait_reset(dev, host, SDMMC_CTRL_RESET);
+		mci_send_cmd(slot, SDMMC_CMD_UPD_CLK |
+			SDMMC_CMD_PRV_DAT_WAIT, 0);
+	}
+}
+
 static bool dw_mci_fifo_reset(struct device *dev, struct dw_mci *host)
 {
 	unsigned long timeout = jiffies + msecs_to_jiffies(1000);
@@ -525,8 +536,7 @@ static bool dw_mci_fifo_reset(struct device *dev, struct dw_mci *host)
 	bool result;
 
 	do {
-		result = dw_mci_wait_reset(&host->dev, host,
-				SDMMC_CTRL_RESET | SDMMC_CTRL_FIFO_RESET);
+		result = dw_mci_wait_reset(&host->dev, host, SDMMC_CTRL_FIFO_RESET);
 
 		if (!result)
 			break;
@@ -543,11 +553,6 @@ static bool dw_mci_fifo_reset(struct device *dev, struct dw_mci *host)
 				if (ctrl)
 					mci_writel(host, RINTSTS, ctrl);
 
-				/* After CTRL Reset, Should be needed clk val to CIU */
-				if (host->cur_slot)
-					mci_send_cmd(host->cur_slot,
-						SDMMC_CMD_UPD_CLK |
-						SDMMC_CMD_PRV_DAT_WAIT, 0);
 				return true;
 			}
 		}
@@ -1830,6 +1835,7 @@ static void dw_mci_tasklet_func(unsigned long priv)
 				sg_miter_stop(&host->sg_miter);
 				host->sg = NULL;
 				dw_mci_fifo_reset(&host->dev, host);
+				dw_mci_ciu_reset(&host->dev, host);
 			}
 
 			host->cmd = NULL;
@@ -2461,6 +2467,7 @@ static void dw_mci_timeout_timer(unsigned long data)
 			" state = %d\n", host->state);
 		dw_mci_reg_dump(host);
 		dw_mci_fifo_reset(&host->dev, host);
+		dw_mci_ciu_reset(&host->dev, host);
 		spin_lock(&host->lock);
 
 		dw_mci_request_end(host, mrq);
@@ -2563,6 +2570,7 @@ static void dw_mci_work_routine_card(struct work_struct *work)
 
 				dw_mci_ciu_clk_en(host);
 				dw_mci_fifo_reset(&host->dev, host);
+				dw_mci_ciu_reset(&host->dev, host);
 				dw_mci_ciu_clk_dis(host);
 #ifdef CONFIG_MMC_DW_IDMAC
 				dw_mci_idma_reset_dma(host);
