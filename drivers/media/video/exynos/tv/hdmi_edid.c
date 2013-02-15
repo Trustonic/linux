@@ -372,6 +372,9 @@ void edid_extension_update(struct fb_monspecs *specs)
 					= edid_3d_mandatory_presets;
 	int i;
 
+	if (!specs->vsdb)
+		return;
+
 	/* number of 128bytes blocks to follow */
 	source_phy_addr = specs->vsdb->phy_addr;
 
