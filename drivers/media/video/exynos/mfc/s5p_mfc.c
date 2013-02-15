@@ -624,7 +624,7 @@ static void s5p_mfc_handle_frame(struct s5p_mfc_ctx *ctx,
 
 			dec->y_addr_for_pb = MFC_GET_ADR(DEC_DECODED_Y);
 
-			stream_vir = vb2_plane_vaddr(&src_buf->vb, 0);
+			stream_vir = (unsigned char *)src_buf->kaddr.stream;
 			s5p_mfc_cache_inv(&src_buf->vb, 0);
 
 			offset = s5p_mfc_find_start_code(

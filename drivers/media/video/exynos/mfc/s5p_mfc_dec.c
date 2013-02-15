@@ -2249,6 +2249,9 @@ static void s5p_mfc_buf_queue(struct vb2_buffer *vb)
 		list_add_tail(&buf->list, &ctx->src_queue);
 		ctx->src_queue_cnt++;
 		spin_unlock_irqrestore(&dev->irqlock, flags);
+		if (!ctx->is_drm)
+			buf->kaddr.stream =
+				(dma_addr_t)vb2_plane_vaddr(&buf->vb, 0);
 	} else if (vq->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
 		buf->used = 0;
 		mfc_debug(2, "Dst queue: %p\n", &ctx->dst_queue);

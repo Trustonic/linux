@@ -146,6 +146,13 @@ struct s5p_mfc_buf {
 		dma_addr_t stream;
 	} planes;
 	int used;
+	union {
+		struct {
+			dma_addr_t luma;
+			dma_addr_t chroma;
+		} raw;
+		dma_addr_t stream;
+	} kaddr;
 };
 
 #define vb_to_mfc_buf(x)	\
