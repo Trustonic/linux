@@ -665,8 +665,10 @@ static int exynos_ss_udc_ep_sethalt(struct usb_ep *ep, int value)
 	}
 
 	if (epnum == 0) {
-		if (value)
+		if (value) {
 			udc->ep0_state = EP0_STALL;
+			udc->setup_pending = true;
+		}
 	} else {
 		udc_ep->halted = !!value;
 
@@ -790,6 +792,7 @@ static void exynos_ss_udc_start_req(struct exynos_ss_udc *udc,
 	/* Get type of TRB */
 	if (epnum == 0)
 		switch (udc->ep0_state) {
+		case EP0_STALL:
 		case EP0_SETUP_PHASE:
 			trb_type = CONTROL_SETUP;
 			break;
@@ -996,6 +999,8 @@ static void exynos_ss_udc_enqueue_setup(struct exynos_ss_udc *udc)
 	ret = exynos_ss_udc_ep_queue(&udc->eps[ep0index].ep, req, GFP_ATOMIC);
 	if (ret < 0)
 		dev_err(udc->dev, "Failed to enqueue SETUP\n");
+	else
+		udc->setup_pending = false;
 }
 
 /**
@@ -1797,7 +1802,6 @@ static void exynos_ss_udc_ep0_restart(struct exynos_ss_udc *udc)
 
 	exynos_ss_udc_ep_sethalt(&udc_ep0->ep, 1);
 	exynos_ss_udc_kill_all_requests(udc, udc_ep0, -ECONNRESET);
-	udc->ep0_state = EP0_SETUP_PHASE;
 	exynos_ss_udc_enqueue_setup(udc);
 }
 
@@ -1977,6 +1981,7 @@ sent_zlp:
 
 	if (udc_ep->epnum == 0) {
 		switch (udc->ep0_state) {
+		case EP0_STALL:
 		case EP0_SETUP_PHASE:
 			udc->ep0_state = EP0_DATA_PHASE;
 			break;
@@ -2099,10 +2104,19 @@ static void exynos_ss_udc_xfer_notready(struct exynos_ss_udc *udc,
 
 			break;
 
+		case EP0_STALL:
+			dev_dbg(udc->dev, "XferNotReady during EP0 Stall\n");
+			if (udc->setup_pending) {
+				exynos_ss_udc_kill_all_requests(udc, udc_ep,
+								-ECONNRESET);
+				exynos_ss_udc_enqueue_setup(udc);
+			}
+			break;
+
 		case EP0_STATUS_PHASE:
 			/* FALLTHROUGH */
 		default:
-			dev_dbg(udc->dev, "Unexpected XferNotReady\n");
+			dev_warn(udc->dev, "Unexpected XferNotReady\n");
 			break;
 		}
 	}

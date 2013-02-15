@@ -460,6 +460,7 @@ struct exynos_ss_udc_ep {
  * @ep0_three_stage: Set if control transfer has three stages.
  * @our_status: Indicate that UDC driver (not gadget) is responsible for Status
  *		stage handling.
+ * @setup_pending: Indicate that Setup transfer must be started at nearest time.
  * @ep0_buff: Buffer for EP0 data.
  * @ep0_buff_dma: EP0 data buffer DMA address.
  * @ctrl_buff: Buffer for EP0 control requests.
@@ -490,6 +491,7 @@ struct exynos_ss_udc {
 	enum ctrl_ep_state	ep0_state;
 	int			ep0_three_stage;
 	bool			our_status;
+	bool			setup_pending;
 
 	unsigned int		pullup_state:1;
 	unsigned int		vbus_state:1;
