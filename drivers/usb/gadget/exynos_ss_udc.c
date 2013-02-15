@@ -301,7 +301,7 @@ static void exynos_ss_udc_end_xfer(struct exynos_ss_udc *udc,
 	int phys_epnum = get_phys_epnum(udc_ep);
 	int res;
 
-	if (!udc_ep->tri)
+	if (!udc_ep->tri && udc_ep->epnum != 0)
 		return;
 
 	epcmd.ep = phys_epnum;
@@ -2254,14 +2254,41 @@ static void exynos_ss_udc_irq_connectdone(struct exynos_ss_udc *udc)
 }
 
 /**
+ * exynos_ss_udc_eps_reset - reset endpoints state
+ * @udc: The device state.
+ *
+ * End active transfer, kill all requests and clear halt on endpoints.
+ */
+static void exynos_ss_udc_eps_reset(struct exynos_ss_udc *udc)
+{
+	struct exynos_ss_udc_ep *udc_ep;
+	unsigned long flags;
+	int epindex;
+
+	for (epindex = 0; epindex < EXYNOS_USB3_EPS; epindex++) {
+		udc_ep = &udc->eps[epindex];
+
+		spin_lock_irqsave(&udc_ep->lock, flags);
+		/* End active transfer if any */
+		if (!list_empty(&udc_ep->req_started))
+			exynos_ss_udc_end_xfer(udc, udc_ep);
+		udc_ep->pending_xfer = 0;
+		spin_unlock_irqrestore(&udc_ep->lock, flags);
+
+		exynos_ss_udc_kill_all_requests(udc, udc_ep,
+				-ECONNRESET);
+
+		if (udc_ep->halted)
+			exynos_ss_udc_ep_sethalt(&udc_ep->ep, 0);
+	}
+}
+
+/**
  * exynos_ss_udc_irq_usbrst - process event USB Reset
  * @udc: The device state.
  */
 static void exynos_ss_udc_irq_usbrst(struct exynos_ss_udc *udc)
 {
-	struct exynos_ss_udc_ep *udc_ep;
-	int epindex;
-
 #ifdef CONFIG_USB_G_ANDROID
 	/*
 	 * Android MTP should be configuration after disconnect uevet
@@ -2283,23 +2310,11 @@ static void exynos_ss_udc_irq_usbrst(struct exynos_ss_udc *udc)
 	if (udc->core->ops->phy30_suspend)
 		udc->core->ops->phy30_suspend(udc->core, 0);
 
-	/* End transfer, kill all requests and clear STALL on the
-	   non-EP0 endpoints */
-	for (epindex = 0; epindex < EXYNOS_USB3_EPS; epindex++) {
-		int epnum = epindex_to_epnum(epindex, NULL);
+	exynos_ss_udc_eps_reset(udc);
 
-		udc_ep = &udc->eps[epindex];
-		udc_ep->pending_xfer = 0;
-
-		if (unlikely(epnum == 0))
-			continue;
-
-		exynos_ss_udc_end_xfer(udc, udc_ep);
-		exynos_ss_udc_kill_all_requests(udc, udc_ep, -ECONNRESET);
-
-		if (udc_ep->halted)
-			exynos_ss_udc_ep_sethalt(&udc_ep->ep, 0);
-	}
+	/* Reset EP0 state */
+	udc->ep0_state = EP0_SETUP_PHASE;
+	exynos_ss_udc_enqueue_setup(udc);
 
 	/* Set device address to 0 */
 	__bic32(udc->regs + EXYNOS_USB3_DCFG, EXYNOS_USB3_DCFG_DevAddr_MASK);
