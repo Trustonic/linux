@@ -906,6 +906,26 @@ mali_error kbase_region_tracker_init(kbase_context *kctx)
 	return MALI_ERROR_NONE;
 }
 
+static int total_mem_used_show(struct seq_file *s, void *data)
+{
+	kbase_device *kbdev = (kbase_device *)s->private;
+	u64 pages = atomic_read(&kbdev->total_pages);
+	seq_printf(s, "total size: %llu\n", pages * PAGE_SIZE);
+
+	return 0;
+}
+
+static ssize_t total_mem_used_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, total_mem_used_show, inode->i_private);
+}
+
+static const struct file_operations total_mem_usage_fops = {
+	.owner = THIS_MODULE,
+	.open = total_mem_used_open,
+	.read = seq_read,
+};
+
 mali_error kbase_mem_init(kbase_device * kbdev)
 {
 	CSTD_UNUSED(kbdev);
@@ -914,6 +934,9 @@ mali_error kbase_mem_init(kbase_device * kbdev)
 	{
 		return MALI_ERROR_OUT_OF_MEMORY;
 	}
+
+	atomic_set(&kbdev->total_pages, 0);
+	kbdev->den = debugfs_create_file("total", S_IRUGO, kbdev->mem_usage, (void *)kbdev, &total_mem_usage_fops);
 
 	/* nothing to do, zero-inited when kbase_device was created */
 	return MALI_ERROR_NONE;
@@ -932,6 +955,8 @@ void kbase_mem_term(kbase_device * kbdev)
 	memdev = &kbdev->memdev;
 
 	kbase_mem_usage_term(&memdev->usage);
+	atomic_set(&kbdev->total_pages, LONG_MAX);
+	debugfs_remove(kbdev->den);
 }
 KBASE_EXPORT_TEST_API(kbase_mem_term)
 
@@ -1743,6 +1768,7 @@ mali_error kbase_alloc_phy_pages_helper(struct kbase_va_region *reg, u32 nr_page
 	{
 		kbase_process_page_usage_inc(kctx, nr_pages_requested);
 	}
+	atomic_add(nr_pages_requested, &kctx->kbdev->total_pages);
 
 	return MALI_ERROR_NONE;
 }
@@ -1779,6 +1805,7 @@ void kbase_free_phy_pages_helper(struct kbase_va_region * reg, u32 nr_pages_to_f
 	{
 		kbase_process_page_usage_dec(reg->kctx, nr_pages_to_free);
 	}
+	atomic_sub(nr_pages_to_free, &reg->kctx->kbdev->total_pages);
 	kbase_mem_usage_release_pages(&reg->kctx->usage, nr_pages_to_free);
 }
 

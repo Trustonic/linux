@@ -19,6 +19,29 @@
 
 #include <kbase/src/common/mali_kbase.h>
 #include <kbase/src/common/mali_midg_regmap.h>
+#include <linux/seq_file.h>
+#include <linux/debugfs.h>
+
+static int proc_mem_used_show(struct seq_file *s, void *data)
+{
+	kbase_context *kctx = (kbase_context *)s->private;
+	u64 pages = atomic_read(&kctx->usage.cur_pages);
+	u64 nonmapped_pages = atomic_read(&kctx->nonmapped_pages);
+	seq_printf(s, "size: %llu, nonmapped size: %llu\n", pages * PAGE_SIZE, nonmapped_pages * PAGE_SIZE);
+
+	return 0;
+}
+
+static ssize_t proc_mem_used_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, proc_mem_used_show, inode->i_private);
+}
+
+static const struct file_operations proc_mem_usage_fops = {
+	.owner = THIS_MODULE,
+	.open = proc_mem_used_open,
+	.read = seq_read,
+};
 
 /**
  * @brief Create a kernel base context.
@@ -99,6 +122,12 @@ kbase_context *kbase_create_context(kbase_device *kbdev)
 	/* Make sure page 0 is not used... */
 	if(kbase_region_tracker_init(kctx))
 		goto free_osctx;
+
+	char buf[64];
+	size_t r;
+
+	r = snprintf(buf, 64, "%u", kctx->osctx.tgid);
+	kctx->den = debugfs_create_file(buf, S_IRUGO, kctx->kbdev->mem_usage, (void *)kctx, &proc_mem_usage_fops);
 
 	return kctx;
 
@@ -186,6 +215,8 @@ void kbase_destroy_context(kbase_context *kctx)
 
 	kbase_mem_allocator_term(&kctx->osalloc);
 	vfree(kctx);
+
+	debugfs_remove(kctx->den);
 }
 KBASE_EXPORT_SYMBOL(kbase_destroy_context)
 
