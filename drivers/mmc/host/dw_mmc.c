@@ -331,6 +331,9 @@ void dw_mci_reg_dump(struct dw_mci *host)
 	dev_err(&host->dev, ": data_status:     0x%08x\n", host->data_status);
 	dev_err(&host->dev, ": pending_events:  0x%08lx\n", host->pending_events);
 	dev_err(&host->dev, ": completed_events:0x%08lx\n", host->completed_events);
+	dev_err(&host->dev, ": state:           %d\n", host->state);
+	dev_err(&host->dev, ": cclk:            %s\n",
+			      atomic_read(&host->cclk_cnt) ? "enable" : "disable");
 	dev_err(&host->dev, ": ===========================================\n");
 }
 
