@@ -32,11 +32,8 @@
 #include <linux/mmc/host.h>
 #include <linux/mmc/mmc.h>
 #include <linux/mmc/sd.h>
+#include <linux/mmc/mmc_trace.h>
 
-#include <linux/blkdev.h>
-#include <linux/types.h>
-#include <linux/blktrace_api.h>
-#include <trace/events/block.h>
 #include "core.h"
 #include "bus.h"
 #include "host.h"
@@ -338,7 +335,7 @@ static int mmc_wait_for_data_req_done(struct mmc_host *host,
 				err = host->areq->err_check(host->card,
 						host->areq);
 
-				mmc_add_trace(__MMC_TA_EAO_REV_DONE,
+				mmc_add_trace(__MMC_TA_REQ_DONE,
 							host->mqrq_prev);
 				break; /* return err */
 			} else {
@@ -451,6 +448,7 @@ struct mmc_async_req *mmc_start_req(struct mmc_host *host,
 		if (areq->__mrq) {
 			mmc_pre_req(host, areq->__mrq, 0);
 		}
+		mmc_add_trace(__MMC_TA_PRE_DONE, host->mqrq_cur);
 	}
 
 	if (host->areq) {
@@ -467,8 +465,11 @@ struct mmc_async_req *mmc_start_req(struct mmc_host *host,
 		}
 	}
 
-	if (!err && areq)
+	if (!err && areq) {
+		mmc_add_trace(__MMC_TA_MMC_ISSUE, host->mqrq_cur);
 		start_err = __mmc_start_data_req(host, areq->mrq);
+		mmc_add_trace(__MMC_TA_MMC_DONE, host->mqrq_cur);
+	}
 
 	if (host->areq)
 		mmc_post_req(host, host->areq->mrq, 0);
@@ -1660,6 +1661,7 @@ static int mmc_do_erase(struct mmc_card *card, unsigned int from,
 	unsigned int qty = 0;
 	int err;
 
+	mmc_add_trace(__MMC_TA_PRE_DONE, card->host->mqrq_cur);
 	/*
 	 * qty is used to calculate the erase timeout which depends on how many
 	 * erase groups (or allocation units in SD terminology) are affected.
@@ -1724,6 +1726,8 @@ static int mmc_do_erase(struct mmc_card *card, unsigned int from,
 	cmd.arg = arg;
 	cmd.flags = MMC_RSP_SPI_R1B | MMC_RSP_R1B | MMC_CMD_AC;
 	cmd.cmd_timeout_ms = mmc_erase_timeout(card, arg, qty);
+
+	mmc_add_trace(__MMC_TA_MMC_ISSUE, card->host->mqrq_cur);
 	err = mmc_wait_for_cmd(card->host, &cmd, 0);
 	if (err) {
 		pr_err("mmc_erase: erase error %d, status %#x\n",
@@ -1732,6 +1736,7 @@ static int mmc_do_erase(struct mmc_card *card, unsigned int from,
 		goto out;
 	}
 
+	mmc_add_trace(__MMC_TA_MMC_DONE, card->host->mqrq_cur);
 	if (mmc_host_is_spi(card->host))
 		goto out;
 
@@ -1750,6 +1755,8 @@ static int mmc_do_erase(struct mmc_card *card, unsigned int from,
 		}
 	} while (!(cmd.resp[0] & R1_READY_FOR_DATA) ||
 		 R1_CURRENT_STATE(cmd.resp[0]) == R1_STATE_PRG);
+
+	mmc_add_trace(__MMC_TA_REQ_DONE, card->host->mqrq_cur);
 out:
 	return err;
 }
@@ -2375,6 +2382,9 @@ int mmc_flush_cache(struct mmc_card *card)
 	if (!(host->caps2 & MMC_CAP2_CACHE_CTRL))
 		return err;
 
+	mmc_add_trace(__MMC_TA_PRE_DONE, card->host->mqrq_cur);
+	mmc_add_trace(__MMC_TA_MMC_ISSUE, card->host->mqrq_cur);
+
 	if (mmc_card_mmc(card) &&
 			(card->ext_csd.cache_size > 0) &&
 			(card->ext_csd.cache_ctrl & 1)) {
@@ -2384,6 +2394,9 @@ int mmc_flush_cache(struct mmc_card *card)
 			pr_err("%s: cache flush error %d\n",
 					mmc_hostname(card->host), err);
 	}
+
+	mmc_add_trace(__MMC_TA_MMC_DONE, card->host->mqrq_cur);
+	mmc_add_trace(__MMC_TA_REQ_DONE, card->host->mqrq_cur);
 
 	return err;
 }
@@ -2668,67 +2681,6 @@ void mmc_init_context_info(struct mmc_host *host)
 	host->context_info.is_waiting_last_req = false;
 	init_waitqueue_head(&host->context_info.wait);
 }
-
-#ifdef CONFIG_BLK_DEV_IO_TRACE
-static const struct {
-	const char *act[2];
-	/* This function is to action something for preparation */
-	int	   (*prefunc)(void);
-} ta_info[] = {
-	[__MMC_TA_EAO_REV_DONE] = {{ "eC", "completion_done" }, NULL },
-	[__MMC_TA_EAO_FETCH_NEW_REQ] = {{  "eN", "fetch_new_reqest" }, NULL },
-	[__MMC_TA_EAO_FETCH_REQ] = {{ "eF", "fetch_request" }, NULL },
-};
-
-static inline struct request *__get_request(struct mmc_queue_req *mqrq)
-{
-	return mqrq ? mqrq->req : NULL;
-}
-
-static inline struct request_queue *__get_request_queue(struct request *req)
-{
-	return req ? req->q : NULL;
-}
-
-void mmc_add_trace(unsigned int type, struct mmc_queue_req *mqrq)
-{
-	struct request *req;
-	struct request_queue *q;
-	struct blk_trace *bt;
-	struct mmc_trace mt;
-	struct request_list *rl;
-
-	req = __get_request(mqrq);
-	if (unlikely(!req))
-		return;
-
-	q = __get_request_queue(req);
-	if (unlikely(!q))
-		return;
-
-	bt = q->blk_trace;
-
-	if (likely(!bt) || unlikely(bt->trace_state != Blktrace_running))
-		return;
-
-	/* trace type */
-	mt.ta_type = type;
-
-	memcpy(mt.ta_info, ta_info[type].act[0], 3);
-
-	/* request information */
-	rl = &q->rq;
-
-	/* async, sync info update for trace */
-	mt.cnt_sync = rl->count[BLK_RW_SYNC];
-	mt.cnt_async = rl->count[BLK_RW_ASYNC];
-
-	/* add trace point */
-	blk_add_driver_data(q, req, &mt, sizeof(struct mmc_trace));
-}
-EXPORT_SYMBOL(mmc_add_trace);
-#endif /* CONFIG_BLK_DEV_IO_TRACE */
-
 
 static int __init mmc_init(void)
 {

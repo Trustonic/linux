@@ -34,6 +34,7 @@
 #include <linux/mmc/sdio.h>
 #include <linux/mmc/sd.h>
 #include <linux/mmc/dw_mmc.h>
+#include <linux/mmc/mmc_trace.h>
 #include <linux/bitops.h>
 #include <linux/regulator/consumer.h>
 #include <linux/workqueue.h>
@@ -1149,6 +1150,9 @@ static void dw_mci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 	struct dw_mci *host = slot->host;
 
 	WARN_ON(slot->mrq);
+
+	/* for mmc trace */
+	host->mqrq = mmc->mqrq_cur;
 
 	if (!test_bit(DW_MMC_CARD_PRESENT, &slot->flags)) {
 		mrq->cmd->error = -ENOMEDIUM;
@@ -2344,6 +2348,8 @@ static irqreturn_t dw_mci_interrupt(int irq, void *dev_id)
 
 		if (pending & SDMMC_INT_DATA_OVER) {
 			mci_writel(host, RINTSTS, SDMMC_INT_DATA_OVER);
+			/* for mmc trace */
+			mmc_add_trace(__MMC_TA_MMC_DMA_DONE, host->mqrq);
 			if (!host->data_status)
 				host->data_status = pending;
 			smp_wmb();

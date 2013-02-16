@@ -192,7 +192,9 @@ struct dw_mci {
 	struct regulator	*vmmc;	/* Power regulator */
 	struct regulator	*vqmmc;
 	unsigned long		irq_flags; /* IRQ flags */
-	unsigned int		irq;
+	int			irq;
+
+	struct mmc_queue_req    *mqrq;	/* for mmc trace */
 };
 
 /* DMA ops for Internal/External DMAC interface */
