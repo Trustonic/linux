@@ -167,15 +167,15 @@ get_ep_started_head(struct exynos_ss_udc_ep *udc_ep)
 
 /**
  * on_list - check request is on the given endpoint
- * @ep: The endpoint to check.
+ * @list: The endpoint queue to check.
  * @test: The request to test if it is on the endpoint.
  */
-static bool on_list(struct exynos_ss_udc_ep *udc_ep,
+static bool on_list(struct list_head *list,
 		    struct exynos_ss_udc_req *test)
 {
 	struct exynos_ss_udc_req *udc_req, *treq;
 
-	list_for_each_entry_safe(udc_req, treq, &udc_ep->req_queue, queue) {
+	list_for_each_entry_safe(udc_req, treq, list, queue) {
 		if (udc_req == test)
 			return true;
 	}
@@ -607,7 +607,9 @@ static int exynos_ss_udc_ep_dequeue(struct usb_ep *ep, struct usb_request *req)
 
 	spin_lock_irqsave(&udc_ep->lock, flags);
 
-	if (!on_list(udc_ep, udc_req)) {
+	if (on_list(&udc_ep->req_started, udc_req)) {
+		exynos_ss_udc_end_xfer(udc, udc_ep);
+	} else if (!on_list(&udc_ep->req_queue, udc_req)) {
 		spin_unlock_irqrestore(&udc_ep->lock, flags);
 		return -EINVAL;
 	}
