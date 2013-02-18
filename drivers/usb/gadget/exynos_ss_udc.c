@@ -2939,10 +2939,7 @@ static int exynos_ss_udc_enable(struct exynos_ss_udc *udc)
 
 	exynos_ss_udc_corereset(udc);
 	exynos_ss_udc_init(udc);
-
 	udc->eps[EP0INDEX].enabled = 1;
-	udc->ep0_state = EP0_SETUP_PHASE;
-	exynos_ss_udc_enqueue_setup(udc);
 
 	/* Start controller if S/W connect was signalled */
 	if (udc->pullup_state)
