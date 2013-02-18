@@ -164,17 +164,22 @@ static void __init smdk5250_drd0_init(void)
 	int err;
 
 #ifdef CONFIG_USB_XHCI_EXYNOS
-	err = gpio_request_one(EXYNOS5_GPX1(7), GPIOF_IN,
+	//err = gpio_request_one(EXYNOS5_GPX1(7), GPIOF_IN,
+	err = gpio_request_one(EXYNOS5_GPX0(6), GPIOF_IN,
 		"DRD_HOST_DETECT");
 	if (err) {
 		printk(KERN_ERR "failed to request drd_host gpio\n");
 		return;
 	}
 
-	s3c_gpio_cfgpin(EXYNOS5_GPX1(7), S3C_GPIO_SFN(0xF));
+	/*s3c_gpio_cfgpin(EXYNOS5_GPX1(7), S3C_GPIO_SFN(0xF));
 	s3c_gpio_setpull(EXYNOS5_GPX1(7),
 		S3C_GPIO_PULL_NONE);
-	gpio_free(EXYNOS5_GPX1(7));
+	gpio_free(EXYNOS5_GPX1(7));*/
+	s3c_gpio_cfgpin(EXYNOS5_GPX0(6), S3C_GPIO_SFN(0xF));
+	s3c_gpio_setpull(EXYNOS5_GPX0(6),
+		S3C_GPIO_PULL_NONE);
+	gpio_free(EXYNOS5_GPX0(6));
 #endif
 
 #ifdef CONFIG_USB_EXYNOS5_USB3_DRD_CH0
