@@ -3500,6 +3500,24 @@ int fimc_is_ischain_scp_start(struct fimc_is_device_ischain *this)
 	scp_param->dma_output.buffer_address =
 		this->minfo.dvaddr_shared + 400*sizeof(u32);
 
+	switch (video->frame.format.pixelformat) {
+	case V4L2_PIX_FMT_YUV420M:
+	case V4L2_PIX_FMT_YVU420M:
+		scp_param->dma_output.format = OTF_OUTPUT_FORMAT_YUV420,
+		scp_param->dma_output.plane = DMA_OUTPUT_PLANE_3;
+		scp_param->dma_output.order = DMA_OUTPUT_ORDER_NO;
+		break;
+	case V4L2_PIX_FMT_NV21M:
+	case V4L2_PIX_FMT_NV21:
+		scp_param->dma_output.format = OTF_OUTPUT_FORMAT_YUV420,
+		scp_param->dma_output.plane = DMA_OUTPUT_PLANE_2;
+		scp_param->dma_output.order = DMA_OUTPUT_ORDER_CbCr;
+		break;
+	default:
+		err("unknown preview pixelformat\n");
+		break;
+	}
+
 	lindex |= LOWBIT_OF(PARAM_SCALERP_DMA_OUTPUT);
 	hindex |= HIGHBIT_OF(PARAM_SCALERP_DMA_OUTPUT);
 	indexes++;
