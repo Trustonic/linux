@@ -222,6 +222,7 @@ static void exynos_drd_config(struct exynos_drd_core *core)
 	struct exynos_drd *drd = container_of(core, struct exynos_drd, core);
 	struct platform_device *pdev = to_platform_device(drd->dev);
 	struct dwc3_exynos_data *pdata = drd->pdata;
+	u32 reg;
 
 	/* AHB bus configuration */
 	writel(EXYNOS_USB3_GSBUSCFG0_INCR16BrstEna |
@@ -229,6 +230,30 @@ static void exynos_drd_config(struct exynos_drd_core *core)
 	       drd->regs + EXYNOS_USB3_GSBUSCFG0);
 	writel(EXYNOS_USB3_GSBUSCFG1_BREQLIMIT(3),
 	       drd->regs + EXYNOS_USB3_GSBUSCFG1);
+
+	/*
+	 * WORKAROUND: DWC3 revisions from 1.90a to 2.10a have a bug
+	 * For ss bulk-in data packet, when the host detects
+	 * a DPP error or the internal buffer becomes full,
+	 * it retries with an ACK TP Retry=1. Under the following
+	 * conditions, the Retry=1 is falsely carried over to the next burst
+	 * - There is only single active asynchronous SS EP at the time.
+	 * - The active asynchronous EP is a Bulk IN EP.
+	 * - The burst with the correctly Retry=1 ACK TP and
+	 *   the next burst belong to the same transfer.
+	 */
+	if (drd->core.release >= 0x190a && drd->core.release <= 0x210a) {
+		__orr32(drd->regs + EXYNOS_USB3_GUCTL,
+			EXYNOS_USB3_GUCTL_USBHstInAutoRetryEn);
+
+		reg = readl(drd->regs + EXYNOS_USB3_GRXTHRCFG);
+		reg &= ~(EXYNOS_USB3_GRXTHRCFG_USBRxPktCnt_MASK |
+			EXYNOS_USB3_GRXTHRCFG_USBMaxRxBurstSize_MASK);
+		reg = EXYNOS_USB3_GRXTHRCFG_USBRxPktCntSel |
+		      EXYNOS_USB3_GRXTHRCFG_USBRxPktCnt(3) |
+		      EXYNOS_USB3_GRXTHRCFG_USBMaxRxBurstSize(3);
+		writel(reg, drd->regs + EXYNOS_USB3_GRXTHRCFG);
+	}
 
 	/* los_bias configuration */
 	if (pdata->phy_crport_ctrl) {
