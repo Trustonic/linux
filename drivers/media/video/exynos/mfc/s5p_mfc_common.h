@@ -676,6 +676,8 @@ struct s5p_mfc_ctx {
 					(dev->fw.date >= 0x120823)))
 #define FW_HAS_VUI_PARAMS(dev)			(dev->fw.date >= 0x121214)
 
+#define HW_LOCK_CLEAR_MASK		(0xFFFFFFFF)
+
 struct s5p_mfc_fmt {
 	char *name;
 	u32 fourcc;

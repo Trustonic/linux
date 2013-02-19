@@ -1085,7 +1085,8 @@ static int vidioc_g_fmt_vid_cap_mplane(struct file *file, void *priv,
 	    ctx->state == MFCINST_RES_CHANGE_END) {
 		/* If the MFC is parsing the header,
 		 * so wait until it is finished */
-		s5p_mfc_wait_for_done_ctx(ctx, S5P_FIMV_R2H_CMD_SEQ_DONE_RET);
+		if (s5p_mfc_wait_for_done_ctx(ctx, S5P_FIMV_R2H_CMD_SEQ_DONE_RET))
+			mfc_err("Err returning instance.\n");
 	}
 
 	if (ctx->state >= MFCINST_HEAD_PARSED &&
@@ -1259,6 +1260,7 @@ static int vidioc_s_fmt_vid_out_mplane(struct file *file, void *priv,
 
 	/* In case of calling s_fmt twice or more */
 	if (ctx->inst_no != MFC_NO_INSTANCE_SET) {
+		mfc_err("ctx->state = %d, ctx->inst_no = %d\n", ctx->state, ctx->inst_no);
 		ctx->state = MFCINST_RETURN_INST;
 		spin_lock_irqsave(&dev->condlock, flags);
 		set_bit(ctx->num, &dev->ctx_work_bits);
@@ -1650,8 +1652,9 @@ static int get_ctrl_val(struct s5p_mfc_ctx *ctx, struct v4l2_control *ctrl)
 		}
 
 		/* Should wait for the header to be parsed */
-		s5p_mfc_wait_for_done_ctx(ctx,
-				S5P_FIMV_R2H_CMD_SEQ_DONE_RET);
+		if (s5p_mfc_wait_for_done_ctx(ctx,
+				S5P_FIMV_R2H_CMD_SEQ_DONE_RET))
+			mfc_err("Err returning instance.\n");
 		if (ctx->state >= MFCINST_HEAD_PARSED &&
 		    ctx->state < MFCINST_ABORT) {
 			ctrl->value = ctx->dpb_count;
@@ -2163,6 +2166,9 @@ static int s5p_mfc_start_streaming(struct vb2_queue *q, unsigned int count)
 	return 0;
 }
 
+#define need_to_dpb_flush(ctx)			\
+	((ctx->state == MFCINST_FINISHING) ||	\
+	 (ctx->state == MFCINST_RUNNING))
 static int s5p_mfc_stop_streaming(struct vb2_queue *q)
 {
 	unsigned long flags;
@@ -2219,7 +2225,8 @@ static int s5p_mfc_stop_streaming(struct vb2_queue *q)
 
 	spin_unlock_irqrestore(&dev->irqlock, flags);
 
-	if (IS_MFCV6(dev) && q->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
+	if (IS_MFCV6(dev) && q->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE &&
+			need_to_dpb_flush(ctx)) {
 		prev_state = ctx->state;
 		ctx->state = MFCINST_DPB_FLUSHING;
 		spin_lock_irq(&dev->condlock);

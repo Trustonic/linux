@@ -224,7 +224,7 @@ static void s5p_mfc_watchdog_worker(struct work_struct *work)
 			wake_up_ctx(ctx, S5P_FIMV_R2H_CMD_ERR_RET, 0);
 		}
 	}
-	dev->hw_lock = 0;
+	atomic_clear_mask(HW_LOCK_CLEAR_MASK, &dev->hw_lock);
 	spin_unlock_irqrestore(&dev->irqlock, flags);
 	/* Double check if there is at least one instance running.
 	 * If no instance is in memory than no firmware should be present */
@@ -698,6 +698,7 @@ static inline void s5p_mfc_handle_error(struct s5p_mfc_ctx *ctx,
 
 	dev = ctx->dev;
 	mfc_err("Interrupt Error: %d\n", err);
+	mfc_err("ctx->state = %d, ctx->inst_no = %d\n", ctx->state, ctx->inst_no);
 	s5p_mfc_clear_int_flags();
 	wake_up_dev(dev, reason, err);
 
@@ -739,6 +740,10 @@ static inline void s5p_mfc_handle_error(struct s5p_mfc_ctx *ctx,
 		break;
 	default:
 		mfc_err("Encountered an error interrupt which had not been handled.\n");
+		mfc_err("ctx->state = %d, ctx->inst_no = %d\n", ctx->state, ctx->inst_no);
+		if (test_and_clear_bit(ctx->num, &dev->hw_lock) == 0)
+			BUG();
+		s5p_mfc_clock_off();
 		break;
 	}
 	return;
@@ -773,7 +778,7 @@ static irqreturn_t s5p_mfc_irq(int irq, void *priv)
 		s5p_mfc_clear_int_flags();
 		wake_up_dev(dev, reason, err);
 		/* Initialize hw_lock */
-		dev->hw_lock = 0;
+		atomic_clear_mask(HW_LOCK_CLEAR_MASK, &dev->hw_lock);
 		goto done;
 	}
 
@@ -1048,6 +1053,7 @@ static int s5p_mfc_open(struct file *file)
 		clear_magic(dev->drm_info.virt + magic_offset);
 		if (dev->num_drm_inst < MFC_MAX_DRM_CTX) {
 			mfc_debug(1, "DRM instance opened\n");
+			mfc_err("DRM instance opened. (%d)\n", dev->num_inst);
 
 			dev->num_drm_inst++;
 			ctx->is_drm = 1;
@@ -1069,6 +1075,7 @@ static int s5p_mfc_open(struct file *file)
 			ret = -EINVAL;
 			goto err_drm_start;
 		}
+		mfc_err("Non-DRM instance opened. (%d)\n", dev->num_inst);
 	}
 #endif
 
