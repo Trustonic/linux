@@ -278,6 +278,9 @@ struct dw_mci_board {
 	void (*cfg_gpio)(int width);
 	void (*hw_reset)(u32 slot_id);
 	void (*set_io_timing)(void *data, unsigned char timing);
+	void (*save_drv_st)(void *data, u32 slot_id);
+	void (*restore_drv_st)(void *data, u32 slot_id);
+	void (*tuning_drv_st)(void *data, u32 slot_id);
 
 	/* Phase Shift Value */
 	unsigned int sdr_timing;
@@ -287,6 +290,10 @@ struct dw_mci_board {
 	u8 clk_smpl;
 	bool tuned;
 	bool only_once_tune;
+	struct drv_strength {
+		unsigned int pin;
+		unsigned int val;
+	} __drv_st;
 
 	/* cd_type: Type of Card Detection method (see cd_types enum above) */
 	enum dw_mci_cd_types cd_type;

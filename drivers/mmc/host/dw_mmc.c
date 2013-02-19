@@ -1331,6 +1331,7 @@ static void dw_mci_set_sampling(struct dw_mci *host, u8 sample)
 	clksel = mci_readl(host, CLKSEL);
 	clksel = (clksel & 0xfffffff8) | (sample & 0x7);
 	mci_writel(host, CLKSEL, clksel);
+	host->pdata->clk_smpl = sample;
 }
 
 static u8 dw_mci_get_sampling(struct dw_mci *host)
@@ -1369,12 +1370,39 @@ static s8 get_median_sample(u8 map, u8 bit)
 	return sel;
 }
 
+static void dw_mci_save_drv_st(struct dw_mci_slot *slot)
+{
+	struct dw_mci_board *brd = slot->host->pdata;
+
+	if (brd->save_drv_st)
+		brd->save_drv_st(slot->host, slot->id);
+}
+
+static void dw_mci_restore_drv_st(struct dw_mci_slot *slot)
+{
+	struct dw_mci_board *brd = slot->host->pdata;
+
+	if (brd->restore_drv_st)
+		brd->restore_drv_st(slot->host, slot->id);
+}
+
+static void dw_mci_tuning_drv_st(struct dw_mci_slot *slot)
+{
+	struct dw_mci_board *brd = slot->host->pdata;
+
+	if (brd->tuning_drv_st)
+		brd->tuning_drv_st(slot->host, slot->id);
+}
+
 static int dw_mci_execute_tuning(struct mmc_host *mmc, u32 opcode)
 {
 	struct dw_mci_slot *slot = mmc_priv(mmc);
 	struct dw_mci *host = slot->host;
 	unsigned int tuning_loop = MAX_TUNING_LOOP;
+	unsigned int retries = 4;
 	const u8 *tuning_blk_pattern;
+	bool tuned = false;
+	int ret = 0;
 	u8 *tuning_blk;
 	u8 blksz;
 	u8 tune, start_tune, map = 0, bit;
@@ -1420,12 +1448,17 @@ static int dw_mci_execute_tuning(struct mmc_host *mmc, u32 opcode)
 	host->cd_rd_thr = 512;
 	mci_writel(host, CDTHRCTL, host->cd_rd_thr << 16 | 1);
 
+	dw_mci_save_drv_st(slot);
+
 	do {
 		struct mmc_request mrq = {NULL};
 		struct mmc_command cmd = {0};
 		struct mmc_command stop = {0};
 		struct mmc_data data = {0};
 		struct scatterlist sg;
+
+		if (!tuning_loop)
+			break;
 
 		cmd.opcode = opcode;
 		cmd.arg = 0;
@@ -1464,28 +1497,34 @@ static int dw_mci_execute_tuning(struct mmc_host *mmc, u32 opcode)
 
 		if (start_tune == tune) {
 			mid = get_median_sample(map, bit);
-			if (mid < 0) {
-				tuning_loop = 0;
-				break;
+			retries--;
+			if (mid >= 0) {
+				if (map != 0xff || !retries)
+					tuned = true;
 			}
 
-			host->pdata->clk_smpl = mid;
-			if (host->pdata->only_once_tune)
-				host->pdata->tuned = true;
-			dw_mci_set_sampling(host, mid);
-			break;
+			if (retries) {
+				dw_mci_tuning_drv_st(slot);
+				map = 0;
+			}
 		}
-	} while (--tuning_loop);
+		tuning_loop--;
+	} while (!tuned && retries);
 
-	kfree(tuning_blk);
-
-	if (!tuning_loop) {
+	if (tuned) {
+		dw_mci_set_sampling(host, mid);
+		if (host->pdata->only_once_tune)
+			host->pdata->tuned = true;
+	} else {
 		mci_writel(host, CDTHRCTL, 0 << 16 | 0);
 		dw_mci_set_sampling(host, start_tune);
-		return -EIO;
+		ret = -EIO;
 	}
 
-	return 0;
+	dw_mci_restore_drv_st(slot);
+	kfree(tuning_blk);
+
+	return ret;
 }
 
 static int dw_mci_3_3v_signal_voltage_switch(struct dw_mci_slot *slot)
