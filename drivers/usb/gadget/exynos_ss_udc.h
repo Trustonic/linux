@@ -447,6 +447,7 @@ struct exynos_ss_udc_ep {
  * @driver: USB gadget driver
  * @pdata: The platform specific configuration data.
  * @core: The link to drd core.
+ * @enabled: Indicate whether UDC enabled or disabled.
  * @state: The device USB state.
  * @regs: The memory area mapped for accessing registers.
  * @irq: The IRQ number we are using.
@@ -461,6 +462,7 @@ struct exynos_ss_udc_ep {
  * @our_status: Indicate that UDC driver (not gadget) is responsible for Status
  *		stage handling.
  * @setup_pending: Indicate that Setup transfer must be started at nearest time.
+ * @lock: Lock to protect controller state.
  * @ep0_buff: Buffer for EP0 data.
  * @ep0_buff_dma: EP0 data buffer DMA address.
  * @ctrl_buff: Buffer for EP0 control requests.
@@ -477,6 +479,7 @@ struct exynos_ss_udc {
 	struct dwc3_exynos_data		*pdata;
 	struct exynos_drd_core		*core;
 
+	bool			enabled;
 	enum usb_device_state	state;
 
 	void __iomem		*regs;
@@ -494,7 +497,8 @@ struct exynos_ss_udc {
 	bool			setup_pending;
 
 	unsigned int		pullup_state:1;
-	unsigned int		vbus_state:1;
+
+	spinlock_t		lock;
 
 	u8			*ep0_buff;
 	dma_addr_t		ep0_buff_dma;

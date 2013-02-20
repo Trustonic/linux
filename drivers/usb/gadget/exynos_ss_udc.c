@@ -2486,6 +2486,8 @@ static irqreturn_t exynos_ss_udc_irq(int irq, void *pw)
 	u32 event;
 	u32 ecode1, ecode2;
 
+	spin_lock(&udc->lock);
+
 	/* Check for NULL was done in probe */
 	gevntcount = udc->core->ops->get_evntcount(udc->core);
 
@@ -2542,6 +2544,8 @@ static irqreturn_t exynos_ss_udc_irq(int irq, void *pw)
 
 	udc->event_indx = indx;
 	/* Do we need to read GEVENTCOUNT here and retry? */
+
+	spin_unlock(&udc->lock);
 
 	return IRQ_HANDLED;
 }
@@ -2924,6 +2928,7 @@ static void exynos_ss_udc_init(struct exynos_ss_udc *udc)
 static int exynos_ss_udc_enable(struct exynos_ss_udc *udc)
 {
 	struct platform_device *pdev = to_platform_device(udc->dev);
+	unsigned long flags;
 
 	dev_dbg(udc->dev, "%s\n", __func__);
 
@@ -2934,6 +2939,10 @@ static int exynos_ss_udc_enable(struct exynos_ss_udc *udc)
 
 	pm_runtime_get_sync(udc->dev->parent);
 
+	spin_lock_irqsave(&udc->lock, flags);
+
+	/* exynos_drd_try_get() prevents from enabling twice */
+
 	if (udc->core->ops->change_mode)
 		udc->core->ops->change_mode(udc->core, false);
 	if (udc->core->ops->config)
@@ -2942,10 +2951,13 @@ static int exynos_ss_udc_enable(struct exynos_ss_udc *udc)
 	exynos_ss_udc_corereset(udc);
 	exynos_ss_udc_init(udc);
 	udc->eps[EP0INDEX].enabled = 1;
+	udc->enabled = true;
 
 	/* Start controller if S/W connect was signalled */
 	if (udc->pullup_state)
 		exynos_ss_udc_run_stop(udc, 1);
+
+	spin_unlock_irqrestore(&udc->lock, flags);
 
 	return 0;
 }
@@ -2954,8 +2966,18 @@ static int exynos_ss_udc_disable(struct exynos_ss_udc *udc)
 {
 	struct platform_device *pdev = to_platform_device(udc->dev);
 	int epindex;
+	unsigned long flags;
 
 	dev_dbg(udc->dev, "%s\n", __func__);
+
+	spin_lock_irqsave(&udc->lock, flags);
+
+	/* Do not disable twice */
+	if (!udc->enabled) {
+		dev_dbg(udc->dev, "UDC is already disabled\n");
+		spin_unlock_irqrestore(&udc->lock, flags);
+		return 0;
+	}
 
 	/* Stop controller if it wasn't already stopped on S/W disconnect */
 	if (udc->pullup_state)
@@ -2967,6 +2989,9 @@ static int exynos_ss_udc_disable(struct exynos_ss_udc *udc)
 
 	call_gadget(udc, disconnect);
 	udc->gadget.speed = USB_SPEED_UNKNOWN;
+	udc->enabled = false;
+
+	spin_unlock_irqrestore(&udc->lock, flags);
 
 	pm_runtime_put_sync(udc->dev->parent);
 
@@ -2988,24 +3013,13 @@ static int exynos_ss_udc_vbus_session(struct usb_gadget *gadget, int is_active)
 					struct exynos_ss_udc, gadget);
 	int ret;
 
-	is_active = !!is_active;
-
 	dev_dbg(udc->dev, "%s: pullup = %d, vbus = %d\n",
 			   __func__, udc->pullup_state, is_active);
-
-	if (is_active == udc->vbus_state) {
-		dev_dbg(udc->dev, "vbus is already %sactive\n",
-				   is_active ? "" : "in");
-		return 0;
-	}
 
 	if (!is_active)
 		ret = exynos_ss_udc_disable(udc);
 	else
 		ret = exynos_ss_udc_enable(udc);
-
-	if (!ret)
-		udc->vbus_state = is_active;
 
 	return ret;
 }
@@ -3019,26 +3033,30 @@ static int exynos_ss_udc_pullup(struct usb_gadget *gadget, int is_on)
 {
 	struct exynos_ss_udc *udc = container_of(gadget,
 					struct exynos_ss_udc, gadget);
+	unsigned long flags;
 
 	is_on = !!is_on;
 
-	dev_dbg(udc->dev, "%s: pullup = %d, vbus = %d\n",
-			   __func__, is_on, udc->vbus_state);
+	spin_lock_irqsave(&udc->lock, flags);
+
+	dev_dbg(udc->dev, "%s: pullup = %d, udc is %s\n",
+			   __func__, is_on, udc->enabled ? "ON" : "OFF");
 
 	if (is_on == udc->pullup_state) {
 		dev_dbg(udc->dev, "pullup is already %s\n",
 				   is_on ? "on" : "off");
-		return 0;
+	} else {
+		udc->pullup_state = is_on;
+
+		/*
+		 * Start controller if UDC is enabled.
+		 * Stop controller if it wasn't already stopped on UDC disable.
+		 */
+		if (udc->enabled)
+			exynos_ss_udc_run_stop(udc, is_on);
 	}
 
-	udc->pullup_state = is_on;
-
-	/*
-	 * Start controller if vbus is active.
-	 * Stop controller if it wasn't already stopped on vbus deactivation.
-	 */
-	if (udc->vbus_state)
-		exynos_ss_udc_run_stop(udc, is_on);
+	spin_unlock_irqrestore(&udc->lock, flags);
 
 	return 0;
 }
@@ -3065,19 +3083,25 @@ static int exynos_ss_udc_start(struct usb_gadget *gadget,
 			       struct usb_gadget_driver *driver)
 {
 	struct exynos_ss_udc *udc;
+	unsigned long flags;
+	int ret = 0;
 
 	udc = container_of(gadget, struct exynos_ss_udc, gadget);
+
+	spin_lock_irqsave(&udc->lock, flags);
 
 	if (udc->driver) {
 		dev_err(udc->dev, "%s is already bound to %s\n",
 				udc->gadget.name,
 				udc->driver->driver.name);
-		return -EBUSY;
+		ret = -EBUSY;
+		goto err;
 	}
 
 	if (driver->max_speed < USB_SPEED_FULL) {
 		dev_err(udc->dev, "bad speed\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto err;
 	}
 
 	driver->driver.bus = NULL;
@@ -3088,17 +3112,24 @@ static int exynos_ss_udc_start(struct usb_gadget *gadget,
 
 	/* report to the user, and return */
 	dev_info(udc->dev, "bound driver %s\n", driver->driver.name);
-	return 0;
+
+err:
+	spin_unlock_irqrestore(&udc->lock, flags);
+
+	return ret;
 }
 
 static int exynos_ss_udc_stop(struct usb_gadget *gadget,
 			      struct usb_gadget_driver *driver)
 {
 	struct exynos_ss_udc *udc;
+	unsigned long flags;
 
 	udc = container_of(gadget, struct exynos_ss_udc, gadget);
 
+	spin_lock_irqsave(&udc->lock, flags);
 	udc->driver = NULL;
+	spin_unlock_irqrestore(&udc->lock, flags);
 
 	dev_info(udc->dev, "unregistered gadget driver '%s'\n",
 		 driver->driver.name);
@@ -3190,6 +3221,8 @@ static int __devinit exynos_ss_udc_probe(struct platform_device *pdev)
 	}
 
 	udc->irq = ret;
+
+	spin_lock_init(&udc->lock);
 
 	/*
 	 * Here we request IRQ and ensure it will be disabled if neither host
