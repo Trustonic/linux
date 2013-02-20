@@ -251,6 +251,12 @@ int exynos_remove_lpa_device(enum lpa_check_device_t cdev)
 
 	list_for_each_entry_safe(lpa_device, next, &dev_list, node) {
 		if (lpa_device->cdev == cdev) {
+			if (lpa_device->usage) {
+				pr_err("lpa_device(%d) is still in use\n",
+					cdev);
+				ret = -EINVAL;
+				goto del_err;
+			}
 			list_del(&lpa_device->node);
 			kfree(lpa_device);
 			break;
