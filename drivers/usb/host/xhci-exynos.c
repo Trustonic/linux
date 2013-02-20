@@ -297,6 +297,34 @@ static int exynos_xhci_setup(struct usb_hcd *hcd)
 	return retval;
 }
 
+static int exynos_xhci_hub_control(struct usb_hcd *hcd, u16 typeReq,
+		u16 wValue, u16 wIndex, char *buf, u16 wLength)
+{
+	struct device		*dev = hcd->self.controller;
+	struct exynos_xhci_hcd	*exynos_xhci = dev_get_drvdata(dev);
+	struct exynos_drd_core  *core = exynos_xhci->core;
+	int retval = 0;
+
+	/*
+	 * When the port power is switched on to a 2.0 port and the device
+	 * is not connected, the PLS field in PORTSC does not get updated
+	 * from 4'h4 to 4'h5. It affects the version 2.00a and earlier.
+	 * The workaround is as follows;
+	 * Before switching on the port power, set the GUSB2PHYCFG[6] to 0.
+	 * After switching on the port power, set this bit to 1.
+	 */
+	if (typeReq == SetPortFeature && wValue == USB_PORT_FEAT_POWER)
+		if (core->release <= 0x200a && core->ops->phy20_suspend)
+			core->ops->phy20_suspend(core, 0);
+
+	retval = xhci_hub_control(hcd, typeReq, wValue, wIndex, buf, wLength);
+
+	if (typeReq == SetPortFeature && wValue == USB_PORT_FEAT_POWER)
+		if (core->release <= 0x200a && core->ops->phy20_suspend)
+			core->ops->phy20_suspend(core, 1);
+
+	return retval;
+}
 
 static const struct hc_driver exynos_xhci_hc_driver = {
 	.description		= hcd_name,
@@ -341,7 +369,7 @@ static const struct hc_driver exynos_xhci_hc_driver = {
 	.get_frame_number	= xhci_get_frame,
 
 	/* Root hub support */
-	.hub_control		= xhci_hub_control,
+	.hub_control		= exynos_xhci_hub_control,
 	.hub_status_data	= xhci_hub_status_data,
 	.bus_suspend		= xhci_bus_suspend,
 	.bus_resume		= exynos_xhci_bus_resume,
