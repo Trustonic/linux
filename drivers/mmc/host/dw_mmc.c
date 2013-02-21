@@ -1369,28 +1369,29 @@ static u8 dw_mci_get_sampling(struct dw_mci *host)
 	return sample;
 }
 
-static s8 get_median_sample(u8 map, u8 bit)
+static s8 get_median_sample(u8 map)
 {
 	const u8 iter = 8;
-	const u8 pattern[9] = {0, 0x01, 0x03, 0x07, 0x0f,
-				  0x1f, 0x3f, 0x7f, 0xff};
 	u8 __map;
-	u8 __pattern;
 	s8 i, sel = -1;
-
-	if (bit > 8)
-		return -1;
-
-	__pattern = ror8(pattern[bit], bit / 2);
 
 	for (i = 0; i < iter; i++) {
 		__map = ror8(map, i);
-		if ((__map & __pattern) == __pattern) {
+		if ((__map & 0xc7) == 0xc7) {
 			sel = i;
-			break;
+			goto out;
 		}
 	}
 
+	for (i = 0; i < iter; i++) {
+		__map = ror8(map, i);
+		if ((__map & 0x83) == 0x83) {
+			sel = i;
+			goto out;
+		}
+	}
+
+out:
 	return sel;
 }
 
@@ -1429,7 +1430,7 @@ static int dw_mci_execute_tuning(struct mmc_host *mmc, u32 opcode)
 	int ret = 0;
 	u8 *tuning_blk;
 	u8 blksz;
-	u8 tune, start_tune, map = 0, bit;
+	u8 tune, start_tune, map = 0;
 	s8 mid;
 
 	if (opcode == MMC_SEND_TUNING_BLOCK_HS200) {
@@ -1456,13 +1457,6 @@ static int dw_mci_execute_tuning(struct mmc_host *mmc, u32 opcode)
 		mci_writel(host, CDTHRCTL, host->cd_rd_thr << 16 | 1);
 		return 0;
 	}
-
-	if (((host->pdata->sdr_timing >> 24) & 0x7) == 1)
-		bit = 3;
-	else if (((host->pdata->sdr_timing >> 24) & 0x7) == 3)
-		bit = 5;
-	else
-		return -EIO;
 
 	tuning_blk = kmalloc(blksz, GFP_KERNEL);
 	if (!tuning_blk)
@@ -1520,7 +1514,7 @@ static int dw_mci_execute_tuning(struct mmc_host *mmc, u32 opcode)
 		}
 
 		if (start_tune == tune) {
-			mid = get_median_sample(map, bit);
+			mid = get_median_sample(map);
 			retries--;
 			if (mid >= 0) {
 				if (map != 0xff || !retries)
