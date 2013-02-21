@@ -440,10 +440,26 @@ static u32 dw_mci_prep_stop(struct dw_mci *host, struct mmc_command *cmd)
 static void dw_mci_start_command(struct dw_mci *host,
 				 struct mmc_command *cmd, u32 cmd_flags)
 {
+	struct mmc_data *data;
+	u32 mask;
+
 	host->cmd = cmd;
+	data = cmd->data;
+	mask = mci_readl(host, INTMASK);
+
 	dev_vdbg(&host->dev,
 		 "start command: ARGR=0x%08x CMDR=0x%08x\n",
 		 cmd->arg, cmd_flags);
+
+	if ((host->quirks & DW_MCI_QUIRK_NO_DETECT_EBIT) &&
+			data && (data->flags & MMC_DATA_READ)) {
+		mask &= ~SDMMC_INT_EBE;
+	} else {
+		mask |= SDMMC_INT_EBE;
+		mci_writel(host, RINTSTS, SDMMC_INT_EBE);
+	}
+
+	mci_writel(host, INTMASK, mask);
 
 	mci_writel(host, CMDARG, cmd->arg);
 	wmb();
@@ -878,15 +894,6 @@ static void dw_mci_submit_data(struct dw_mci *host, struct mmc_data *data)
 	host->sg = NULL;
 	host->data = data;
 
-	if (host->quirks & DW_MCI_QUIRK_NO_DETECT_EBIT) {
-		temp = mci_readl(host, INTMASK);
-		if (data->flags & MMC_DATA_READ)
-			temp &= ~SDMMC_INT_EBE;
-		else
-			temp |= SDMMC_INT_EBE;
-		mci_writel(host, INTMASK, temp);
-	}
-
 	if (card && mmc_card_sdio(card)) {
 		unsigned int rxwmark_val, msize_val, i;
 		unsigned int msize[8] = {1, 4, 8, 16, 32, 64, 128, 256};
@@ -1093,6 +1100,7 @@ static void __dw_mci_start_request(struct dw_mci *host,
 	host->completed_events = 0;
 	host->cmd_status = 0;
 	host->data_status = 0;
+	host->dir_status = 0;
 
 	data = cmd->data;
 	if (data) {
@@ -1311,6 +1319,21 @@ static void dw_mci_enable_sdio_irq(struct mmc_host *mmc, int enb)
 	}
 }
 
+static void dw_mci_set_quirk_endbit(struct dw_mci *host, s8 mid)
+{
+	u32 clksel, phase;
+	u32 shift;
+
+	clksel = mci_readl(host, CLKSEL);
+	phase = (((clksel >> 24) & 0x7) + 1) << 1;
+	shift = 360 / phase;
+
+	if (host->verid < DW_MMC_260A && (shift * mid) % 360 >= 225)
+		host->quirks |= DW_MCI_QUIRK_NO_DETECT_EBIT;
+	else
+		host->quirks &= ~DW_MCI_QUIRK_NO_DETECT_EBIT;
+}
+
 static u8 dw_mci_tuning_sampling(struct dw_mci *host)
 {
 	u32 clksel;
@@ -1332,6 +1355,7 @@ static void dw_mci_set_sampling(struct dw_mci *host, u8 sample)
 	clksel = (clksel & 0xfffffff8) | (sample & 0x7);
 	mci_writel(host, CLKSEL, clksel);
 	host->pdata->clk_smpl = sample;
+	dw_mci_set_quirk_endbit(host, sample);
 }
 
 static u8 dw_mci_get_sampling(struct dw_mci *host)
@@ -2350,6 +2374,12 @@ static irqreturn_t dw_mci_interrupt(int irq, void *dev_id)
 			if (!pending &&
 			    ((mci_readl(host, STATUS) >> 17) & 0x1fff))
 				pending |= SDMMC_INT_DATA_OVER;
+		}
+
+		if (host->quirks & DW_MCI_QUIRK_NO_DETECT_EBIT &&
+				host->dir_status == DW_MCI_RECV_STATUS) {
+			if (status & SDMMC_INT_EBE)
+				mci_writel(host, RINTSTS, SDMMC_INT_EBE);
 		}
 
 		if (!pending)
