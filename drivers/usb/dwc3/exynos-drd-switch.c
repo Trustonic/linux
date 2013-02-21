@@ -725,7 +725,8 @@ exynos_drd_switch_store_vbus(struct device *dev,
 						struct exynos_drd_switch, otg);
 	int vbus_active;
 
-	sscanf(buf, "%d", &vbus_active);
+	if (sscanf(buf, "%d", &vbus_active) != 1)
+		return -EINVAL;
 	exynos_drd_switch_handle_vbus(drd_switch, !!vbus_active);
 
 	return n;
@@ -757,7 +758,8 @@ exynos_drd_switch_store_id(struct device *dev,
 	int state;
 	enum id_pin_state id_state;
 
-	sscanf(buf, "%d", &state);
+	if (sscanf(buf, "%d", &state) != 1)
+		return -EINVAL;
 	id_state = exynos_drd_switch_sanitize_id(state);
 	exynos_drd_switch_handle_id(drd_switch, id_state);
 
