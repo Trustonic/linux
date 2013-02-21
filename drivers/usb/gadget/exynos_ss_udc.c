@@ -366,6 +366,7 @@ void exynos_ss_udc_cable_connect(struct exynos_ss_udc *udc, bool connect)
  */
 static void exynos_ss_udc_run_stop(struct exynos_ss_udc *udc, int is_on)
 {
+	u32 reg;
 	int res;
 
 	dev_dbg(udc->dev, "%s udc\n", is_on ? "Start" : "Stop");
@@ -377,11 +378,27 @@ static void exynos_ss_udc_run_stop(struct exynos_ss_udc *udc, int is_on)
 				     EXYNOS_USB3_DSTS_DevCtrlHlt,
 				     1000);
 	} else {
+		int i;
+
 		__bic32(udc->regs + EXYNOS_USB3_DCTL,
 			EXYNOS_USB3_DCTL_Run_Stop);
-		res = poll_bit_set(udc->regs + EXYNOS_USB3_DSTS,
-				   EXYNOS_USB3_DSTS_DevCtrlHlt,
-				   1000);
+
+		for (i = 0; i < 10; i++) {
+			/* Core requires event count to be 0 on UDC stop */
+			reg = udc->core->ops->get_evntcount(udc->core);
+			if (reg)
+				/* Clear event count */
+				udc->core->ops->ack_evntcount(udc->core, reg);
+			else
+				dev_vdbg(udc->dev,
+					"Event count is 0 on UDC stop\n");
+
+			res = poll_bit_set(udc->regs + EXYNOS_USB3_DSTS,
+					   EXYNOS_USB3_DSTS_DevCtrlHlt,
+					   100);
+			if (!res)
+				break;
+		}
 	}
 
 	if (res < 0)
@@ -2963,17 +2980,21 @@ static int exynos_ss_udc_enable(struct exynos_ss_udc *udc)
 
 	if (udc->core->ops->change_mode)
 		udc->core->ops->change_mode(udc->core, false);
-	if (udc->core->ops->config)
-		udc->core->ops->config(udc->core);
-
-	exynos_ss_udc_corereset(udc);
-	exynos_ss_udc_init(udc);
-	udc->eps[EP0INDEX].enabled = 1;
-	udc->enabled = true;
 
 	/* Start controller if S/W connect was signalled */
-	if (udc->pullup_state)
+	if (udc->pullup_state) {
+		exynos_ss_udc_corereset(udc);
+
+		if (udc->core->ops->config)
+			udc->core->ops->config(udc->core);
+
+		exynos_ss_udc_init(udc);
+		udc->eps[EP0INDEX].enabled = 1;
+
 		exynos_ss_udc_run_stop(udc, 1);
+	}
+
+	udc->enabled = true;
 
 	spin_unlock_irqrestore(&udc->lock, flags);
 
@@ -3064,7 +3085,9 @@ static int exynos_ss_udc_pullup(struct usb_gadget *gadget, int is_on)
 {
 	struct exynos_ss_udc *udc = container_of(gadget,
 					struct exynos_ss_udc, gadget);
+	struct exynos_ss_udc_gen_command gencmd = {0};
 	unsigned long flags;
+	int res;
 
 	is_on = !!is_on;
 
@@ -3076,15 +3099,47 @@ static int exynos_ss_udc_pullup(struct usb_gadget *gadget, int is_on)
 	if (is_on == udc->pullup_state) {
 		dev_dbg(udc->dev, "pullup is already %s\n",
 				   is_on ? "on" : "off");
-	} else {
-		udc->pullup_state = is_on;
+		spin_unlock_irqrestore(&udc->lock, flags);
+		return 0;
+	}
 
-		/*
-		 * Start controller if UDC is enabled.
-		 * Stop controller if it wasn't already stopped on UDC disable.
-		 */
-		if (udc->enabled)
-			exynos_ss_udc_run_stop(udc, is_on);
+	udc->pullup_state = is_on;
+
+	/*
+	 * Start controller if UDC is enabled.
+	 * Stop controller if it wasn't already stopped on UDC disable.
+	 */
+	if (!udc->enabled) {
+		spin_unlock_irqrestore(&udc->lock, flags);
+		return 0;
+	}
+
+	if (is_on) {
+		exynos_ss_udc_corereset(udc);
+
+		if (udc->core->ops->config)
+			udc->core->ops->config(udc->core);
+
+		exynos_ss_udc_init(udc);
+		udc->eps[EP0INDEX].enabled = 1;
+
+		exynos_ss_udc_run_stop(udc, 1);
+	} else {
+		exynos_ss_udc_eps_reset(udc);
+		exynos_ss_udc_run_stop(udc, 0);
+
+		/* Disable event interrupt */
+		if (udc->core->ops->events_enable)
+			udc->core->ops->events_enable(udc->core, 0);
+
+		/* Flush All FIFOs */
+		gencmd.cmdtyp =
+			EXYNOS_USB3_DGCMD_CmdTyp_AllFIFOFlush;
+		gencmd.cmdflags = EXYNOS_USB3_DGCMD_CmdAct;
+		res = exynos_ss_udc_issue_gcmd(udc, &gencmd);
+		if (res < 0)
+			dev_err(udc->dev, "%s: Failed to flush FIFOs\n",
+					   __func__);
 	}
 
 	spin_unlock_irqrestore(&udc->lock, flags);
