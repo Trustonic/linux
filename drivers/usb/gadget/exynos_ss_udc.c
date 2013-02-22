@@ -290,6 +290,28 @@ static int exynos_ss_udc_issue_epcmd(struct exynos_ss_udc *udc,
 }
 
 /**
+ * exynos_ss_udc_issue_gcmd - issue generic command
+ * @udc: The device state.
+ * @gcmd: The command to issue.
+ */
+static int exynos_ss_udc_issue_gcmd(struct exynos_ss_udc *udc,
+				     struct exynos_ss_udc_gen_command *gcmd)
+{
+	int res;
+	u32 dgcmd;
+
+	writel(gcmd->param, udc->regs + EXYNOS_USB3_DGCMDPAR);
+
+	dgcmd = gcmd->cmdtyp | gcmd->cmdflags;
+	writel(dgcmd, udc->regs + EXYNOS_USB3_DGCMD);
+
+	res = poll_bit_clear(udc->regs + EXYNOS_USB3_DGCMD,
+			     EXYNOS_USB3_DEPCMDx_CmdAct,
+			     1000);
+	return res;
+}
+
+/**
  * exynos_ss_udc_end_xfer - end active transfer for endpoint
  * @udc: The device state.
  * @udc_ep: The endpoint for which transfer is stopped.
@@ -1059,9 +1081,9 @@ static void exynos_ss_udc_complete_set_sel(struct usb_ep *ep,
 {
 	struct exynos_ss_udc_ep *udc_ep = our_ep(ep);
 	struct exynos_ss_udc *udc = udc_ep->parent;
+	struct exynos_ss_udc_gen_command gencmd = {0};
 	u8 *sel = req->buf;
 	u32 param;
-	u32 dgcmd;
 	int res;
 
 	/* Our device is U1/U2 enabled, so we will use U2PEL */
@@ -1073,14 +1095,10 @@ static void exynos_ss_udc_complete_set_sel(struct usb_ep *ep,
 
 	dev_vdbg(udc->dev, "%s: dgcmd_param = 0x%08x\n", __func__, param);
 
-	dgcmd = EXYNOS_USB3_DGCMD_CmdAct |
-		EXYNOS_USB3_DGCMD_CmdTyp_SetPerParams;
-
-	writel(param, udc->regs + EXYNOS_USB3_DGCMDPAR);
-	writel(dgcmd, udc->regs + EXYNOS_USB3_DGCMD);
-	res = poll_bit_clear(udc->regs + EXYNOS_USB3_DGCMD,
-			     EXYNOS_USB3_DGCMD_CmdAct,
-			     1000);
+	gencmd.param = param;
+	gencmd.cmdtyp =  EXYNOS_USB3_DGCMD_CmdTyp_SetPerParams;
+	gencmd.cmdflags = EXYNOS_USB3_DGCMD_CmdAct;
+	res = exynos_ss_udc_issue_gcmd(udc, &gencmd);
 	if (res < 0)
 		dev_err(udc->dev, "Failed to set periodic parameters\n");
 }

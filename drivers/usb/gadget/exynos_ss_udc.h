@@ -353,6 +353,18 @@ struct exynos_ss_udc_ep_command {
 };
 
 /**
+ * struct exynos_ss_udc_gen_command - generic command.
+ * @param: Command parameter.
+ * @cmdtype: Command to issue.
+ * @cmdflags: Command flags.
+ */
+struct exynos_ss_udc_gen_command {
+	u32 param;
+	u32 cmdtyp;
+	u32 cmdflags;
+};
+
+/**
  * struct exynos_ss_udc_req - data transfer request
  * @req: The USB gadget request.
  * @trb: Transfer Request Block for the request.
