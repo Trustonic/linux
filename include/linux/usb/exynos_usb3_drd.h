@@ -45,6 +45,7 @@ struct exynos_drd_core_ops {
 	void (*phy30_suspend)(struct exynos_drd_core *core, int suspend);
 	void (*set_event_buff)(struct exynos_drd_core *core,
 			       dma_addr_t event_buff_dma, int size);
+	void (*events_enable)(struct exynos_drd_core *core, int on);
 	u32 (*get_evntcount)(struct exynos_drd_core *core);
 	void (*ack_evntcount)(struct exynos_drd_core *core, u32 val);
 };

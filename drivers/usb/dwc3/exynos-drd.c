@@ -80,6 +80,18 @@ static void exynos_drd_ack_evntcount(struct exynos_drd_core *core, u32 val)
 	writel(val, drd->regs + EXYNOS_USB3_GEVNTCOUNT(0));
 }
 
+static void exynos_drd_events_enable(struct exynos_drd_core *core, int on)
+{
+	struct exynos_drd *drd = container_of(core, struct exynos_drd, core);
+
+	if (on)
+		__bic32(drd->regs + EXYNOS_USB3_GEVNTSIZ(0),
+			EXYNOS_USB3_GEVNTSIZx_EvntIntMask);
+	else
+		__orr32(drd->regs + EXYNOS_USB3_GEVNTSIZ(0),
+			EXYNOS_USB3_GEVNTSIZx_EvntIntMask);
+}
+
 static void exynos_drd_set_event_buff(struct exynos_drd_core *core,
 				      dma_addr_t event_buff_dma,
 				      int size)
@@ -94,14 +106,12 @@ static void exynos_drd_set_event_buff(struct exynos_drd_core *core,
 	writel(size, drd->regs + EXYNOS_USB3_GEVNTSIZ(0));
 
 	/* Flush any pending events */
-	__orr32(drd->regs + EXYNOS_USB3_GEVNTSIZ(0),
-		EXYNOS_USB3_GEVNTSIZx_EvntIntMask);
+	exynos_drd_events_enable(core, 0);
 
 	reg = readl(drd->regs + EXYNOS_USB3_GEVNTCOUNT(0));
 	writel(reg, drd->regs + EXYNOS_USB3_GEVNTCOUNT(0));
 
-	__bic32(drd->regs + EXYNOS_USB3_GEVNTSIZ(0),
-		EXYNOS_USB3_GEVNTSIZx_EvntIntMask);
+	exynos_drd_events_enable(core, 1);
 }
 
 static void exynos_drd_phy20_suspend(struct exynos_drd_core *core, int suspend)
@@ -325,6 +335,7 @@ static struct exynos_drd_core_ops core_ops = {
 	.phy20_suspend	= exynos_drd_phy20_suspend,
 	.phy30_suspend	= exynos_drd_phy30_suspend,
 	.set_event_buff	= exynos_drd_set_event_buff,
+	.events_enable	= exynos_drd_events_enable,
 	.get_evntcount	= exynos_drd_get_evntcount,
 	.ack_evntcount	= exynos_drd_ack_evntcount,
 };
