@@ -51,5 +51,8 @@ void exynos5_smdk5250_tvout_init(void);
 void exynos5_smdk5250_camera_init(void);
 void exynos5_arndale_wifi_init(void);
 void exynos5_arndale_sensors_init(void);
+#ifdef CONFIG_GPS_POWER
+void exynos5_arndale_gps_init(void);
+#endif
 
 #endif

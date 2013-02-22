@@ -491,6 +491,9 @@ static void __init smdk5250_machine_init(void)
 	exynos5_smdk5250_sysfs_soc_init();
 	exynos5_arndale_wifi_init();
 	exynos5_arndale_sensors_init();
+#ifdef CONFIG_GPS_POWER
+	exynos5_arndale_gps_init();
+#endif
 }
 
 MACHINE_START(ARNDALE, "ARNDALE")

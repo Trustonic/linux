@@ -554,6 +554,13 @@ config AUDIENCE_ES305
 	  The ES305 is a Voice Processor with integrated DSP that processes
 	  i2s audio data to provide noise suppression and echo cancellation.
 
+config GPS_POWER
+        tristate "GPS Power Driver"
+        depends on MACH_ARNDALE
+        default n
+        help
+          Say Y here to enable support for gps power control
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"

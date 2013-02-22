@@ -103,6 +103,9 @@ obj-$(CONFIG_MACH_ARNDALE)		+= board-arndale-tvout.o
 obj-$(CONFIG_MACH_ARNDALE)		+= board-arndale-camera.o
 obj-$(CONFIG_MACH_ARNDALE)		+= board-arndale-wifi.o
 obj-$(CONFIG_MACH_ARNDALE)		+= board-arndale-sensors.o
+ifeq ($(CONFIG_GPS_POWER),y)
+obj-$(CONFIG_MACH_ARNDALE)      += board-arndale-gps.o
+endif
 
 # device support
 
