@@ -135,6 +135,7 @@
 #define EXYNOS_USB3_DGCMD_CmdTyp(_x)			((_x) << 0)
 /* Device generic commands */
 #define EXYNOS_USB3_DGCMD_CmdTyp_SetPerParams		0x2
+#define EXYNOS_USB3_DGCMD_CmdTyp_AllFIFOFlush		0xa
 
 #define EXYNOS_USB3_DALEPENA		0xC720
 

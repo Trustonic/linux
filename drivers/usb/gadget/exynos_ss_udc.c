@@ -2983,8 +2983,10 @@ static int exynos_ss_udc_enable(struct exynos_ss_udc *udc)
 static int exynos_ss_udc_disable(struct exynos_ss_udc *udc)
 {
 	struct platform_device *pdev = to_platform_device(udc->dev);
+	struct exynos_ss_udc_gen_command gencmd = {0};
 	int epindex;
 	unsigned long flags;
+	int res;
 
 	dev_dbg(udc->dev, "%s\n", __func__);
 
@@ -3008,6 +3010,17 @@ static int exynos_ss_udc_disable(struct exynos_ss_udc *udc)
 	call_gadget(udc, disconnect);
 	udc->gadget.speed = USB_SPEED_UNKNOWN;
 	udc->enabled = false;
+
+	/* Disable event interrupt */
+	if (udc->core->ops->events_enable)
+		udc->core->ops->events_enable(udc->core, 0);
+
+	/* Flush All FIFOs */
+	gencmd.cmdtyp =  EXYNOS_USB3_DGCMD_CmdTyp_AllFIFOFlush;
+	gencmd.cmdflags = EXYNOS_USB3_DGCMD_CmdAct;
+	res = exynos_ss_udc_issue_gcmd(udc, &gencmd);
+	if (res < 0)
+		dev_err(udc->dev, "%s: Failed to flush FIFOs\n", __func__);
 
 	spin_unlock_irqrestore(&udc->lock, flags);
 
