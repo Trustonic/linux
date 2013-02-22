@@ -1054,8 +1054,13 @@ static int exynos_ss_udc_process_set_config(struct exynos_ss_udc *udc,
 		ret = udc->driver->setup(&udc->gadget, ctrl);
 		if (!ret || ret == USB_GADGET_DELAYED_STATUS) {
 			ret = 1;
-			if (config)
+			if (config) {
 				udc->state = USB_STATE_CONFIGURED;
+				/* Accept U1&U2 transition */
+				__orr32(udc->regs + EXYNOS_USB3_DCTL,
+					EXYNOS_USB3_DCTL_AcceptU2Ena |
+					EXYNOS_USB3_DCTL_AcceptU1Ena);
+			}
 		}
 		break;
 
@@ -2244,11 +2249,6 @@ static void exynos_ss_udc_irq_connectdone(struct exynos_ss_udc *udc)
 	if (udc->gadget.speed == USB_SPEED_SUPER) {
 		if (udc->core->ops->phy20_suspend)
 			udc->core->ops->phy20_suspend(udc->core, 1);
-
-		/* Accept U1&U2 transition */
-		__orr32(udc->regs + EXYNOS_USB3_DCTL,
-			EXYNOS_USB3_DCTL_AcceptU2Ena |
-			EXYNOS_USB3_DCTL_AcceptU1Ena);
 	} else {
 		if (udc->core->ops->phy30_suspend)
 			udc->core->ops->phy30_suspend(udc->core, 1);
