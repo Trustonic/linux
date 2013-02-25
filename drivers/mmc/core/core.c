@@ -38,11 +38,14 @@
 #include "bus.h"
 #include "host.h"
 #include "sdio_bus.h"
-#include "../card/queue.h"
 
 #include "mmc_ops.h"
 #include "sd_ops.h"
 #include "sdio_ops.h"
+
+#if defined(CONFIG_BLK_DEV_IO_TRACE)
+#include "../card/queue.h"
+#endif
 
 static struct workqueue_struct *workqueue;
 

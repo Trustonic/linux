@@ -41,11 +41,11 @@
 #include <linux/mmc/host.h>
 #include <linux/mmc/mmc.h>
 #include <linux/mmc/sd.h>
+#include <linux/mmc/mmc_trace.h>
 
 #include <asm/uaccess.h>
 
 #include "queue.h"
-#include "../core/core.h"
 
 MODULE_ALIAS("mmc:block");
 #ifdef MODULE_PARAM_PREFIX

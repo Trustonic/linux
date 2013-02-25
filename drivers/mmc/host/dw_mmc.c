@@ -41,6 +41,10 @@
 
 #include "dw_mmc.h"
 
+#if defined(CONFIG_BLK_DEV_IO_TRACE)
+#include "../card/queue.h"
+#endif
+
 /* Common flag combinations */
 #define DW_MCI_DATA_ERROR_FLAGS	(SDMMC_INT_DTO | SDMMC_INT_DCRC | \
 				 SDMMC_INT_HTO | SDMMC_INT_SBE  | \
