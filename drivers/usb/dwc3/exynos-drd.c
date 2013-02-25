@@ -647,6 +647,7 @@ static int exynos_drd_suspend(struct device *dev)
 		return 0;
 	}
 #endif
+	disable_irq(drd->irq);
 	exynos_drd_phy_unset(&drd->core);
 	clk_disable(drd->clk);
 
@@ -675,6 +676,8 @@ static int exynos_drd_resume(struct device *dev)
 	pm_runtime_set_active(dev);
 	pm_runtime_enable(dev);
 
+	enable_irq(drd->irq);
+
 	return 0;
 }
 #else
@@ -689,9 +692,9 @@ static int exynos_drd_runtime_suspend(struct device *dev)
 
 	dev_dbg(dev, "%s\n", __func__);
 
+	disable_irq(drd->irq);
 	exynos_drd_phy_unset(&drd->core);
 	clk_disable(drd->clk);
-	disable_irq(drd->irq);
 	return 0;
 }
 
@@ -701,13 +704,13 @@ static int exynos_drd_runtime_resume(struct device *dev)
 
 	dev_dbg(dev, "%s\n", __func__);
 
-	enable_irq(drd->irq);
 	if (dev->power.is_suspended) {
 		dev_dbg(dev, "DRD is system suspended\n");
 		return 0;
 	}
 	clk_enable(drd->clk);
 	exynos_drd_phy_set(&drd->core);
+	enable_irq(drd->irq);
 
 	return 0;
 }
