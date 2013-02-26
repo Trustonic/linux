@@ -1246,9 +1246,13 @@ static void dw_mci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 		 * core ios update when finding the minimum.
 		 */
 		slot->clock = ios->clock;
+		spin_lock(&slot->host->cclk_lock);
 		dw_mci_ciu_clk_en(slot->host);
+		spin_unlock(&slot->host->cclk_lock);
 	} else {
+		spin_lock(&slot->host->cclk_lock);
 		dw_mci_ciu_clk_dis(slot->host);
+		spin_unlock(&slot->host->cclk_lock);
 	}
 
 	switch (ios->power_mode) {
@@ -2652,14 +2656,30 @@ static void dw_mci_work_routine_card(struct work_struct *work)
 				sg_miter_stop(&host->sg_miter);
 				host->sg = NULL;
 
-				dw_mci_ciu_clk_en(host);
-				dw_mci_fifo_reset(&host->dev, host);
-				dw_mci_ciu_reset(&host->dev, host);
-				dw_mci_ciu_clk_dis(host);
+				spin_lock(&host->cclk_lock);
+				if (!atomic_read(&host->cclk_cnt)) {
+					dw_mci_ciu_clk_en(host);
+					dw_mci_fifo_reset(&host->dev, host);
+					dw_mci_ciu_reset(&host->dev, host);
+					dw_mci_ciu_clk_dis(host);
+				} else {
+					dw_mci_fifo_reset(&host->dev, host);
+					dw_mci_ciu_reset(&host->dev, host);
+				}
+				spin_unlock(&host->cclk_lock);
 #ifdef CONFIG_MMC_DW_IDMAC
 				dw_mci_idma_reset_dma(host);
 #endif
 
+			} else if (host->cur_slot) {
+				spin_lock(&host->cclk_lock);
+				if (!atomic_read(&host->cclk_cnt)) {
+					dw_mci_ciu_clk_en(host);
+					dw_mci_ciu_reset(&host->dev, host);
+					dw_mci_ciu_clk_dis(host);
+				} else
+					dw_mci_ciu_reset(&host->dev, host);
+				spin_unlock(&host->cclk_lock);
 			}
 
 			spin_unlock_bh(&host->lock);
@@ -2967,6 +2987,7 @@ int __devinit dw_mci_probe(struct dw_mci *host)
 	host->quirks = host->pdata->quirks;
 
 	spin_lock_init(&host->lock);
+	spin_lock_init(&host->cclk_lock);
 	INIT_LIST_HEAD(&host->queue);
 
 	/*

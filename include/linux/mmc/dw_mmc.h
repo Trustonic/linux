@@ -132,6 +132,7 @@ struct dw_mci {
 	struct clk		*cclk;
 	atomic_t		cclk_cnt;
 	atomic_t		hclk_cnt;
+	spinlock_t		cclk_lock;
 	struct workqueue_struct	*card_workqueue;
 
 	/* DMA interface members*/
