@@ -160,7 +160,12 @@ static int fimg2d_open(struct inode *inode, struct file *file)
 	}
 	file->private_data = (void *)ctx;
 
-	ctx->mm = current->mm;
+	ctx->mm = get_task_mm(current);
+	if (!ctx->mm) {
+		fimg2d_err("not user task ctx 0x%p\n", ctx);
+		kfree(ctx);
+		return -EFAULT;
+	}
 	fimg2d_debug("ctx %p current pgd %p init_mm pgd %p\n",
 			ctx, (unsigned long *)ctx->mm->pgd,
 			(unsigned long *)init_mm.pgd);
@@ -184,6 +189,7 @@ static int fimg2d_release(struct inode *inode, struct file *file)
 		mdelay(POLL_TIMEOUT);
 	}
 	fimg2d_del_context(ctrl, ctx);
+	mmput(ctx->mm);
 	kfree(ctx);
 	g2d_unlock(&ctrl->drvlock);
 	return 0;
