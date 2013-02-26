@@ -450,6 +450,7 @@ struct fimg2d_perf {
  * @blt_state: blit command status
  * @ncmd: request count in blit command queue
  * @wait_q: conext wait queue head
+ * @node: list head of ctx queue
 */
 struct fimg2d_context {
 	struct mm_struct *mm;
@@ -457,6 +458,7 @@ struct fimg2d_context {
 	atomic_t ncmd;
 	wait_queue_head_t wait_q;
 	struct fimg2d_perf perf[MAX_PERF_DESCS];
+	struct list_head node;
 };
 
 /**
@@ -498,6 +500,7 @@ struct fimg2d_bltcmd {
  * @busy: 1 if hardware is running
  * @bltlock: spinlock for blit
  * @wait_q: blit wait queue head
+ * @ctx_q: user context queue
  * @cmd_q: blit command queue
  * @workqueue: workqueue_struct for kfimg2dd
 */
@@ -517,6 +520,7 @@ struct fimg2d_control {
 	struct mutex drvlock;
 	int irq;
 	wait_queue_head_t wait_q;
+	struct list_head ctx_q;
 	struct list_head cmd_q;
 	struct workqueue_struct *work_q;
 

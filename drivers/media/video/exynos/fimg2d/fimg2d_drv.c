@@ -144,6 +144,12 @@ static int fimg2d_sysmmu_fault_handler(struct device *dev,
 next:
 	ctrl->dump(ctrl);
 
+	fimg2d_err("ctx 0x%p cmd 0x%p blt_state 0x%x wq_state %d\n",
+		ctx, cmd, ctx->blt_state, ctrl->wq_state);
+	fimg2d_err("nctx %d\n", atomic_read(&ctrl->nctx));
+	list_for_each_entry(pos, &ctrl->ctx_q, node)
+		fimg2d_err("\t ctx_q: ctx 0x%p\n", pos);
+
 	BUG();
 	return 0;
 }
@@ -323,6 +329,7 @@ static int fimg2d_setup_controller(struct fimg2d_control *ctrl)
 	spin_lock_init(&ctrl->bltlock);
 	mutex_init(&ctrl->drvlock);
 
+	INIT_LIST_HEAD(&ctrl->ctx_q);
 	INIT_LIST_HEAD(&ctrl->cmd_q);
 	init_waitqueue_head(&ctrl->wait_q);
 	fimg2d_register_ops(ctrl);

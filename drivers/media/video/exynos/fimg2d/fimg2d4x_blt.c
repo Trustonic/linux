@@ -85,7 +85,9 @@ int fimg2d4x_bitblt(struct fimg2d_control *ctrl)
 		if (!cmd)
 			break;
 
-		ctx = cmd->ctx;
+		ctx = fimg2d_get_context(ctrl, cmd);
+		if (!ctx)
+			break;
 
 		ctx->blt_state = BLIT_PREPARE;
 
