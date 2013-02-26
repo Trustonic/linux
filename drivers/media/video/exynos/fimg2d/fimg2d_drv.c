@@ -36,6 +36,7 @@
 #include "fimg2d.h"
 #include "fimg2d_clk.h"
 #include "fimg2d_ctx.h"
+#include "fimg2d_cache.h"
 #include "fimg2d_helper.h"
 
 #define POLL_TIMEOUT	2
@@ -119,9 +120,11 @@ static int fimg2d_sysmmu_fault_handler(struct device *dev,
 		unsigned long pgtable_base, unsigned long fault_addr)
 {
 	struct fimg2d_bltcmd *cmd;
+	struct fimg2d_context *ctx, *pos;
+	enum pt_status pt;
 
 	if (itype == SYSMMU_PAGEFAULT) {
-		fimg2d_err("sysmmu page fault(0x%lx), pgd(0x%lx)\n",
+		fimg2d_trace("sysmmu page fault(0x%lx), pgd(0x%lx)\n",
 				fault_addr, pgtable_base);
 	} else {
 		fimg2d_err("sysmmu fault type(%d) pgd(0x%lx) addr(0x%lx)\n",
@@ -129,18 +132,28 @@ static int fimg2d_sysmmu_fault_handler(struct device *dev,
 	}
 
 	cmd = fimg2d_get_command(ctrl);
-	if (WARN_ON(!cmd))
-		goto next;
+	ctx = fimg2d_get_context(ctrl, cmd);
 
-	if (cmd->ctx->mm->pgd != phys_to_virt(pgtable_base)) {
-		fimg2d_err("pgtable base invalid\n");
-		goto next;
+	ctx->blt_state |= BLIT_ERR_FAULT;
+
+#ifdef RECOVER_PGTABLE
+	if (itype == SYSMMU_PAGEFAULT) {
+		/* restore page fault */
+		if (ctx->last_fault_vaddr) {
+			fimg2d_dummy_page_map(ctx->mm, ctx->last_fault_vaddr, 0);
+			ctx->last_fault_vaddr = 0;
+		}
+
+		pt = fimg2d_check_pagetable(ctx->mm, fault_addr, 4);
+		if (pt == PT_NORMAL) {
+			return 0;
+		} else if (pt == PT_LV2_FAULT) {
+			fimg2d_dummy_page_map(ctx->mm, fault_addr, ctrl->dummy_page_paddr);
+			ctx->last_fault_vaddr = fault_addr;
+			return 0;
+		}
 	}
-
-	fimg2d_dump_command(cmd);
-
-next:
-	ctrl->dump(ctrl);
+#endif
 
 	fimg2d_err("ctx 0x%p cmd 0x%p blt_state 0x%x wq_state %d\n",
 		ctx, cmd, ctx->blt_state, ctrl->wq_state);
@@ -148,6 +161,7 @@ next:
 	list_for_each_entry(pos, &ctrl->ctx_q, node)
 		fimg2d_err("\t ctx_q: ctx 0x%p\n", pos);
 
+	fimg2d_debug_command(cmd);
 	BUG();
 	return 0;
 }
@@ -320,6 +334,9 @@ static int fimg2d_probe(struct platform_device *pdev)
 {
 	int ret = 0;
 	struct resource *res;
+#ifdef RECOVER_PGTABLE
+	struct page *dummy_page;
+#endif
 
 	if (!to_fimg2d_plat(&pdev->dev)) {
 		fimg2d_err("failed to get platform data\n");
@@ -400,6 +417,11 @@ static int fimg2d_probe(struct platform_device *pdev)
 	exynos_sysmmu_set_fault_handler(ctrl->dev, fimg2d_sysmmu_fault_handler);
 	fimg2d_info("register sysmmu page fault handler\n");
 
+#ifdef RECOVER_PGTABLE
+	dummy_page = alloc_page(__GFP_ZERO | __GFP_REPEAT | __GFP_NOWARN | __GFP_COLD);
+	ctrl->dummy_page_paddr = page_to_phys(dummy_page);
+#endif
+
 	/* misc register */
 	ret = misc_register(&fimg2d_dev);
 	if (ret) {
@@ -428,6 +450,7 @@ res_free:
 drv_free:
 	if (ctrl->work_q)
 		destroy_workqueue(ctrl->work_q);
+
 	kfree(ctrl);
 
 	return ret;

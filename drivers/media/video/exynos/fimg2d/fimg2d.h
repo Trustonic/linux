@@ -448,6 +448,7 @@ struct fimg2d_perf {
 /**
  * @pgd: base address of arm mmu pagetable
  * @blt_state: blit command status
+ * @fault_vaddr: last fault vaddr
  * @ncmd: request count in blit command queue
  * @wait_q: conext wait queue head
  * @node: list head of ctx queue
@@ -455,6 +456,7 @@ struct fimg2d_perf {
 struct fimg2d_context {
 	struct mm_struct *mm;
 	int blt_state;
+	unsigned long last_fault_vaddr;
 	atomic_t ncmd;
 	wait_queue_head_t wait_q;
 	struct fimg2d_perf perf[MAX_PERF_DESCS];
@@ -488,6 +490,7 @@ struct fimg2d_bltcmd {
 };
 
 /**
+ * @dummy_page_paddr: dummy page's paddr for sysmmu page fault
  * @suspended: in suspend mode
  * @clkon: power status for runtime pm
  * @mem: resource platform device
@@ -510,6 +513,7 @@ struct fimg2d_control {
 	struct resource *mem;
 	void __iomem *regs;
 
+	unsigned long dummy_page_paddr;
 	atomic_t drvact;
 	atomic_t suspended;
 	atomic_t clkon;

@@ -141,7 +141,7 @@ enum pt_status fimg2d_check_pagetable(struct mm_struct *mm,
 			fimg2d_debug("invalid LV1 descriptor, "
 					"pgd %p lv1d 0x%lx vaddr 0x%lx\n",
 					pgd, *lv1d, vaddr);
-			return PT_FAULT;
+			return PT_LV1_FAULT;
 		}
 
 		lv2d = (unsigned long *)phys_to_virt(*lv1d & ~LV2_BASE_MASK) +
@@ -157,7 +157,7 @@ enum pt_status fimg2d_check_pagetable(struct mm_struct *mm,
 			fimg2d_debug("invalid LV2 descriptor, "
 					"pgd %p lv2d 0x%lx vaddr 0x%lx\n",
 					pgd, *lv2d, vaddr);
-			return PT_FAULT;
+			return PT_LV2_FAULT;
 		}
 
 		vaddr += PAGE_SIZE;
@@ -165,4 +165,25 @@ enum pt_status fimg2d_check_pagetable(struct mm_struct *mm,
 	}
 
 	return PT_NORMAL;
+}
+
+void fimg2d_dummy_page_map(struct mm_struct *mm,
+		unsigned long vaddr, unsigned long paddr)
+{
+	unsigned long *pgd;
+	unsigned long *lv1d, *lv2d;
+
+	pgd = (unsigned long *)mm->pgd;
+
+	lv1d = pgd + (vaddr >> LV1_SHIFT);
+	lv2d = (unsigned long *)phys_to_virt(*lv1d & ~LV2_BASE_MASK) +
+				((vaddr & LV2_PT_MASK) >> LV2_SHIFT);
+
+	*lv2d = (paddr & ~0xfff) | 0xc7f;
+
+	fimg2d_dma_sync_inner((unsigned long)lv2d, 4, DMA_TO_DEVICE);
+#ifdef CONFIG_OUTER_CACHE
+	fimg2d_dma_sync_outer(mm, vaddr, 4, CACHE_CLEAN);
+	fimg2d_clean_outer_pagetable(mm, vaddr, 4);
+#endif
 }

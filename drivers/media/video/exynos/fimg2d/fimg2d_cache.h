@@ -37,11 +37,13 @@ enum cache_opr {
 
 /**
  * @PT_NORMAL: pagetable exists
- * @PT_FAULT: invalid pagetable
+ * @PT_LV1_FAULT: invalid lv1 descriptor
+ * @PT_LV2_FAULT: invalid lv2 descriptor
  */
 enum pt_status {
 	PT_NORMAL,
-	PT_FAULT,
+	PT_LV1_FAULT,
+	PT_LV2_FAULT
 };
 
 static inline bool is_inner_flushall(size_t size)
@@ -99,3 +101,5 @@ void fimg2d_dma_sync_outer(struct mm_struct *mm, unsigned long addr,
 		size_t size, enum cache_opr opr);
 enum pt_status fimg2d_check_pagetable(struct mm_struct *mm, unsigned long addr,
 		size_t size);
+void fimg2d_dummy_page_map(struct mm_struct *mm, unsigned long vaddr,
+		unsigned long paddr);

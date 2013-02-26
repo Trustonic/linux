@@ -541,7 +541,7 @@ static int fimg2d_check_dma_sync(struct fimg2d_bltcmd *cmd)
 			continue;
 
 		pt = fimg2d_check_pagetable(mm, c->addr, c->size);
-		if (pt == PT_FAULT) {
+		if (pt != PT_NORMAL) {
 			ret = -EFAULT;
 			goto err_pgtable;
 		}

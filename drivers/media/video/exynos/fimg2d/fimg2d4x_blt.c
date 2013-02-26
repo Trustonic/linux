@@ -117,6 +117,13 @@ int fimg2d4x_bitblt(struct fimg2d_control *ctrl)
 			fimg2d_debug("sysmmu disable\n");
 		}
 
+#ifdef RECOVER_PGTABLE
+		if (ctx->last_fault_vaddr) {
+			fimg2d_dummy_page_map(ctx->mm, ctx->last_fault_vaddr, 0);
+			ctx->last_fault_vaddr = 0;
+			fimg2d_err("dummy page mapping. ctx 0x%p cmd 0x%p\n", ctx, cmd);
+		}
+#endif
 		fimg2d_del_command(ctrl, cmd);
 	}
 

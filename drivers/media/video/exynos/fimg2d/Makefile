@@ -15,3 +15,4 @@ obj-$(CONFIG_VIDEO_EXYNOS_FIMG2D) += fimg2d_drv.o fimg2d_clk.o \
 				fimg2d4x_blt.o fimg2d4x_hw.o
 
 ccflags-y += -DDEBUG
+ccflags-y += -DRECOVER_PGTABLE
