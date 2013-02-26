@@ -34,21 +34,34 @@
 static int fimg2d4x_blit_wait(struct fimg2d_control *ctrl,
 		struct fimg2d_bltcmd *cmd)
 {
-	int ret;
+	int ret, done;
 
+retry:
 	ret = wait_event_timeout(ctrl->wait_q, !atomic_read(&ctrl->busy),
 			BLIT_TIMEOUT);
+
+	done = fimg2d4x_blit_done_status(ctrl);
+
 	if (!ret) {
-		fimg2d4x_disable_irq(ctrl);
+		if (!done && cmd->ctx->blt_state & BLIT_ERR_FAULT) {
+			fimg2d_err("waiting for done again. " \
+				"ctx 0x%p cmd 0x%p blt_state 0x%x\n",
+				cmd->ctx, cmd, cmd->ctx->blt_state);
+			goto retry;
 
-		if (!fimg2d4x_blit_done_status(ctrl))
-			fimg2d_err("blit not finished\n");
+		} else if (!done) {
+			fimg2d4x_disable_irq(ctrl);
+			fimg2d4x_reset(ctrl);
+			cmd->ctx->blt_state |= BLIT_ERR_TIMEOUT;
+			fimg2d_err("blit timeout ctx 0x%p cmd 0x%p blt_state 0x%x\n",
+				cmd->ctx, cmd, cmd->ctx->blt_state);
+			return -ETIME;
+		}
 
-		fimg2d_dump_command(cmd);
-		fimg2d4x_reset(ctrl);
-
-		return -1;
+		/* timeout but done */
 	}
+
+	/* blit done */
 	return 0;
 }
 

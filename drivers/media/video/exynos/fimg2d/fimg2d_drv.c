@@ -84,12 +84,25 @@ static int fimg2d_context_wait(struct fimg2d_context *ctx)
 {
 	int ret;
 
+retry:
 	ret = wait_event_timeout(ctx->wait_q, !atomic_read(&ctx->ncmd),
 			CTX_TIMEOUT);
 	if (!ret) {
-		fimg2d_err("ctx %p wait timeout\n", ctx);
-		return -ETIME;
+		if (atomic_read(&ctx->ncmd)) {
+			fimg2d_err("waiting for ctx done all again. " \
+				"ctx 0x%p blt_state 0x%x wq_state %d\n",
+				ctx, ctx->blt_state, ctrl->wq_state);
+			goto retry;
+		}
 	}
+
+	if (ctx->blt_state & BLIT_ERR_MASK) {
+		fimg2d_trace("blit incomplete. ctx 0x%p blt_state 0x%x wq_state %d\n",
+			ctx, ctx->blt_state, ctrl->wq_state);
+		return -EAGAIN;
+	}
+
+	/* blit done */
 	return 0;
 }
 #endif
@@ -184,15 +197,16 @@ static int fimg2d_open(struct inode *inode, struct file *file)
 static int fimg2d_release(struct inode *inode, struct file *file)
 {
 	struct fimg2d_context *ctx = file->private_data;
-	int retry = POLL_RETRY;
 
 	fimg2d_debug("ctx %p\n", ctx);
 	g2d_lock(&ctrl->drvlock);
-	while (retry--) {
-		if (!atomic_read(&ctx->ncmd))
-			break;
+retry:
+	if (atomic_read(&ctx->ncmd)) {
 		mdelay(POLL_TIMEOUT);
+		goto retry;
 	}
+	fimg2d_trace("ctx 0x%p ncmd %d blt_state 0x%x wq_state %d\n",
+		ctx, atomic_read(&ctx->ncmd), ctx->blt_state, ctrl->wq_state);
 	fimg2d_del_context(ctrl, ctx);
 	mmput(ctx->mm);
 	kfree(ctx);
@@ -471,16 +485,15 @@ static int fimg2d_remove(struct platform_device *pdev)
 static int fimg2d_suspend(struct device *dev)
 {
 	unsigned long flags;
-	int retry = POLL_RETRY;
 
 	g2d_lock(&ctrl->drvlock);
 	g2d_spin_lock(&ctrl->bltlock, flags);
 	atomic_set(&ctrl->suspended, 1);
 	g2d_spin_unlock(&ctrl->bltlock, flags);
-	while (retry--) {
-		if (fimg2d_queue_is_empty(&ctrl->cmd_q))
-			break;
+retry:
+	if (!fimg2d_queue_is_empty(&ctrl->cmd_q)) {
 		mdelay(POLL_TIMEOUT);
+		goto retry;
 	}
 	g2d_unlock(&ctrl->drvlock);
 	fimg2d_info("suspend... done\n");
