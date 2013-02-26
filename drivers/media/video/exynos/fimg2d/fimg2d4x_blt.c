@@ -74,6 +74,8 @@ int fimg2d4x_bitblt(struct fimg2d_control *ctrl)
 
 		ctx = cmd->ctx;
 
+		ctx->blt_state = BLIT_PREPARE;
+
 		atomic_set(&ctrl->busy, 1);
 
 		perf_start(cmd, PERF_SFR);
@@ -92,11 +94,15 @@ int fimg2d4x_bitblt(struct fimg2d_control *ctrl)
 
 		fimg2d4x_pre_bitblt(ctrl, cmd);
 
+		ctx->blt_state = BLIT_START;
+
 		perf_start(cmd, PERF_BLIT);
 		/* start blit */
 		ctrl->run(ctrl);
 		ret = fimg2d4x_blit_wait(ctrl, cmd);
 		perf_end(cmd, PERF_BLIT);
+
+		ctx->blt_state |= BLIT_DONE;
 
 		if (addr_type == ADDR_USER || addr_type == ADDR_USER_CONTIG) {
 			exynos_sysmmu_disable(ctrl->dev);

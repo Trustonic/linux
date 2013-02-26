@@ -419,6 +419,15 @@ struct fimg2d_blit {
 
 #ifdef __KERNEL__
 
+#define BLIT_IDLE		0x13570000
+#define BLIT_REQUEST		0x13570001
+#define BLIT_PREPARE		0x13570002
+#define BLIT_START		0x13570004
+#define BLIT_DONE		0x13570008
+#define BLIT_ERR_NOBLIT		0x13570010
+#define BLIT_ERR_TIMEOUT	0x13570020
+#define BLIT_ERR_FAULT		0x13570040
+#define BLIT_ERR_MASK		0x000000f0
 enum perf_desc {
 	PERF_CACHE = 0,
 	PERF_SFR,
@@ -436,11 +445,13 @@ struct fimg2d_perf {
 
 /**
  * @pgd: base address of arm mmu pagetable
+ * @blt_state: blit command status
  * @ncmd: request count in blit command queue
  * @wait_q: conext wait queue head
 */
 struct fimg2d_context {
 	struct mm_struct *mm;
+	int blt_state;
 	atomic_t ncmd;
 	wait_queue_head_t wait_q;
 	struct fimg2d_perf perf[MAX_PERF_DESCS];
@@ -480,6 +491,7 @@ struct fimg2d_bltcmd {
  * @dev: pointer to device struct
  * @err: true if hardware is timed out while blitting
  * @irq: irq number
+ * @wq_state: work queue state
  * @nctx: context count
  * @busy: 1 if hardware is running
  * @bltlock: spinlock for blit
@@ -496,7 +508,7 @@ struct fimg2d_control {
 	atomic_t drvact;
 	atomic_t suspended;
 	atomic_t clkon;
-
+	int wq_state;
 	atomic_t nctx;
 	atomic_t busy;
 	spinlock_t bltlock;

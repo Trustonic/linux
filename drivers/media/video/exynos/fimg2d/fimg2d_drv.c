@@ -74,7 +74,9 @@ static int fimg2d_do_bitblt(struct fimg2d_control *ctrl)
 static void fimg2d_worker(struct work_struct *work)
 {
 	fimg2d_debug("start kernel thread\n");
+	ctrl->wq_state = 1;
 	fimg2d_do_bitblt(ctrl);
+	ctrl->wq_state = 2;
 }
 static DECLARE_WORK(fimg2d_work, fimg2d_worker);
 
@@ -139,6 +141,8 @@ static int fimg2d_request_bitblt(struct fimg2d_control *ctrl,
 #ifdef BLIT_WORKQUE
 	unsigned long flags;
 
+	ctx->blt_state = BLIT_REQUEST;
+
 	g2d_spin_lock(&ctrl->bltlock, flags);
 	fimg2d_debug("dispatch ctx %p to kernel thread\n", ctx);
 	queue_work(ctrl->work_q, &fimg2d_work);
@@ -170,6 +174,7 @@ static int fimg2d_open(struct inode *inode, struct file *file)
 			ctx, (unsigned long *)ctx->mm->pgd,
 			(unsigned long *)init_mm.pgd);
 
+	ctx->blt_state = BLIT_IDLE;
 	g2d_lock(&ctrl->drvlock);
 	fimg2d_add_context(ctrl, ctx);
 	g2d_unlock(&ctrl->drvlock);
