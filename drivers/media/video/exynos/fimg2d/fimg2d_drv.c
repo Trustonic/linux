@@ -70,7 +70,6 @@ static int fimg2d_do_bitblt(struct fimg2d_control *ctrl)
 	return ret;
 }
 
-#ifdef BLIT_WORKQUE
 static void fimg2d_worker(struct work_struct *work)
 {
 	fimg2d_debug("start kernel thread\n");
@@ -105,7 +104,6 @@ retry:
 	/* blit done */
 	return 0;
 }
-#endif
 
 static irqreturn_t fimg2d_irq(int irq, void *dev_id)
 {
@@ -157,19 +155,11 @@ next:
 static int fimg2d_request_bitblt(struct fimg2d_control *ctrl,
 		struct fimg2d_context *ctx)
 {
-#ifdef BLIT_WORKQUE
-	unsigned long flags;
-
 	ctx->blt_state = BLIT_REQUEST;
 
-	g2d_spin_lock(&ctrl->bltlock, flags);
 	fimg2d_debug("dispatch ctx %p to kernel thread\n", ctx);
 	queue_work(ctrl->work_q, &fimg2d_work);
-	g2d_spin_unlock(&ctrl->bltlock, flags);
 	return fimg2d_context_wait(ctx);
-#else
-	return fimg2d_do_bitblt(ctrl);
-#endif
 }
 
 static int fimg2d_open(struct inode *inode, struct file *file)
@@ -194,9 +184,7 @@ static int fimg2d_open(struct inode *inode, struct file *file)
 			(unsigned long *)init_mm.pgd);
 
 	ctx->blt_state = BLIT_IDLE;
-	g2d_lock(&ctrl->drvlock);
 	fimg2d_add_context(ctrl, ctx);
-	g2d_unlock(&ctrl->drvlock);
 	return 0;
 }
 
@@ -205,7 +193,6 @@ static int fimg2d_release(struct inode *inode, struct file *file)
 	struct fimg2d_context *ctx = file->private_data;
 
 	fimg2d_debug("ctx %p\n", ctx);
-	g2d_lock(&ctrl->drvlock);
 retry:
 	if (atomic_read(&ctx->ncmd)) {
 		mdelay(POLL_TIMEOUT);
@@ -216,7 +203,6 @@ retry:
 	fimg2d_del_context(ctrl, ctx);
 	mmput(ctx->mm);
 	kfree(ctx);
-	g2d_unlock(&ctrl->drvlock);
 	return 0;
 }
 
@@ -239,27 +225,19 @@ static long fimg2d_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	switch (cmd) {
 	case FIMG2D_BITBLT_BLIT:
-		g2d_lock(&ctrl->drvlock);
-
 		if (atomic_read(&ctrl->drvact) || atomic_read(&ctrl->suspended)) {
 			fimg2d_debug("driver is unavailable, do sw fallback\n");
-			g2d_unlock(&ctrl->drvlock);
 			return -EPERM;
 		}
 
 		ret = fimg2d_add_command(ctrl, ctx, (struct fimg2d_blit __user *)arg);
-		if (ret) {
-			g2d_unlock(&ctrl->drvlock);
+		if (ret)
 			return ret;
-		}
 
 		ret = fimg2d_request_bitblt(ctrl, ctx);
-		if (ret) {
-			g2d_unlock(&ctrl->drvlock);
+		if (ret)
 			return -EBUSY;
-		}
 
-		g2d_unlock(&ctrl->drvlock);
 		break;
 
 	case FIMG2D_BITBLT_VERSION:
@@ -283,13 +261,11 @@ static long fimg2d_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		if (copy_from_user(&act, (void *)arg, sizeof(act)))
 			return -EFAULT;
 
-		g2d_lock(&ctrl->drvlock);
 		atomic_set(&ctrl->drvact, act);
 		if (act == DRV_ACT)
 			fimg2d_info("fimg2d driver is activated\n");
 		else
 			fimg2d_info("fimg2d driver is deactivated\n");
-		g2d_unlock(&ctrl->drvlock);
 		break;
 	}
 	default:
@@ -327,18 +303,15 @@ static int fimg2d_setup_controller(struct fimg2d_control *ctrl)
 	atomic_set(&ctrl->nctx, 0);
 
 	spin_lock_init(&ctrl->bltlock);
-	mutex_init(&ctrl->drvlock);
 
 	INIT_LIST_HEAD(&ctrl->ctx_q);
 	INIT_LIST_HEAD(&ctrl->cmd_q);
 	init_waitqueue_head(&ctrl->wait_q);
 	fimg2d_register_ops(ctrl);
 
-#ifdef BLIT_WORKQUE
 	ctrl->work_q = create_singlethread_workqueue("kfimg2dd");
 	if (!ctrl->work_q)
 		return -ENOMEM;
-#endif
 
 	return 0;
 }
@@ -453,11 +426,8 @@ mem_free:
 res_free:
 	release_resource(ctrl->mem);
 drv_free:
-#ifdef BLIT_WORKQUE
 	if (ctrl->work_q)
 		destroy_workqueue(ctrl->work_q);
-#endif
-	mutex_destroy(&ctrl->drvlock);
 	kfree(ctrl);
 
 	return ret;
@@ -481,10 +451,7 @@ static int fimg2d_remove(struct platform_device *pdev)
 		kfree(ctrl->mem);
 	}
 
-#ifdef BLIT_WORKQUE
 	destroy_workqueue(ctrl->work_q);
-#endif
-	mutex_destroy(&ctrl->drvlock);
 	kfree(ctrl);
 	return 0;
 }
@@ -493,16 +460,14 @@ static int fimg2d_suspend(struct device *dev)
 {
 	unsigned long flags;
 
-	g2d_lock(&ctrl->drvlock);
-	g2d_spin_lock(&ctrl->bltlock, flags);
+	spin_lock_irqsave(&ctrl->bltlock, flags);
 	atomic_set(&ctrl->suspended, 1);
-	g2d_spin_unlock(&ctrl->bltlock, flags);
+	spin_unlock_irqrestore(&ctrl->bltlock, flags);
 retry:
 	if (!fimg2d_queue_is_empty(&ctrl->cmd_q)) {
 		mdelay(POLL_TIMEOUT);
 		goto retry;
 	}
-	g2d_unlock(&ctrl->drvlock);
 	fimg2d_info("suspend... done\n");
 	return 0;
 }
@@ -511,11 +476,9 @@ static int fimg2d_resume(struct device *dev)
 {
 	unsigned long flags;
 
-	g2d_lock(&ctrl->drvlock);
-	g2d_spin_lock(&ctrl->bltlock, flags);
+	spin_lock_irqsave(&ctrl->bltlock, flags);
 	atomic_set(&ctrl->suspended, 0);
-	g2d_spin_unlock(&ctrl->bltlock, flags);
-	g2d_unlock(&ctrl->drvlock);
+	spin_unlock_irqrestore(&ctrl->bltlock, flags);
 	fimg2d_info("resume... done\n");
 	return 0;
 }

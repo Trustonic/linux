@@ -517,7 +517,7 @@ struct fimg2d_control {
 	atomic_t nctx;
 	atomic_t busy;
 	spinlock_t bltlock;
-	struct mutex drvlock;
+
 	int irq;
 	wait_queue_head_t wait_q;
 	struct list_head ctx_q;
@@ -535,18 +535,6 @@ struct fimg2d_control {
 
 int fimg2d_register_ops(struct fimg2d_control *ctrl);
 int fimg2d_ip_version_is(void);
-
-#ifdef BLIT_WORKQUE
-#define g2d_lock(x)		do {} while (0)
-#define g2d_unlock(x)		do {} while (0)
-#define g2d_spin_lock(x, f)	spin_lock_irqsave(x, f)
-#define g2d_spin_unlock(x, f)	spin_unlock_irqrestore(x, f)
-#else
-#define g2d_lock(x)		mutex_lock(x)
-#define g2d_unlock(x)		mutex_unlock(x)
-#define g2d_spin_lock(x, f)	do { f = 0; } while (0)
-#define g2d_spin_unlock(x, f)	do { f = 0; } while (0)
-#endif
 
 #endif /* __KERNEL__ */
 

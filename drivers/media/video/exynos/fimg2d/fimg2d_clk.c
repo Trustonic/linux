@@ -23,10 +23,10 @@ void fimg2d_clk_on(struct fimg2d_control *ctrl)
 {
 	unsigned long flags;
 
-	g2d_spin_lock(&ctrl->bltlock, flags);
+	spin_lock_irqsave(&ctrl->bltlock, flags);
 	clk_enable(ctrl->clock);
 	atomic_set(&ctrl->clkon, 1);
-	g2d_spin_unlock(&ctrl->bltlock, flags);
+	spin_unlock_irqrestore(&ctrl->bltlock, flags);
 	fimg2d_debug("clock enable\n");
 }
 
@@ -34,10 +34,10 @@ void fimg2d_clk_off(struct fimg2d_control *ctrl)
 {
 	unsigned long flags;
 
-	g2d_spin_lock(&ctrl->bltlock, flags);
+	spin_lock_irqsave(&ctrl->bltlock, flags);
 	atomic_set(&ctrl->clkon, 0);
 	clk_disable(ctrl->clock);
-	g2d_spin_unlock(&ctrl->bltlock, flags);
+	spin_unlock_irqrestore(&ctrl->bltlock, flags);
 	fimg2d_debug("clock disable\n");
 }
 

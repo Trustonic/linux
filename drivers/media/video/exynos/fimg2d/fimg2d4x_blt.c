@@ -65,11 +65,6 @@ retry:
 	return 0;
 }
 
-static void fimg2d4x_pre_bitblt(struct fimg2d_control *ctrl, struct fimg2d_bltcmd *cmd)
-{
-	/* TODO */
-}
-
 int fimg2d4x_bitblt(struct fimg2d_control *ctrl)
 {
 	int ret = 0;
@@ -106,8 +101,6 @@ int fimg2d4x_bitblt(struct fimg2d_control *ctrl)
 			fimg2d_debug("sysmmu enable: pgd %p ctx %p seq_no(%u)\n",
 					pgd, ctx, cmd->blt.seq_no);
 		}
-
-		fimg2d4x_pre_bitblt(ctrl, cmd);
 
 		ctx->blt_state = BLIT_START;
 
