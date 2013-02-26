@@ -1186,6 +1186,10 @@ err_node_type:
 	return ret;
 }
 
+#define need_to_wait_frame_start(ctx)		\
+	(((ctx->state == MFCINST_FINISHING) ||	\
+	  (ctx->state == MFCINST_RUNNING)) &&	\
+	 test_bit(ctx->num, &ctx->dev->hw_lock))
 /* Release MFC context */
 static int s5p_mfc_release(struct file *file)
 {
@@ -1194,6 +1198,12 @@ static int s5p_mfc_release(struct file *file)
 	unsigned long flags;
 
 	mfc_debug_enter();
+
+	if (need_to_wait_frame_start(ctx)) {
+		ctx->state = MFCINST_ABORT;
+		s5p_mfc_wait_for_done_ctx(ctx,
+				S5P_FIMV_R2H_CMD_FRAME_DONE_RET);
+	}
 
 	if (call_cop(ctx, cleanup_ctx_ctrls, ctx) < 0)
 		mfc_err("failed in init_buf_ctrls\n");
