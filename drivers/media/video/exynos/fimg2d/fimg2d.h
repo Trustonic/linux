@@ -91,6 +91,8 @@ struct fimg2d_version {
 /**
  * @BLIT_SYNC: sync mode, to wait for blit done irq
  * @BLIT_ASYNC: async mode, not to wait for blit done irq
+ *
+ * SUPPORT ONLY SYNC MODE
  */
 enum blit_sync {
 	BLIT_SYNC,
@@ -99,8 +101,8 @@ enum blit_sync {
 
 /**
  * @ADDR_PHYS: physical address
- * @ADDR_USER: user virtual address (physically Non-contiguous)
- * @ADDR_USER_CONTIG: user virtual address (physically Contiguous)
+ * @ADDR_USER: uva (malloc)
+ * @ADDR_USER_CONTIG: uva (ion)
  * @ADDR_DEVICE: specific device virtual address
  */
 enum addr_space {
@@ -271,43 +273,6 @@ enum blit_op {
 };
 #define MAX_FIMG2D_BLIT_OP (int)BLIT_OP_END
 
-#ifdef __KERNEL__
-
-/**
- * @TMP: temporary buffer for 2-step blit at a single command
- *
- * DO NOT CHANGE THIS ORDER
- */
-enum image_object {
-	IMAGE_SRC = 0,
-	IMAGE_MSK,
-	IMAGE_TMP,
-	IMAGE_DST,
-	IMAGE_END,
-};
-#define MAX_IMAGES		IMAGE_END
-#define ISRC			IMAGE_SRC
-#define IMSK			IMAGE_MSK
-#define ITMP			IMAGE_TMP
-#define IDST			IMAGE_DST
-
-/**
- * @size: dma size of image
- * @cached: cached dma size of image
- */
-struct fimg2d_dma {
-	unsigned long addr;
-	size_t size;
-	size_t cached;
-};
-
-struct fimg2d_dma_group {
-	struct fimg2d_dma base;
-	struct fimg2d_dma plane2;
-};
-
-#endif /* __KERNEL__ */
-
 /**
  * @start: start address or unique id of image
  */
@@ -430,6 +395,40 @@ struct fimg2d_blit {
 #define BLIT_ERR_TIMEOUT	0x13570020
 #define BLIT_ERR_FAULT		0x13570040
 #define BLIT_ERR_MASK		0x000000f0
+
+/**
+ * @TMP: temporary buffer for 2-step blit at a single command
+ *
+ * DO NOT CHANGE THIS ORDER
+ */
+enum image_object {
+	IMAGE_SRC = 0,
+	IMAGE_MSK,
+	IMAGE_TMP,
+	IMAGE_DST,
+	IMAGE_END,
+};
+#define MAX_IMAGES		IMAGE_END
+#define ISRC			IMAGE_SRC
+#define IMSK			IMAGE_MSK
+#define ITMP			IMAGE_TMP
+#define IDST			IMAGE_DST
+
+/**
+ * @size: dma size of image
+ * @cached: cached dma size of image
+ */
+struct fimg2d_dma {
+	unsigned long addr;
+	size_t size;
+	size_t cached;
+};
+
+struct fimg2d_dma_group {
+	struct fimg2d_dma base;
+	struct fimg2d_dma plane2;
+};
+
 enum perf_desc {
 	PERF_CACHE = 0,
 	PERF_SFR,
@@ -446,11 +445,11 @@ struct fimg2d_perf {
 };
 
 /**
- * @pgd: base address of arm mmu pagetable
+ * @mm: user task's mm_struct for pgd
  * @blt_state: blit command status
  * @fault_vaddr: last fault vaddr
  * @ncmd: request count in blit command queue
- * @wait_q: conext wait queue head
+ * @wait_q: context wait queue head
  * @node: list head of ctx queue
 */
 struct fimg2d_context {
@@ -491,13 +490,8 @@ struct fimg2d_bltcmd {
 
 /**
  * @dummy_page_paddr: dummy page's paddr for sysmmu page fault
- * @suspended: in suspend mode
- * @clkon: power status for runtime pm
- * @mem: resource platform device
- * @regs: base address of hardware
- * @dev: pointer to device struct
- * @err: true if hardware is timed out while blitting
- * @irq: irq number
+ * @drvact: driver activate/deactivate by user
+ * @suspended: suspend/resume
  * @wq_state: work queue state
  * @nctx: context count
  * @busy: 1 if hardware is running

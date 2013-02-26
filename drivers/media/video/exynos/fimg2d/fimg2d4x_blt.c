@@ -86,6 +86,9 @@ int fimg2d4x_bitblt(struct fimg2d_control *ctrl)
 
 		ctx->blt_state = BLIT_PREPARE;
 
+		fimg2d_trace("thread loop ctx 0x%p cmd 0x%p blt_state 0x%x\n",
+			ctx, cmd, ctx->blt_state);
+
 		atomic_set(&ctrl->busy, 1);
 
 		perf_start(cmd, PERF_SFR);
@@ -96,10 +99,9 @@ int fimg2d4x_bitblt(struct fimg2d_control *ctrl)
 
 		if (addr_type == ADDR_USER || addr_type == ADDR_USER_CONTIG) {
 			pgd = (unsigned long *)ctx->mm->pgd;
-			exynos_sysmmu_enable(ctrl->dev,
-					(unsigned long)virt_to_phys(pgd));
-			fimg2d_debug("sysmmu enable: pgd %p ctx %p seq_no(%u)\n",
-					pgd, ctx, cmd->blt.seq_no);
+			exynos_sysmmu_enable(ctrl->dev, virt_to_phys(pgd));
+			fimg2d_trace("sysmmu enable ctx 0x%p cmd 0x%p pgd 0x%lx\n",
+				ctx, cmd, (unsigned long)virt_to_phys(pgd));
 		}
 
 		ctx->blt_state = BLIT_START;
@@ -114,7 +116,7 @@ int fimg2d4x_bitblt(struct fimg2d_control *ctrl)
 
 		if (addr_type == ADDR_USER || addr_type == ADDR_USER_CONTIG) {
 			exynos_sysmmu_disable(ctrl->dev);
-			fimg2d_debug("sysmmu disable\n");
+			fimg2d_debug("sysmmu disable ctx 0x%p cmd 0x%p\n", ctx, cmd);
 		}
 
 #ifdef RECOVER_PGTABLE
@@ -229,7 +231,7 @@ static int fimg2d4x_configure(struct fimg2d_control *ctrl,
 	struct fimg2d_param *p;
 	struct fimg2d_image *src, *msk, *dst;
 
-	fimg2d_debug("ctx %p seq_no(%u)\n", cmd->ctx, cmd->blt.seq_no);
+	fimg2d_debug("ctx 0x%p cmd 0x%p\n", cmd->ctx, cmd);
 
 	p = &cmd->blt.param;
 	src = &cmd->image[ISRC];

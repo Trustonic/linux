@@ -149,7 +149,7 @@ void fimg2d_debug_command(struct fimg2d_bltcmd *cmd)
 	if (WARN_ON(!cmd->ctx))
 		return;
 
-	pr_info("\n[%s] ctx: %p seq_no(%u)\n", __func__, cmd->ctx, cmd->blt.seq_no);
+	pr_info("\n[%s] ctx 0x%p cmd 0x%p seq_no %u\n", __func__, cmd->ctx, cmd, cmd->blt.seq_no);
 	pr_info(" op: %s(%d)\n", opname(cmd->blt.op), cmd->blt.op);
 	pr_info(" solid color: 0x%lx\n", p->solid_color);
 	pr_info(" g_alpha: 0x%x\n", p->g_alpha);
@@ -241,30 +241,48 @@ void fimg2d_debug_command_simple(struct fimg2d_bltcmd *cmd)
 	clp = &blt->param.clipping;
 
 	if (!src) {
-		pr_info("\n dst fs(%d,%d) rect(%d,%d,%d,%d)\n",
-				dst->width, dst->height,
-				dst->rect.x1, dst->rect.y1,
-				dst->rect.x2, dst->rect.y2);
-	} else if (clp->enable) {
-		pr_info("\n src fs(%d,%d) rect(%d,%d,%d,%d)" \
-				" dst fs(%d,%d) rect(%d,%d,%d,%d)" \
-				" clip(%d,%d,%d,%d)\n",
-				src->width, src->height,
-				src->rect.x1, src->rect.y1,
-				src->rect.x2, src->rect.y2,
-				dst->width, dst->height,
-				dst->rect.x1, dst->rect.y1,
-				dst->rect.x2, dst->rect.y2,
-				clp->x1, clp->y1, clp->x2, clp->y2);
+		pr_info("[fimg2d] OP:%d SOLID: 0x%lx DST: fmt %d full %d,%d " \
+			"rect %d,%d,%d,%d wh %d,%d\n",
+			blt->op, blt->param.solid_color,
+			dst->fmt,
+			dst->width, dst->height,
+			dst->rect.x1, dst->rect.y1,
+			dst->rect.x2, dst->rect.y2,
+			dst->rect.x2 - dst->rect.x1,
+			dst->rect.y2 - dst->rect.y1);
+	} else if (!clp->enable) {
+		pr_info("[fimg2d] OP:%d SRC: fmt %d full %d,%d rect %d,%d,%d,%d wh %d,%d " \
+			"DST: fmt %d full %d,%d rect %d,%d,%d,%d wh %d,%d\n",
+			blt->op,
+			src->fmt,
+			src->width, src->height,
+			src->rect.x1, src->rect.y1,
+			src->rect.x2, src->rect.y2,
+			src->rect.x2 - src->rect.x1,
+			src->rect.y2 - src->rect.y1,
+			dst->fmt,
+			dst->width, dst->height,
+			dst->rect.x1, dst->rect.y1,
+			dst->rect.x2, dst->rect.y2,
+			dst->rect.x2 - dst->rect.x1,
+			dst->rect.y2 - dst->rect.y1);
 	} else {
-		pr_info("\n src fs(%d,%d) rect(%d,%d,%d,%d)" \
-				" dst fs(%d,%d) rect(%d,%d,%d,%d)\n",
-				src->width, src->height,
-				src->rect.x1, src->rect.y1,
-				src->rect.x2, src->rect.y2,
-				dst->width, dst->height,
-				dst->rect.x1, dst->rect.y1,
-				dst->rect.x2, dst->rect.y2);
+		pr_info("[fimg2d] OP:%d SRC: fmt %d full %d,%d rect %d,%d,%d,%d wh %d,%d " \
+			"DST: fmt %d full %d,%d rect %d,%d,%d,%d wh %d,%d clp %d,%d,%d,%d\n",
+			blt->op,
+			src->fmt,
+			src->width, src->height,
+			src->rect.x1, src->rect.y1,
+			src->rect.x2, src->rect.y2,
+			src->rect.x2 - src->rect.x1,
+			src->rect.y2 - src->rect.y1,
+			dst->fmt,
+			dst->width, dst->height,
+			dst->rect.x1, dst->rect.y1,
+			dst->rect.x2, dst->rect.y2,
+			dst->rect.x2 - dst->rect.x1,
+			dst->rect.y2 - dst->rect.y1,
+			clp->x1, clp->x2, clp->y1, clp->y1);
 	}
 }
 
