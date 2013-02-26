@@ -37,7 +37,7 @@
  *	1: err
  *	2: info
  *	3: perf
- *	4: oneline (simple)
+ *	4: trace
  *	5: debug
  */
 extern int g2d_debug;
@@ -47,7 +47,7 @@ enum debug_level {
 	DBG_ERR,
 	DBG_INFO,
 	DBG_PERF,
-	DBG_ONELINE,
+	DBG_TRACE,
 	DBG_DEBUG,
 };
 
@@ -59,11 +59,13 @@ enum debug_level {
 
 #define fimg2d_err(fmt, args...)	g2d_print(DBG_ERR, fmt, ##args)
 #define fimg2d_info(fmt, args...)	g2d_print(DBG_INFO, fmt, ##args)
+#define fimg2d_trace(fmt, args...)	g2d_print(DBG_TRACE, fmt, ##args)
 #define fimg2d_debug(fmt, args...)	g2d_print(DBG_DEBUG, fmt, ##args)
 #else
 #define g2d_print(level, fmt, args...)
 #define fimg2d_err(fmt, args...)
 #define fimg2d_info(fmt, args...)
+#define fimg2d_trace(fmt, args...)
 #define fimg2d_debug(fmt, arg...)
 #endif
 

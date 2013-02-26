@@ -55,7 +55,7 @@ static inline void fimg2d_dump_command(struct fimg2d_bltcmd *cmd)
 {
 	if (g2d_debug == DBG_DEBUG)
 		fimg2d_debug_command(cmd);
-	else if (g2d_debug == DBG_ONELINE)
+	else if (g2d_debug == DBG_TRACE)
 		fimg2d_debug_command_simple(cmd);
 }
 #else
