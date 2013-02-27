@@ -110,8 +110,6 @@ static int exynos_xhci_resume(struct device *dev)
 	if (!hcd)
 		return -EINVAL;
 
-	pm_runtime_resume(dev);
-
 	if (exynos_drd_try_get(pdev)) {
 		dev_err(dev, "%s: cannot get DRD\n", __func__);
 		return -EAGAIN;
