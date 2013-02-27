@@ -663,7 +663,6 @@ static int exynos_drd_resume(struct device *dev)
 		      __func__, atomic_read(&dev->power.usage_count));
 #endif
 
-	pm_runtime_resume(dev);
 	clk_enable(drd->clk);
 	exynos_drd_phy_set(&drd->core);
 	exynos_drd_init(&drd->core);
