@@ -3020,13 +3020,13 @@ static int exynos_ss_udc_disable(struct exynos_ss_udc *udc)
 		return 0;
 	}
 
-	/* Stop controller if it wasn't already stopped on S/W disconnect */
-	if (udc->pullup_state)
-		exynos_ss_udc_run_stop(udc, 0);
-
 	/* all endpoints should be shutdown */
 	for (epindex = 0; epindex < EXYNOS_USB3_EPS; epindex++)
 		exynos_ss_udc_ep_disable(&udc->eps[epindex].ep);
+
+	/* Stop controller if it wasn't already stopped on S/W disconnect */
+	if (udc->pullup_state)
+		exynos_ss_udc_run_stop(udc, 0);
 
 	call_gadget(udc, disconnect);
 	udc->gadget.speed = USB_SPEED_UNKNOWN;
