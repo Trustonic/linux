@@ -690,19 +690,12 @@ static __devinit int exynos5_busfreq_mif_probe(struct platform_device *pdev)
 	unsigned long initial_volt;
 	int err = 0;
 	struct exynos5_bus_mif_platform_data *pdata = pdev->dev.platform_data;
-	unsigned int val = 0;
+	unsigned int mem_type = 0;
 
-#if defined(CONFIG_ARM_TRUSTZONE)
-	exynos_smc_read_sfr(SMC_CMD_REG,
-		SMC_REG_ID_SFR_R(EXYNOS5_PA_DREXII + EXYNOS_DMC_MEMCONTROL_OFFSET),
-		&val, 0);
-#else
-	val = __raw_readl(S5P_VA_DREXII + 0x4);
-#endif
-	val = (val >> 8) & 0xf;
+	mem_type = exynos5_get_memory_type();
 
 	/* Check Memory Type Only support -> 0x5: 0xLPDDR2, 0x7: LPDDR3 */
-	if (val != 0x5 && val != 0x7) {
+	if (mem_type != EXYNOS5_MEMTYPE_LPDDR2_S4 && val != EXYNOS5_MEMTYPE_LPDDR3) {
 		pr_err("[ %x ] Memory is not LPDDR type.\n", val);
 		return -ENODEV;
 	}
