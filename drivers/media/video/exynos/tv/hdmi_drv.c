@@ -135,30 +135,12 @@ static int hdmi_streamon(struct hdmi_device *hdev)
 {
 	struct device *dev = hdev->dev;
 	struct hdmi_resources *res = &hdev->res;
-	int ret, tries;
+	int ret;
 	u32 val0, val1, val2;
 
 	dev_dbg(dev, "%s\n", __func__);
 
 	hdev->streaming = 1;
-	ret = v4l2_subdev_call(hdev->phy_sd, video, s_stream, 1);
-	if (ret)
-		return ret;
-
-	/* waiting for HDMIPHY's PLL to get to steady state */
-	for (tries = 100; tries; --tries) {
-		if (is_hdmiphy_ready(hdev))
-			break;
-
-		mdelay(1);
-	}
-	/* steady state not achieved */
-	if (tries == 0) {
-		dev_err(dev, "hdmiphy's pll could not reach steady state.\n");
-		v4l2_subdev_call(hdev->phy_sd, video, s_stream, 0);
-		hdmi_dumpregs(hdev, "s_stream");
-		return -EIO;
-	}
 
 	/* hdmiphy clock is used for HDMI in streaming mode */
 	clk_disable(res->sclk_hdmi);
@@ -510,14 +492,6 @@ static int hdmi_runtime_resume(struct device *dev)
 	if (pdata->hdmiphy_enable)
 		pdata->hdmiphy_enable(pdev, 1);
 	hdmi_resource_poweron(&hdev->res);
-	hdmi_sw_reset(hdev);
-	hdmi_phy_sw_reset(hdev);
-
-	ret = v4l2_subdev_call(hdev->phy_sd, core, s_power, 1);
-	if (ret) {
-		dev_err(dev, "failed to turn on hdmiphy\n");
-		goto fail;
-	}
 
 	ret = hdmi_conf_apply(hdev);
 	if (ret)
