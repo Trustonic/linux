@@ -187,14 +187,6 @@ static int fimg2d_open(struct inode *inode, struct file *file)
 	}
 	file->private_data = (void *)ctx;
 
-	ctx->mm = get_task_mm(current);
-	if (!ctx->mm) {
-		fimg2d_err("not user task ctx 0x%p\n", ctx);
-		kfree(ctx);
-		return -EFAULT;
-	}
-	fimg2d_trace("ctx 0x%p pgd 0x%lx\n", ctx, (unsigned long)ctx->mm->pgd);
-
 	ctx->blt_state = BLIT_IDLE;
 	fimg2d_add_context(ctrl, ctx);
 	return 0;
@@ -212,7 +204,6 @@ retry:
 	fimg2d_trace("ctx 0x%p ncmd %d blt_state 0x%x wq_state %d\n",
 		ctx, atomic_read(&ctx->ncmd), ctx->blt_state, ctrl->wq_state);
 	fimg2d_del_context(ctrl, ctx);
-	mmput(ctx->mm);
 	kfree(ctx);
 	return 0;
 }
@@ -241,14 +232,25 @@ static long fimg2d_ioctl(struct file *file, unsigned int ioc, unsigned long arg)
 			return -EPERM;
 		}
 
+		ctx->mm = get_task_mm(current);
+		if (!ctx->mm) {
+			fimg2d_err("not user task ctx 0x%p\n", ctx);
+			return -EFAULT;
+		}
+
 		ret = fimg2d_add_command(ctrl, ctx, (struct fimg2d_blit __user *)arg);
-		if (ret)
+		if (ret) {
+			mmput(ctx->mm);
 			return ret;
+		}
 
 		ret = fimg2d_request_bitblt(ctrl, ctx);
-		if (ret)
+		if (ret) {
+			mmput(ctx->mm);
 			return ret;
+		}
 
+		mmput(ctx->mm);
 		break;
 
 	case FIMG2D_BITBLT_VERSION:

@@ -687,24 +687,30 @@ struct fimg2d_bltcmd *fimg2d_get_command(struct fimg2d_control *ctrl)
 void fimg2d_add_context(struct fimg2d_control *ctrl, struct fimg2d_context *ctx)
 {
 	unsigned long flags;
+	struct fimg2d_context *pos;
 
 	spin_lock_irqsave(&ctrl->bltlock, flags);
 	atomic_set(&ctx->ncmd, 0);
 	init_waitqueue_head(&ctx->wait_q);
 	fimg2d_enqueue(&ctx->node, &ctrl->ctx_q);
 	atomic_inc(&ctrl->nctx);
-	fimg2d_debug("ctx 0x%p nctx %d\n", ctx, atomic_read(&ctrl->nctx));
+	fimg2d_trace("added ctx 0x%p. nctx %d\n", ctx, atomic_read(&ctrl->nctx));
+	list_for_each_entry(pos, &ctrl->ctx_q, node)
+		fimg2d_err(" ctx_q: ctx 0x%p\n", pos);
 	spin_unlock_irqrestore(&ctrl->bltlock, flags);
 }
 
 void fimg2d_del_context(struct fimg2d_control *ctrl, struct fimg2d_context *ctx)
 {
 	unsigned long flags;
+	struct fimg2d_context *pos;
 
 	spin_lock_irqsave(&ctrl->bltlock, flags);
 	fimg2d_dequeue(&ctx->node);
 	atomic_dec(&ctrl->nctx);
-	fimg2d_debug("ctx 0x%p nctx %d\n", ctx, atomic_read(&ctrl->nctx));
+	fimg2d_trace("deleted ctx 0x%p. nctx %d\n", ctx, atomic_read(&ctrl->nctx));
+	list_for_each_entry(pos, &ctrl->ctx_q, node)
+		fimg2d_err(" ctx_q: ctx 0x%p\n", pos);
 	spin_unlock_irqrestore(&ctrl->bltlock, flags);
 }
 
