@@ -206,7 +206,8 @@ static ssize_t show_ohci_power(struct device *dev,
 	struct platform_device *pdev = to_platform_device(dev);
 	struct exynos_ohci_hcd *exynos_ohci = platform_get_drvdata(pdev);
 
-	return sprintf(buf, "EHCI Power %s\n", (exynos_ohci->power_on) ? "on" : "off");
+	return snprintf(buf, PAGE_SIZE, "EHCI Power %s\n",
+			(exynos_ohci->power_on) ? "on" : "off");
 }
 
 static ssize_t store_ohci_power(struct device *dev,
