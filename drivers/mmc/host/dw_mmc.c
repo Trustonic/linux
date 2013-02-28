@@ -1835,18 +1835,23 @@ static void dw_mci_tasklet_func(unsigned long priv)
 					dev_err(&host->dev,
 						"data CRC error\n");
 					data->error = -EILSEQ;
-				} else if (status & SDMMC_INT_EBE &&
-					   host->dir_status ==
+				} else if (status & SDMMC_INT_EBE) {
+					if (host->dir_status ==
 							DW_MCI_SEND_STATUS) {
-					/*
-					 * No data CRC status was returned.
-					 * The number of bytes transferred will
-					 * be exaggerated in PIO mode.
-					 */
-					data->bytes_xfered = 0;
-					data->error = -ETIMEDOUT;
-					dev_err(&host->dev,
-						"End bit error\n");
+						/*
+						 * No data CRC status was returned.
+						 * The number of bytes transferred will
+						 * be exaggerated in PIO mode.
+						 */
+						data->bytes_xfered = 0;
+						data->error = -ETIMEDOUT;
+						dev_err(&host->dev,
+							"Write no CRC\n");
+					} else {
+						data->error = -EIO;
+						dev_err(&host->dev,
+							"End bit error\n");
+					}
 
 				} else if (status & SDMMC_INT_SBE) {
 					dev_err(&host->dev,
