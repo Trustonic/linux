@@ -695,8 +695,8 @@ static __devinit int exynos5_busfreq_mif_probe(struct platform_device *pdev)
 	mem_type = exynos5_get_memory_type();
 
 	/* Check Memory Type Only support -> 0x5: 0xLPDDR2, 0x7: LPDDR3 */
-	if (mem_type != EXYNOS5_MEMTYPE_LPDDR2_S4 && val != EXYNOS5_MEMTYPE_LPDDR3) {
-		pr_err("[ %x ] Memory is not LPDDR type.\n", val);
+	if (mem_type != EXYNOS5_MEMTYPE_LPDDR2_S4 && mem_type != EXYNOS5_MEMTYPE_LPDDR3) {
+		pr_err("[ %x ] Memory is not LPDDR type.\n", mem_type);
 		return -ENODEV;
 	}
 
