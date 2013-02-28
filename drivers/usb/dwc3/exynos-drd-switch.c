@@ -693,7 +693,7 @@ exynos_drd_switch_show_state(struct device *dev,
 	struct usb_otg *otg = drd->core.otg;
 	struct usb_phy *phy = otg->phy;
 
-	return sprintf(buf, "%s\n", otg_state_string(phy->state));
+	return snprintf(buf, PAGE_SIZE, "%s\n", otg_state_string(phy->state));
 }
 
 static DEVICE_ATTR(state, S_IRUGO, exynos_drd_switch_show_state, NULL);
@@ -712,7 +712,7 @@ exynos_drd_switch_show_vbus(struct device *dev,
 	struct exynos_drd_switch *drd_switch = container_of(otg,
 						struct exynos_drd_switch, otg);
 
-	return sprintf(buf, "%d\n", drd_switch->vbus_active);
+	return snprintf(buf, PAGE_SIZE, "%d\n", drd_switch->vbus_active);
 }
 
 static ssize_t
@@ -744,7 +744,7 @@ exynos_drd_switch_show_id(struct device *dev,
 	struct exynos_drd_switch *drd_switch = container_of(otg,
 						struct exynos_drd_switch, otg);
 
-	return sprintf(buf, "%d\n", drd_switch->id_state);
+	return snprintf(buf, PAGE_SIZE, "%d\n", drd_switch->id_state);
 }
 
 static ssize_t
