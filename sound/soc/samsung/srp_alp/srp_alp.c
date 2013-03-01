@@ -51,10 +51,13 @@
 
 static struct srp_info srp;
 static DEFINE_MUTEX(srp_mutex);
+static DEFINE_SPINLOCK(lock);
 static DECLARE_WAIT_QUEUE_HEAD(reset_wq);
 static DECLARE_WAIT_QUEUE_HEAD(read_wq);
 static DECLARE_WAIT_QUEUE_HEAD(decinfo_wq);
+bool srp_fw_ready_done;
 
+void srp_core_reset(void);
 extern void i2s_enable(struct snd_soc_dai *dai);
 extern void i2s_disable(struct snd_soc_dai *dai);
 
@@ -415,26 +418,39 @@ static void srp_set_default_fw(void)
 void srp_core_reset(void)
 {
 	unsigned int reset_type = srp.pdata->type;
+	unsigned long deadline;
+	int ret = 0;
 
-	if (!srp.is_loaded)
+	if (!srp.is_loaded || srp.hw_reset_stat)
 		return;
 
 	if (reset_type == SRP_HW_RESET)
 		return;
 
-	srp_commbox_init();
-	srp_fw_download();
+	deadline = jiffies + (HZ / 4);
+	do {
+		srp_commbox_init();
+		srp_fw_download();
 
-	/* RESET */
-	writel(0x0, srp.commbox + SRP_CONT);
-	srp_pending_ctrl(RUN);
+		/* RESET */
+		writel(0x0, srp.commbox + SRP_CONT);
+		srp_pending_ctrl(RUN);
 
-	if (!wait_event_interruptible_timeout(reset_wq,
-			srp.hw_reset_stat, HZ / 20))
+		ret = wait_event_interruptible_timeout(reset_wq,
+				srp.hw_reset_stat, HZ / 20);
+		if (ret)
+			break;
+
+		srp_pending_ctrl(STALL);
+	} while(time_before(jiffies, deadline));
+
+	if (!ret) {
 		srp_err("Not ready to sw reset.\n");
+		srp.is_loaded = false;
+	}
 }
 
-void srp_core_suspend(int num)
+int srp_core_suspend(int num)
 {
 	unsigned long ibuf_size = srp.pdata->ibuf.size;
 	unsigned long obuf_size = srp.pdata->obuf.size;
@@ -445,11 +461,14 @@ void srp_core_suspend(int num)
 	size_t size;
 
 	if (!srp.is_loaded)
-		return;
+		return -1;
 
 	if ((reset_type == SRP_HW_RESET && !srp.decoding_started)
-		|| (reset_type == SRP_HW_RESET && num == RUNTIME))
-		return;
+		|| (reset_type == SRP_HW_RESET && num == RUNTIME)
+		|| !srp.idle)
+		return -1;
+
+	spin_lock(&lock);
 
 #ifdef CONFIG_PM_RUNTIME
 	if (srp.pm_suspended)
@@ -475,6 +494,9 @@ exit_func:
 	if (reset_type == SRP_SW_RESET)
 		srp.hw_reset_stat = false;
 #endif
+	spin_unlock(&lock);
+
+	return 0;
 }
 
 void srp_core_resume(void)
@@ -558,7 +580,9 @@ static ssize_t srp_write(struct file *file, const char *buffer,
 
 	srp_debug("Write(%d bytes)\n", size);
 
+	srp.idle = false;
 	srp_pm_control(true);
+
 	if (srp.pm_suspended) {
 #ifdef CONFIG_PM_RUNTIME
 		if (reset_type == SRP_SW_RESET) {
@@ -570,9 +594,12 @@ static ssize_t srp_write(struct file *file, const char *buffer,
 			}
 		}
 #endif
+		spin_lock(&lock);
 		srp_core_resume();
+		spin_unlock(&lock);
 	}
 
+	spin_lock(&lock);
 	if (srp.initialized) {
 		srp.initialized = false;
 		srp.pm_suspended = false;
@@ -612,16 +639,15 @@ static ssize_t srp_write(struct file *file, const char *buffer,
 		goto exit_func;
 	}
 
-	mutex_lock(&srp_mutex);
 	if (!srp.decoding_started) {
 		srp_fill_ibuf();
 		srp_info("First Start decoding!!\n");
 		srp_pending_ctrl(RUN);
 		srp.decoding_started = 1;
 	}
-	mutex_unlock(&srp_mutex);
 
 exit_func:
+	spin_unlock(&lock);
 	return ret;
 }
 
@@ -639,6 +665,7 @@ static ssize_t srp_read(struct file *file, char *buffer,
 
 	srp_debug("Entered Get Obuf in PCM function\n");
 
+	srp.idle = false;
 	if (srp.prepare_for_eos) {
 		srp_pm_control(true);
 		if (srp.pm_suspended) {
@@ -652,9 +679,12 @@ static ssize_t srp_read(struct file *file, char *buffer,
 				}
 			}
 #endif
+			spin_lock(&lock);
 			srp_core_resume();
+			spin_unlock(&lock);
 		}
 
+		spin_lock(&lock);
 		srp.obuf_fill_done[srp.obuf_ready] = 0;
 		srp_debug("Elapsed Obuf[%d] after Send EOS\n", srp.obuf_ready);
 
@@ -662,12 +692,13 @@ static ssize_t srp_read(struct file *file, char *buffer,
 			srp_info("Protect read operation after play done.\n");
 			srp.pcm_info.size = 0;
 			srp.stop_after_eos = 1;
-			ret = copy_to_user(argp, &srp.pcm_info, sizeof(struct srp_buf_info));
-			return ret;
+			spin_unlock(&lock);
+			return copy_to_user(argp, &srp.pcm_info, sizeof(struct srp_buf_info));
 		}
 
 		srp_pending_ctrl(RUN);
 		srp_obuf_elapsed();
+		spin_unlock(&lock);
 	}
 
 	if (srp.wait_for_eos)
@@ -677,7 +708,8 @@ static ssize_t srp_read(struct file *file, char *buffer,
 		if (srp.obuf_copy_done[srp.obuf_ready] && !srp.wait_for_eos) {
 			srp_debug("Wrong ordering read() OBUF[%d] int!!!\n", srp.obuf_ready);
 			srp.pcm_info.size = 0;
-			return copy_to_user(argp, &srp.pcm_info, sizeof(struct srp_buf_info));
+			ret = copy_to_user(argp, &srp.pcm_info, sizeof(struct srp_buf_info));
+			goto exit_func;
 		}
 
 		if (srp.obuf_fill_done[srp.obuf_ready]) {
@@ -689,13 +721,15 @@ static ssize_t srp_read(struct file *file, char *buffer,
 			if (!ret) {
 				srp_err("Couldn't occurred OBUF[%d] int!!!\n", srp.obuf_ready);
 				srp.pcm_info.size = 0;
-				return copy_to_user(argp, &srp.pcm_info, sizeof(struct srp_buf_info));
+				ret = copy_to_user(argp, &srp.pcm_info, sizeof(struct srp_buf_info));
+				goto exit_func;
 			}
 		}
 	} else {
 		srp_debug("not prepared not yet! OBUF[%d]\n", srp.obuf_ready);
 		srp.pcm_info.size = 0;
-		return copy_to_user(argp, &srp.pcm_info, sizeof(struct srp_buf_info));
+		ret = copy_to_user(argp, &srp.pcm_info, sizeof(struct srp_buf_info));
+		goto exit_func;
 	}
 
 	srp.pcm_info.addr = srp.obuf_ready ? mmapped_obuf1 : mmapped_obuf0;
@@ -719,6 +753,7 @@ static ssize_t srp_read(struct file *file, char *buffer,
 		srp_pending_ctrl(RUN);
 	}
 
+exit_func:
 	return ret;
 }
 
@@ -1164,6 +1199,7 @@ static irqreturn_t srp_irq(int irqno, void *dev_id)
 	writel(0, srp.commbox + SRP_INTERRUPT);
 
 	if (wakeup_read) {
+		srp.idle = true;
 		if (waitqueue_active(&read_wq))
 			wake_up_interruptible(&read_wq);
 	}
@@ -1176,6 +1212,7 @@ static irqreturn_t srp_irq(int irqno, void *dev_id)
 	if (hw_reset) {
 		srp_info("Complete h/w reset.\n");
 		srp.hw_reset_stat = true;
+		srp.idle = true;
 		if (waitqueue_active(&reset_wq))
 			wake_up_interruptible(&reset_wq);
 	}
@@ -1273,6 +1310,8 @@ srp_firmware_request_complete(const struct firmware *vliw, void *context)
 #endif
 		srp_pm_control(false);
 	}
+
+	srp_fw_ready_done = srp.is_loaded;
 
 	return;
 

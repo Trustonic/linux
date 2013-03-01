@@ -131,6 +131,7 @@ struct srp_info {
 	bool	hw_reset_stat;
 	bool	is_loaded;
 	bool	initialized;
+	bool	idle;
 
 	/* Parameter to control Runtime PM */
 	void	*pm_info;
