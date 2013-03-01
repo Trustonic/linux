@@ -282,7 +282,7 @@ void fimg2d_debug_command_simple(struct fimg2d_bltcmd *cmd)
 			dst->rect.x2, dst->rect.y2,
 			dst->rect.x2 - dst->rect.x1,
 			dst->rect.y2 - dst->rect.y1,
-			clp->x1, clp->x2, clp->y1, clp->y1);
+			clp->x1, clp->y1, clp->x2, clp->y2);
 	}
 }
 

@@ -696,7 +696,7 @@ void fimg2d_add_context(struct fimg2d_control *ctrl, struct fimg2d_context *ctx)
 	atomic_inc(&ctrl->nctx);
 	fimg2d_trace("added ctx 0x%p. nctx %d\n", ctx, atomic_read(&ctrl->nctx));
 	list_for_each_entry(pos, &ctrl->ctx_q, node)
-		fimg2d_err(" ctx_q: ctx 0x%p\n", pos);
+		fimg2d_trace(" ctx_q: ctx 0x%p\n", pos);
 	spin_unlock_irqrestore(&ctrl->bltlock, flags);
 }
 
@@ -710,7 +710,7 @@ void fimg2d_del_context(struct fimg2d_control *ctrl, struct fimg2d_context *ctx)
 	atomic_dec(&ctrl->nctx);
 	fimg2d_trace("deleted ctx 0x%p. nctx %d\n", ctx, atomic_read(&ctrl->nctx));
 	list_for_each_entry(pos, &ctrl->ctx_q, node)
-		fimg2d_err(" ctx_q: ctx 0x%p\n", pos);
+		fimg2d_trace(" ctx_q: ctx 0x%p\n", pos);
 	spin_unlock_irqrestore(&ctrl->bltlock, flags);
 }
 
