@@ -742,6 +742,9 @@ static long srp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	unsigned long ibuf_num = srp.pdata->ibuf.num;
 	unsigned long val = 0;
 	long ret = 0;
+#ifdef CONFIG_PM_RUNTIME
+	unsigned int reset_type = srp.pdata->type;
+#endif
 
 	mutex_lock(&srp_mutex);
 
@@ -768,10 +771,18 @@ static long srp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	case SRP_FLUSH:
 		srp_debug("SRP_FLUSH\n");
-		srp_commbox_deinit();
+#ifdef CONFIG_PM_RUNTIME
+		if (reset_type == SRP_SW_RESET) {
+			ret = wait_event_interruptible_timeout(reset_wq,
+					    srp.hw_reset_stat, HZ / 20);
+			if (!ret)
+				srp_pm_control(true);
+		}
+#endif
 		srp_flush_ibuf();
 		srp_flush_obuf();
 		srp_set_default_fw();
+		srp_core_resume();
 		srp_reset();
 		break;
 
