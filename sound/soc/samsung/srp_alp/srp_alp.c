@@ -58,6 +58,22 @@ static DECLARE_WAIT_QUEUE_HEAD(decinfo_wq);
 extern void i2s_enable(struct snd_soc_dai *dai);
 extern void i2s_disable(struct snd_soc_dai *dai);
 
+static int srp_check_sound_list(void)
+{
+	int idx, ok = 0;
+
+	pr_info("ALSA device list:\n");
+	for (idx = 0; idx < SNDRV_CARDS; idx++) {
+		if (snd_cards[idx] != NULL)
+			ok++;
+	}
+	if (ok == 0) {
+		pr_info("  No soundcards found.\n");
+		return 0;
+	}
+	return ok;
+}
+
 void srp_pm_control(bool enable)
 {
 	if (!srp.pm_info) {
@@ -1168,6 +1184,15 @@ srp_firmware_request_complete(const struct firmware *vliw, void *context)
 	unsigned long dmem_size = srp.pdata->dmem_size;
 	unsigned long cmem_size = srp.pdata->cmem_size;
 	unsigned int reset_type = srp.pdata->type;
+	unsigned int check_card;
+
+	check_card = srp_check_sound_list();
+
+	if (check_card < 1) {
+		srp_err("Failed to detect sound card\n");
+		check_card = 0;
+		return;
+	}
 
 	if (!vliw) {
 		srp_err("Failed to requset firmware[%s]\n", VLIW_NAME);
