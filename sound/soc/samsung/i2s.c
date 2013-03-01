@@ -759,6 +759,8 @@ void i2s_enable(struct snd_soc_dai *dai)
 		return;
 	}
 
+	i2s->mode |= DAI_OPENED;
+
 	if (is_manager(other))
 		i2s->mode &= ~DAI_MANAGER;
 	else
@@ -767,10 +769,11 @@ void i2s_enable(struct snd_soc_dai *dai)
 	/* Enforce set_sysclk in Master mode */
 	i2s->rclk_srcrate = 0;
 
-	spin_unlock_irqrestore(&lock, flags);
-
 	if (!is_opened(other)) {
+		spin_unlock_irqrestore(&lock, flags);
 		pm_runtime_ctl(i2s, true);
+		spin_lock_irqsave(&lock, flags);
+
 		audss_reg_restore(dai);
 #ifdef CONFIG_SND_SAMSUNG_USE_IDMA
 		clk_ret = clk_enable(i2s->srpclk);
@@ -789,7 +792,7 @@ void i2s_enable(struct snd_soc_dai *dai)
 			writel(CON_RSTCLR, i2s->addr + I2SCON);
 	}
 
-	i2s->mode |= DAI_OPENED;
+	spin_unlock_irqrestore(&lock, flags);
 
 #if defined(CONFIG_PM_RUNTIME)
 	if (is_secondary(i2s) && srp_enabled_status())
@@ -802,12 +805,8 @@ void i2s_disable(struct snd_soc_dai *dai)
 	struct i2s_dai *i2s = to_info(dai);
 	struct i2s_dai *other = i2s->pri_dai ? : i2s->sec_dai;
 	unsigned long flags;
+	int ret = 0;
 
-
-#if defined(CONFIG_PM_RUNTIME)
-	if (is_secondary(i2s) && srp_enabled_status())
-		srp_core_suspend(RUNTIME);
-#endif
 	spin_lock_irqsave(&lock, flags);
 
 	if (is_secondary(i2s) && !is_opened(i2s)) {
@@ -817,6 +816,25 @@ void i2s_disable(struct snd_soc_dai *dai)
 		spin_unlock_irqrestore(&lock, flags);
 		return;
 	}
+
+
+	if (is_secondary(i2s) && srp_enabled_status()) {
+		if (tx_active(i2s) && !srp_fw_ready_done) {
+			spin_unlock_irqrestore(&lock, flags);
+			return;
+		}
+	}
+
+#if defined(CONFIG_PM_RUNTIME)
+	if (is_secondary(i2s) && srp_enabled_status()) {
+		ret = srp_core_suspend(RUNTIME);
+		if (ret < 0) {
+			pr_info("%s: srp is not idle!\n", __func__);
+			spin_unlock_irqrestore(&lock, flags);
+			return;
+		}
+	}
+#endif
 
 	i2s->mode &= ~DAI_OPENED;
 	i2s->mode &= ~DAI_MANAGER;
