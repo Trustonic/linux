@@ -467,10 +467,8 @@ int srp_core_suspend(int num)
 		|| (reset_type == SRP_HW_RESET && num == RUNTIME))
 		return -1;
 
-	if (!srp.idle) {
-		srp.hw_reset_stat = false;
+	if (!srp.idle)
 		return -1;
-	}
 
 	spin_lock(&lock);
 
@@ -1363,6 +1361,8 @@ static int srp_suspend(struct platform_device *pdev, pm_message_t state)
 	}
 
 	srp_pm_control(true);
+
+	srp.idle = true;
 
 	srp_core_suspend(SLEEP);
 
