@@ -526,6 +526,133 @@ static void xhci_hub_report_link_state(u32 *status, u32 status_reg)
 	*status |= pls;
 }
 
+#ifdef CONFIG_HOST_COMPLIANT_TEST
+static int hs_host_port_suspend_resume(struct usb_hcd *hcd, u8 port)
+{
+	struct xhci_hcd *xhci = hcd_to_xhci(hcd);
+	struct usb_device *hdev = hcd->self.root_hub;
+	int retval = 0;
+
+	xhci_info(xhci, "Testing SUSPEND & RESUME\n");
+
+	/* Sending SOF for 15 seconds */
+	schedule_timeout_uninterruptible(msecs_to_jiffies(15000));
+
+	/* Suspend for 15 seconds */
+	xhci_info(xhci, "Supend Root Hub for 15 seconds\n");
+	/* set_port_feature in hub.c */
+	retval = usb_control_msg(hdev, usb_sndctrlpipe(hdev, 0),
+			USB_REQ_SET_FEATURE, USB_RT_PORT,
+			USB_PORT_FEAT_SUSPEND, port+1, NULL, 0, 1000);
+	if (retval < 0)
+		return retval;
+
+	schedule_timeout_uninterruptible(msecs_to_jiffies(15000));
+
+	/* After 15 seconds, resume */
+	xhci_info(xhci, "Resume Root Hub\n");
+	/* clear_port_feature in hub.c */
+	retval = usb_control_msg(hdev, usb_sndctrlpipe(hdev, 0),
+			USB_REQ_CLEAR_FEATURE, USB_RT_PORT,
+			USB_PORT_FEAT_SUSPEND, port+1, NULL, 0, 1000);
+
+	return retval;
+}
+
+static int xhci_port_test(struct usb_hcd *hcd, u8 selector, u8 port,
+		unsigned long flags)
+{
+	struct xhci_hcd *xhci = hcd_to_xhci(hcd);
+	int max_portpmsc;
+	__le32 __iomem **portpmsc_array;
+	u32 temp;
+	int retval = 0;
+
+	max_portpmsc = xhci_get_portpmsc(hcd, &portpmsc_array);
+
+	xhci_info(xhci, "TEST MODE !!! selector = 0x%x\n", selector);
+	xhci_info(xhci, "running XHCI test %x on port %x\n", selector, port);
+
+	temp = xhci_readl(xhci, portpmsc_array[port]);
+	xhci_info(xhci, "PORTPMSC: actual port %d status & control = 0x%x\n",
+			port, temp);
+
+	switch (selector) {
+	case USB_PORT_TEST_J:
+		xhci_info(xhci, "Port Test J State\n");
+		/*
+		 * For J/K/SE0_NAK/TEST_PACKET/FORCE_ENABLE
+		 * 1. Set the Run/Stop bit in the USBCMD register
+		 * to a '0' and wait for the HCHalted bit
+		 * in the USBSTS regster, to transitio to a '1'
+		 * 2. Set the Port Test Control field in the port
+		 * under test PORTPMSC register
+		 */
+		retval = xhci_halt(xhci);
+		if (retval < 0)
+			goto error;
+		temp |= PORT_TEST_J;
+		xhci_writel(xhci, temp, portpmsc_array[port]);
+		break;
+	case USB_PORT_TEST_K:
+		xhci_info(xhci, "Port Test K State\n");
+		retval = xhci_halt(xhci);
+		if (retval < 0)
+			goto error;
+		temp |= PORT_TEST_K;
+		xhci_writel(xhci, temp, portpmsc_array[port]);
+		break;
+	case USB_PORT_TEST_SE0_NAK:
+		xhci_info(xhci, "Port Test SE0_NAK\n");
+		retval = xhci_halt(xhci);
+		if (retval < 0)
+			goto error;
+		temp |= PORT_TEST_SE0_NAK;
+		xhci_writel(xhci, temp, portpmsc_array[port]);
+		break;
+	case USB_PORT_TEST_PACKET:
+		xhci_info(xhci, "Port Test Packet\n");
+		retval = xhci_halt(xhci);
+		if (retval < 0)
+			goto error;
+		temp |= PORT_TEST_PKT;
+		xhci_writel(xhci, temp, portpmsc_array[port]);
+		break;
+	case USB_PORT_TEST_FORCE_ENABLE:
+		xhci_info(xhci, "Port Test Force Enable\n");
+		retval = xhci_halt(xhci);
+		if (retval < 0)
+			goto error;
+		temp |= PORT_TEST_FORCE;
+		xhci_writel(xhci, temp, portpmsc_array[port]);
+		break;
+	case (EHSET_HS_HOST_PORT_SUSPEND_RESUME & 0xFF):
+		xhci_info(xhci, "HS Host Port Suspend Resume\n");
+		spin_unlock_irqrestore(&xhci->lock, flags);
+		retval = hs_host_port_suspend_resume(hcd, port);
+		spin_lock_irqsave(&xhci->lock, flags);
+
+		if (retval < 0)
+			goto error;
+		break;
+	default:
+		xhci_err(xhci, "Unknown Test Mode : %d\n", selector);
+		retval = -EINVAL;
+		goto error;
+	}
+
+	temp = xhci_readl(xhci, portpmsc_array[port]);
+	xhci_info(xhci, "PORTPMSC: actual port %d status & control = 0x%x\n",
+			port, temp);
+	xhci_info(xhci, "USB2.0 Port Test Done !!!\n");
+	return retval;
+
+error:
+	xhci_err(xhci, "USB2.0 Port Test Error : %d\n", retval);
+	return retval;
+}
+#endif
+
 int xhci_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 		u16 wIndex, char *buf, u16 wLength)
 {
@@ -540,7 +667,7 @@ int xhci_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 	struct xhci_bus_state *bus_state;
 	u16 link_state = 0;
 	u16 wake_mask = 0;
-	u16 selector;
+	u8 selector;
 
 	max_ports = xhci_get_ports(hcd, &port_array);
 	max_portpmsc = xhci_get_portpmsc(hcd, &portpmsc_array);
@@ -805,27 +932,15 @@ int xhci_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 		 * or else system reboot).  See EHCI 2.3.9 and 4.14 for info
 		 * about the EHCI-specific stuff.
 		 */
-#ifdef CONFIG_HOST_COMPLIANT_TEST
 		case USB_PORT_FEAT_TEST:
-			xhci_info(xhci, "TEST MODE !!! selector = 0x%x\n",
-					selector);
-			xhci_info(xhci, "running XHCI test %x on port %x\n",
-					selector, wIndex);
-
-			xhci_halt(xhci);
-
-			/*
-			 * Set the Port Test Control field in the port
-			 * under test PORTPMSC register
-			 */
-			temp = xhci_readl(xhci, portpmsc_array[wIndex]);
-			temp |= PORT_TEST_PKT;
-			xhci_writel(xhci, temp, portpmsc_array[wIndex]);
-			temp = xhci_readl(xhci, portpmsc_array[wIndex]);
-			xhci_info(xhci, "PORTPMSC: port %d, status = 0x%x\n",
-					wIndex, temp);
+#ifdef CONFIG_HOST_COMPLIANT_TEST
+			retval = xhci_port_test(hcd, selector, wIndex, flags);
+			if (retval < 0) {
+				xhci_err(xhci, "USB2 Host Test Fail!!!\n");
+				goto error;
+			}
+#endif
 			break;
-#endif/* CONFIG_HOST_COMPLIANT_TEST */
 		case USB_PORT_FEAT_REMOTE_WAKE_MASK:
 			xhci_set_remote_wake_mask(xhci, port_array,
 					wIndex, wake_mask);
