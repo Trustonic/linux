@@ -464,9 +464,13 @@ int srp_core_suspend(int num)
 		return -1;
 
 	if ((reset_type == SRP_HW_RESET && !srp.decoding_started)
-		|| (reset_type == SRP_HW_RESET && num == RUNTIME)
-		|| !srp.idle)
+		|| (reset_type == SRP_HW_RESET && num == RUNTIME))
 		return -1;
+
+	if (!srp.idle) {
+		srp.hw_reset_stat = false;
+		return -1;
+	}
 
 	spin_lock(&lock);
 
