@@ -497,8 +497,13 @@ static int i2s_set_fmt(struct snd_soc_dai *dai,
 	unsigned int fmt)
 {
 	struct i2s_dai *i2s = to_info(dai);
-	u32 mod = readl(i2s->addr + I2SMOD);
+	u32 mod;
 	u32 tmp = 0;
+
+	if (!is_opened(i2s))
+		return -1;
+
+	mod = readl(i2s->addr + I2SMOD);
 
 	/* Format is priority */
 	switch (fmt & SND_SOC_DAIFMT_FORMAT_MASK) {
@@ -738,6 +743,7 @@ void i2s_enable(struct snd_soc_dai *dai)
 	struct i2s_dai *i2s = to_info(dai);
 	struct i2s_dai *other = i2s->pri_dai ? : i2s->sec_dai;
 	unsigned long flags;
+	int clk_ret;
 
 	struct platform_device *pdev = i2s->pri_dai ?
 				       i2s->pri_dai->pdev : i2s->pdev;
@@ -753,8 +759,6 @@ void i2s_enable(struct snd_soc_dai *dai)
 		return;
 	}
 
-	i2s->mode |= DAI_OPENED;
-
 	if (is_manager(other))
 		i2s->mode &= ~DAI_MANAGER;
 	else
@@ -769,9 +773,13 @@ void i2s_enable(struct snd_soc_dai *dai)
 		pm_runtime_ctl(i2s, true);
 		audss_reg_restore(dai);
 #ifdef CONFIG_SND_SAMSUNG_USE_IDMA
-		clk_enable(i2s->srpclk);
+		clk_ret = clk_enable(i2s->srpclk);
+		if (clk_ret != 0)
+			return;
 #endif
-		clk_enable(i2s->clk);
+		clk_ret = clk_enable(i2s->clk);
+		if (clk_ret != 0)
+			return;
 		i2s_reg_restore(dai);
 
 		if (i2s_pdata->cfg_gpio && i2s_pdata->cfg_gpio(pdev))
@@ -780,6 +788,8 @@ void i2s_enable(struct snd_soc_dai *dai)
 		if (i2s->quirks & QUIRK_NEED_RSTCLR)
 			writel(CON_RSTCLR, i2s->addr + I2SCON);
 	}
+
+	i2s->mode |= DAI_OPENED;
 
 #if defined(CONFIG_PM_RUNTIME)
 	if (is_secondary(i2s) && srp_enabled_status())
