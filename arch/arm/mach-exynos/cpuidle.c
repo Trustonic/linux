@@ -23,6 +23,7 @@
 #include <linux/time.h>
 #include <linux/serial_core.h>
 #include <linux/gpio.h>
+#include <linux/debugfs.h>
 
 #include <asm/cp15.h>
 #include <asm/cacheflush.h>
@@ -852,6 +853,52 @@ static void __init exynos5_core_down_clk(void)
 	pr_info("Exynos5 : ARM Clock down on idle mode is enabled\n");
 }
 
+static struct dentry *lpa_debugfs;
+
+static int lpa_debug_show(struct seq_file *s, void *unused)
+{
+	struct cpuidle_lpa_device *lpa_device;
+	int i;
+
+	seq_printf(s, "[ LPA devices status ]\n");
+
+	seq_printf(s, "power domain status\n");
+	for (i = 0; i < ARRAY_SIZE(exynos5_power_domain); i++)
+		seq_printf(s, "\tpower_domain : (%d), status : (0x%08x)\n",
+			i, __raw_readl(exynos5_power_domain[i].check_reg) &
+			exynos5_power_domain[i].check_bit);
+
+	seq_printf(s, "clock gating status\n");
+	for (i = 0; i < ARRAY_SIZE(exynos5_clock_gating); i++)
+		seq_printf(s, "\tclock_gating : (%d), status : (0x%08x)\n",
+			i, __raw_readl(exynos5_clock_gating[i].check_reg) &
+			exynos5_clock_gating[i].check_bit);
+
+	seq_printf(s, "SDMMC status\n");
+	for (i = 0; i < sdmmc_dev_num; i++)
+		seq_printf(s, "\tSDMMC : (%d), usage : (%d)\n",
+			i, check_sdmmc_op(i));
+
+	seq_printf(s, "lpa cdev status\n");
+	list_for_each_entry(lpa_device, &dev_list, node)
+		seq_printf(s, "\tlpa device : (%d), usage : (%d)\n",
+			lpa_device->cdev, lpa_device->usage);
+
+	return 0;
+}
+
+static int lpa_debug_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, lpa_debug_show, inode->i_private);
+}
+
+const static struct file_operations lpa_cdev_status_fops = {
+	.open		= lpa_debug_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
 static int __init exynos_init_cpuidle(void)
 {
 	int ret;
@@ -913,6 +960,15 @@ static int __init exynos_init_cpuidle(void)
 			pr_err("failed to map io region\n");
 			goto res_err;
 		}
+	}
+
+	lpa_debugfs =
+		debugfs_create_file("lpa_cdev_status",
+				S_IRUGO, NULL, NULL, &lpa_cdev_status_fops);
+	if (IS_ERR_OR_NULL(lpa_debugfs)) {
+		lpa_debugfs = NULL;
+		pr_err("%s: debugfs_create_file() failed\n", __func__);
+		goto res_err;
 	}
 
 	return 0;
