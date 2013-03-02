@@ -15,6 +15,7 @@
 enum lpa_check_device_t {
 	LPA_CDEV_USB_D = 0,
 	LPA_CDEV_USB_H,
+	LPA_CDEV_USB_DRD,
 	LPA_CDEV_GPS,
 	LPA_CDEV_BT,
 	LPA_CDEV_END,

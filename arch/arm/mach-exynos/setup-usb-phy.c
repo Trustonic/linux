@@ -1385,6 +1385,12 @@ int s5p_usb_phy_init(struct platform_device *pdev, int type)
 		}
 	} else if (type == S5P_USB_PHY_DRD) {
 		ret = exynos5_usb_phy30_init(pdev);
+
+		if (!usb_phy_control.device_lpa_registered) {
+			usb_phy_control.device_lpa_registered = 1;
+			add_lpa_device(LPA_CDEV_USB_DRD);
+			set_lpa_device_usage(LPA_CDEV_USB_DRD, true);
+		}
 	}
 	mutex_unlock(&usb_phy_control.phy_lock);
 	exynos_usb_phy_clock_disable(pdev, type);
@@ -1436,6 +1442,12 @@ int s5p_usb_phy_exit(struct platform_device *pdev, int type)
 		}
 	} else if (type == S5P_USB_PHY_DRD) {
 		ret = exynos5_usb_phy30_exit(pdev);
+
+		if (usb_phy_control.device_lpa_registered) {
+			usb_phy_control.device_lpa_registered = 0;
+			set_lpa_device_usage(LPA_CDEV_USB_DRD, false);
+			remove_lpa_device(LPA_CDEV_USB_DRD);
+		}
 	}
 
 	mutex_unlock(&usb_phy_control.phy_lock);
