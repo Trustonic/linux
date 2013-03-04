@@ -666,6 +666,8 @@ static int exynos_enter_lowpower(struct cpuidle_device *dev,
 
 	/* Both cpus will reach this point at the same time */
 	if (dev->cpu == 0) {
+		watchdog_save();
+
 		/* Idle sequence for cpu 0 */
 		if (cpu_online(1)) {
 			/* Wait for cpu1 to turn itself off */
@@ -685,7 +687,6 @@ static int exynos_enter_lowpower(struct cpuidle_device *dev,
 			}
 		}
 
-		watchdog_save();
 		/* Enter the final low power state */
 		if (exynos_check_enter_mode() == EXYNOS_CHECK_DIDLE || !allow_lpa)
 			ret = exynos_enter_core0_aftr(dev, drv, index);
