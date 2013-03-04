@@ -817,22 +817,22 @@ void i2s_disable(struct snd_soc_dai *dai)
 		return;
 	}
 
-
+#ifdef CONFIG_SND_SAMSUNG_USE_IDMA
 	if (is_secondary(i2s) && srp_enabled_status()) {
 		if (tx_active(i2s) && !srp_fw_ready_done) {
 			spin_unlock_irqrestore(&lock, flags);
 			return;
 		}
-	}
-
 #if defined(CONFIG_PM_RUNTIME)
-	if (is_secondary(i2s) && srp_enabled_status()) {
-		ret = srp_core_suspend(RUNTIME);
-		if (ret < 0) {
-			pr_info("%s: srp is not idle!\n", __func__);
-			spin_unlock_irqrestore(&lock, flags);
-			return;
+		else {
+			ret = srp_core_suspend(RUNTIME);
+			if (ret < 0) {
+				pr_info("%s: srp is not idle!\n", __func__);
+				spin_unlock_irqrestore(&lock, flags);
+				return;
+			}
 		}
+#endif
 	}
 #endif
 
