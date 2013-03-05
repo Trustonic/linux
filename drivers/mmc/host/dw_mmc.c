@@ -3307,6 +3307,11 @@ int dw_mci_resume(struct dw_mci *host)
 			dw_mci_ciu_clk_dis(host);
 		}
 
+		if (dw_mci_get_cd(slot->mmc))
+			set_bit(DW_MMC_CARD_PRESENT, &slot->flags);
+		else
+			clear_bit(DW_MMC_CARD_PRESENT, &slot->flags);
+
 		ret = mmc_resume_host(host->slot[i]->mmc);
 		if (ret < 0)
 			return ret;
