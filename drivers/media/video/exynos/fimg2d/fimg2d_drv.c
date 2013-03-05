@@ -40,7 +40,6 @@
 #include "fimg2d_helper.h"
 
 #define POLL_TIMEOUT	2
-#define POLL_RETRY	1000
 #define CTX_TIMEOUT	msecs_to_jiffies(2000)
 
 #ifdef DEBUG
@@ -50,54 +49,44 @@ module_param(g2d_debug, int, S_IRUGO | S_IWUSR);
 
 static struct fimg2d_control *ctrl;
 
-static int fimg2d_do_bitblt(struct fimg2d_control *ctrl)
+static void fimg2d_worker(struct work_struct *work)
 {
-	int ret;
+	fimg2d_trace("start kernel thread\n");
 
+	ctrl->wq_state = 1;
 #ifdef CONFIG_PM_RUNTIME
 	pm_runtime_get_sync(ctrl->dev);
-	fimg2d_debug("pm_runtime_get_sync\n");
 	fimg2d_clk_on(ctrl);
+	fimg2d_debug("pm_runtime_get_sync\n");
 #endif
 
-	ret = ctrl->blit(ctrl);
+	ctrl->blit(ctrl);
 
 #ifdef CONFIG_PM_RUNTIME
 	fimg2d_clk_off(ctrl);
 	pm_runtime_put_sync(ctrl->dev);
 	fimg2d_debug("pm_runtime_put_sync\n");
 #endif
-
-	return ret;
-}
-
-static void fimg2d_worker(struct work_struct *work)
-{
-	fimg2d_trace("start kernel thread\n");
-	ctrl->wq_state = 1;
-	fimg2d_do_bitblt(ctrl);
 	ctrl->wq_state = 2;
 }
 static DECLARE_WORK(fimg2d_work, fimg2d_worker);
 
 static int fimg2d_context_wait(struct fimg2d_context *ctx)
 {
-	int ret;
-
 retry:
-	ret = wait_event_timeout(ctx->wait_q, !atomic_read(&ctx->ncmd),
+	wait_event_timeout(ctx->wait_q, !atomic_read(&ctx->ncmd),
 			CTX_TIMEOUT);
-	if (!ret) {
-		if (atomic_read(&ctx->ncmd)) {
-			fimg2d_err("waiting for ctx done all again. " \
-				"ctx 0x%p blt_state 0x%x wq_state %d\n",
-				ctx, ctx->blt_state, ctrl->wq_state);
-			goto retry;
-		}
+
+	if (atomic_read(&ctx->ncmd)) {
+		fimg2d_err("waiting for ctx done all again. " \
+			"ctx 0x%p blt_state 0x%x wq_state %d\n",
+			ctx, ctx->blt_state, ctrl->wq_state);
+		goto retry;
 	}
 
 	if (ctx->blt_state & BLIT_ERR_MASK) {
-		fimg2d_trace("blit incomplete. ctx 0x%p blt_state 0x%x wq_state %d\n",
+		fimg2d_trace("ctx not done. ctx 0x%p " \
+			"blt_state 0x%x wq_state %d\n",
 			ctx, ctx->blt_state, ctrl->wq_state);
 		return -EAGAIN;
 	}

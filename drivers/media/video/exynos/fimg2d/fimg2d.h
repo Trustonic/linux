@@ -391,9 +391,9 @@ struct fimg2d_blit {
 #define BLIT_PREPARE		0x13570002
 #define BLIT_START		0x13570004
 #define BLIT_DONE		0x13570008
-#define BLIT_ERR_NOBLIT		0x13570010
-#define BLIT_ERR_TIMEOUT	0x13570020
-#define BLIT_ERR_FAULT		0x13570040
+#define BLIT_ERR_NOBLIT		0x00000010
+#define BLIT_ERR_TIMEOUT	0x00000020
+#define BLIT_ERR_FAULT		0x00000040
 #define BLIT_ERR_MASK		0x000000f0
 
 /**
@@ -447,7 +447,7 @@ struct fimg2d_perf {
 /**
  * @mm: user task's mm_struct for pgd
  * @blt_state: blit command status
- * @fault_vaddr: last fault vaddr
+ * @last_fault_vaddr: last fault vaddr
  * @ncmd: request count in blit command queue
  * @wait_q: context wait queue head
  * @node: list head of ctx queue

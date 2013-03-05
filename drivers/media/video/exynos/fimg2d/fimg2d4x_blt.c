@@ -34,34 +34,34 @@
 static int fimg2d4x_blit_wait(struct fimg2d_control *ctrl,
 		struct fimg2d_bltcmd *cmd)
 {
-	int ret, done;
+	int done;
 
 retry:
-	ret = wait_event_timeout(ctrl->wait_q, !atomic_read(&ctrl->busy),
+	wait_event_timeout(ctrl->wait_q, !atomic_read(&ctrl->busy),
 			BLIT_TIMEOUT);
 
-	done = fimg2d4x_blit_done_status(ctrl);
+	if (atomic_read(&ctrl->busy)) {
+		/* DO NOT USE SOFT_RESET() */
+		fimg2d4x_disable_irq(ctrl);
 
-	if (!ret) {
-		if (!done && cmd->ctx->blt_state & BLIT_ERR_FAULT) {
+		done = fimg2d4x_blit_done_status(ctrl);
+		if (!done) {
 			fimg2d_err("waiting for done again. " \
 				"ctx 0x%p cmd 0x%p blt_state 0x%x\n",
 				cmd->ctx, cmd, cmd->ctx->blt_state);
-			goto retry;
-
-		} else if (!done) {
-			fimg2d4x_disable_irq(ctrl);
-			fimg2d4x_reset(ctrl);
 			cmd->ctx->blt_state |= BLIT_ERR_TIMEOUT;
-			fimg2d_err("blit timeout ctx 0x%p cmd 0x%p blt_state 0x%x\n",
-				cmd->ctx, cmd, cmd->ctx->blt_state);
-			return -ETIME;
+			goto retry;
 		}
-
-		/* timeout but done */
 	}
 
-	/* blit done */
+	atomic_set(&ctrl->busy, 0);
+
+	if (cmd->ctx->blt_state & BLIT_ERR_TIMEOUT) {
+		fimg2d_err("blit timeout. ctx 0x%p cmd 0x%p blt_state 0x%x\n",
+				cmd->ctx, cmd, cmd->ctx->blt_state);
+		return -ETIME;
+	}
+
 	return 0;
 }
 
