@@ -109,8 +109,10 @@ retry:
 static irqreturn_t fimg2d_irq(int irq, void *dev_id)
 {
 	fimg2d_trace("blit interrupt occurred\n");
-	if (!WARN_ON(!atomic_read(&ctrl->clkon)))
+	spin_lock(&ctrl->bltlock);
+	if (atomic_read(&ctrl->clkon))
 		ctrl->stop(ctrl);
+	spin_unlock(&ctrl->bltlock);
 
 	return IRQ_HANDLED;
 }
