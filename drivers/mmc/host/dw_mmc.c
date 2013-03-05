@@ -2523,6 +2523,7 @@ static void dw_mci_timeout_timer(unsigned long data)
 
 		spin_lock(&host->lock);
 
+		host->sg = NULL;
 		host->data = NULL;
 		host->cmd = NULL;
 
