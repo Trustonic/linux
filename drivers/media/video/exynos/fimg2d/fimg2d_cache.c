@@ -172,6 +172,7 @@ void fimg2d_dummy_page_map(struct mm_struct *mm,
 {
 	unsigned long *pgd;
 	unsigned long *lv1d, *lv2d;
+	unsigned long lv2pa;
 
 	pgd = (unsigned long *)mm->pgd;
 
@@ -179,11 +180,12 @@ void fimg2d_dummy_page_map(struct mm_struct *mm,
 	lv2d = (unsigned long *)phys_to_virt(*lv1d & ~LV2_BASE_MASK) +
 				((vaddr & LV2_PT_MASK) >> LV2_SHIFT);
 
-	*lv2d = (paddr & ~0xfff) | 0xc7f;
+	if (!paddr)
+		*lv2d = 0;
+	else
+		*lv2d = (paddr & ~0xfff) | 0xc7f;
 
-	fimg2d_dma_sync_inner((unsigned long)lv2d, 4, DMA_TO_DEVICE);
-#ifdef CONFIG_OUTER_CACHE
-	fimg2d_dma_sync_outer(mm, vaddr, 4, CACHE_CLEAN);
-	fimg2d_clean_outer_pagetable(mm, vaddr, 4);
-#endif
+	dmac_flush_range((void *)lv2d, (void *)(lv2d + 4));
+	lv2pa = *lv1d & ~LV2_BASE_MASK;
+	outer_flush_range((void *)lv2pa, (void *)(lv2pa + 4));
 }
