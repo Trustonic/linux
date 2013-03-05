@@ -447,7 +447,7 @@ struct fimg2d_perf {
 /**
  * @mm: user task's mm_struct for pgd
  * @blt_state: blit command status
- * @last_fault_vaddr: last fault vaddr
+ * @saved_fault_vaddr: previous fault vaddr
  * @ncmd: request count in blit command queue
  * @wait_q: context wait queue head
  * @node: list head of ctx queue
@@ -455,7 +455,7 @@ struct fimg2d_perf {
 struct fimg2d_context {
 	struct mm_struct *mm;
 	int blt_state;
-	unsigned long last_fault_vaddr;
+	unsigned long saved_fault_vaddr;
 	atomic_t ncmd;
 	wait_queue_head_t wait_q;
 	struct fimg2d_perf perf[MAX_PERF_DESCS];

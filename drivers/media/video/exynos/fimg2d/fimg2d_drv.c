@@ -34,6 +34,7 @@
 #include <linux/pm_runtime.h>
 #endif
 #include "fimg2d.h"
+#include "fimg2d4x.h"
 #include "fimg2d_clk.h"
 #include "fimg2d_ctx.h"
 #include "fimg2d_cache.h"
@@ -113,38 +114,42 @@ static int fimg2d_sysmmu_fault_handler(struct device *dev,
 	struct fimg2d_bltcmd *cmd;
 	struct fimg2d_context *ctx, *pos;
 	enum pt_status pt;
-
-	if (itype == SYSMMU_PAGEFAULT) {
-		fimg2d_trace("sysmmu page fault(0x%lx), pgd(0x%lx)\n",
-				fault_addr, pgtable_base);
-	} else {
-		fimg2d_err("sysmmu fault type(%d) pgd(0x%lx) addr(0x%lx)\n",
-				itype, pgtable_base, fault_addr);
-	}
+	static struct fimg2d_bltcmd *saved_cmd;
 
 	cmd = fimg2d_get_command(ctrl);
 	ctx = fimg2d_get_context(ctrl, cmd);
 
 	ctx->blt_state |= BLIT_ERR_FAULT;
 
-#ifdef RECOVER_PGTABLE
 	if (itype == SYSMMU_PAGEFAULT) {
-		/* restore page fault */
-		if (ctx->last_fault_vaddr) {
-			fimg2d_dummy_page_map(ctx->mm, ctx->last_fault_vaddr, 0);
-			ctx->last_fault_vaddr = 0;
+		fimg2d_err("sysmmu page fault(0x%lx), pgd(0x%lx)\n",
+				fault_addr, pgtable_base);
+
+#ifdef RECOVER_PGTABLE
+		if (ctx->saved_fault_vaddr) {
+			fimg2d_dummy_page_map(ctx->mm, ctx->saved_fault_vaddr, 0);
+			ctx->saved_fault_vaddr = 0;
 		}
 
 		pt = fimg2d_check_pagetable(ctx->mm, fault_addr, 4);
-		if (pt == PT_NORMAL) {
+		if (pt == PT_NORMAL)
 			return 0;
-		} else if (pt == PT_LV2_FAULT) {
+		else if (pt == PT_LV2_FAULT) {
+			if (cmd != saved_cmd) {
+				fimg2d_err("cancel bitblt. ctx 0x%p cmd 0x%p\n",
+					ctx, cmd);
+				fimg2d4x_reset(ctrl);
+				saved_cmd = cmd;
+			}
 			fimg2d_dummy_page_map(ctx->mm, fault_addr, ctrl->dummy_page_paddr);
-			ctx->last_fault_vaddr = fault_addr;
+			ctx->saved_fault_vaddr = fault_addr;
 			return 0;
 		}
-	}
 #endif
+	} else {
+		fimg2d_err("sysmmu fault type(%d) pgd(0x%lx) addr(0x%lx)\n",
+				itype, pgtable_base, fault_addr);
+	}
 
 	fimg2d_err("ctx 0x%p cmd 0x%p blt_state 0x%x wq_state %d\n",
 		ctx, cmd, ctx->blt_state, ctrl->wq_state);
