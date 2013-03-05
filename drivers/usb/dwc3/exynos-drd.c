@@ -320,8 +320,7 @@ static void exynos_drd_init(struct exynos_drd_core *core)
 			reg |= EXYNOS_USB3_GCTL_PwrDnScale(susp_clk_freq/16000);
 	}
 
-	reg |= EXYNOS_USB3_GCTL_RAMClkSel(0x1) | /* Ram Clock Select */
-	       EXYNOS_USB3_GCTL_U2RSTECN;
+	reg |= EXYNOS_USB3_GCTL_U2RSTECN;
 
 	writel(reg, drd->regs + EXYNOS_USB3_GCTL);
 }
