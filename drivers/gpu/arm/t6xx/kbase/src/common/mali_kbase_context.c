@@ -214,9 +214,9 @@ void kbase_destroy_context(kbase_context *kctx)
 	WARN_ON(atomic_read(&kctx->nonmapped_pages) != 0);
 
 	kbase_mem_allocator_term(&kctx->osalloc);
+	debugfs_remove(kctx->den);
 	vfree(kctx);
 
-	debugfs_remove(kctx->den);
 }
 KBASE_EXPORT_SYMBOL(kbase_destroy_context)
 
