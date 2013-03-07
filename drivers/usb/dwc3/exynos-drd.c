@@ -259,7 +259,7 @@ static void exynos_drd_config(struct exynos_drd_core *core)
 		reg = readl(drd->regs + EXYNOS_USB3_GRXTHRCFG);
 		reg &= ~(EXYNOS_USB3_GRXTHRCFG_USBRxPktCnt_MASK |
 			EXYNOS_USB3_GRXTHRCFG_USBMaxRxBurstSize_MASK);
-		reg = EXYNOS_USB3_GRXTHRCFG_USBRxPktCntSel |
+		reg |= EXYNOS_USB3_GRXTHRCFG_USBRxPktCntSel |
 		      EXYNOS_USB3_GRXTHRCFG_USBRxPktCnt(3) |
 		      EXYNOS_USB3_GRXTHRCFG_USBMaxRxBurstSize(3);
 		writel(reg, drd->regs + EXYNOS_USB3_GRXTHRCFG);
