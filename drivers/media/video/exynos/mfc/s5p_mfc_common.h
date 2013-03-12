@@ -29,12 +29,12 @@
 
 #include <mach/exynos5_bus.h>
 
-#define MFC_MAX_EXTRA_DPB       5
 #define MFC_MAX_BUFFERS		32
 #define MFC_MAX_REF_BUFS	2
 #define MFC_FRAME_PLANES	2
 
-#define MFC_NUM_CONTEXTS	4
+#define MFC_NUM_CONTEXTS	16
+#define MFC_MAX_DRM_CTX		2
 /* Interrupt timeout */
 #define MFC_INT_TIMEOUT		2000
 /* Busy wait timeout */
@@ -58,6 +58,8 @@
 #define MFC_BASE_MASK		((1 << 17) - 1)
 #define MFC_VER_MAJOR(ver)	((ver >> 4) & 0xF)
 #define MFC_VER_MINOR(ver)	(ver & 0xF)
+
+#define DEC_LAST_FRAME		0x80000000
 
 /**
  * enum s5p_mfc_inst_type - The type of an MFC device node.
@@ -96,6 +98,7 @@ enum s5p_mfc_inst_state {
 	MFCINST_RES_CHANGE_FLUSH,
 	MFCINST_RES_CHANGE_END,
 	MFCINST_RUNNING_NO_OUTPUT,
+	MFCINST_DPB_FLUSHING,
 };
 
 /**
@@ -144,6 +147,13 @@ struct s5p_mfc_buf {
 		dma_addr_t stream;
 	} planes;
 	int used;
+	union {
+		struct {
+			dma_addr_t luma;
+			dma_addr_t chroma;
+		} raw;
+		dma_addr_t stream;
+	} kaddr;
 };
 
 #define vb_to_mfc_buf(x)	\
@@ -211,6 +221,8 @@ struct s5p_mfc_extra_buf {
 	dma_addr_t	dma;
 };
 
+#define OTO_BUF_FW		(1 << 0)
+#define OTO_BUF_COMMON_CTX	(1 << 1)
 /**
  * struct s5p_mfc_dev - The struct containing driver internal parameters.
  */
@@ -270,6 +282,7 @@ struct s5p_mfc_dev {
 	int curr_ctx_drm;
 	int fw_status;
 	int num_drm_inst;
+	int buf_oto_status;
 	struct s5p_mfc_extra_buf drm_info;
 	struct vb2_alloc_ctx *alloc_ctx_fw;
 	struct vb2_alloc_ctx *alloc_ctx_sh;
@@ -327,6 +340,8 @@ struct s5p_mfc_h264_enc_params {
 	u32 fmo_sg_rate;
 	u32 aso_enable;
 	u32 aso_slice_order[8];
+
+	u32 prepend_sps_pps_to_idr;
 };
 
 /**
@@ -495,9 +510,12 @@ struct s5p_mfc_dec {
 
 	int loop_filter_mpeg4;
 	int display_delay;
+	int immediate_display;
 	int is_packedpb;
 	int slice_enable;
 	int mv_count;
+	int is_interlaced;
+	int is_dts_mode;
 
 	int crc_enable;
 	int crc_luma0;
@@ -512,9 +530,11 @@ struct s5p_mfc_dec {
 
 	enum v4l2_memory dst_memtype;
 	int sei_parse;
-	int eos_tag;
+	int stored_tag;
+	dma_addr_t y_addr_for_pb;
 
 	int internal_dpb;
+	int cr_left, cr_right, cr_top, cr_bot;
 
 	/* For 6.x */
 	int remained;
@@ -629,6 +649,9 @@ struct s5p_mfc_ctx {
 
 	/* for PPMU monitoring */
 	struct exynos5_bus_int_handle *mfc_int_handle_poll;
+
+	int last_framerate;
+	struct timeval last_timestamp;
 };
 
 #define fh_to_mfc_ctx(x)	\
@@ -642,8 +665,18 @@ struct s5p_mfc_ctx {
 				(dev->variant->port_num ? 1 : 0) : 0) : 0)
 #define IS_TWOPORT(dev)		(dev->variant->port_num == 2 ? 1 : 0)
 #define IS_MFCV6(dev)		(dev->variant->version >= 0x60 ? 1 : 0)
+#define IS_MFCV5(dev)		(dev->variant->version == 0x51)
+
+/* supported feature macros by F/W version */
 #define FW_HAS_INITBUF_TILE_MODE(dev)		(dev->fw.date >= 0x120629)
 #define FW_HAS_INITBUF_LOOP_FILTER(dev)		(dev->fw.date >= 0x120831)
+#define FW_HAS_ENC_SPSPPS_CTRL(dev)	((IS_MFCV6(dev) &&		\
+					(dev->fw.date >= 0x121005)) ||	\
+					(IS_MFCV5(dev) &&		\
+					(dev->fw.date >= 0x120823)))
+#define FW_HAS_VUI_PARAMS(dev)			(dev->fw.date >= 0x121214)
+
+#define HW_LOCK_CLEAR_MASK		(0xFFFFFFFF)
 
 struct s5p_mfc_fmt {
 	char *name;
@@ -652,6 +685,8 @@ struct s5p_mfc_fmt {
 	u32 type;
 	u32 num_planes;
 };
+
+int get_framerate(struct timeval *to, struct timeval *from);
 
 #if defined(CONFIG_EXYNOS_MFC_V5)
 #include "regs-mfc-v5.h"

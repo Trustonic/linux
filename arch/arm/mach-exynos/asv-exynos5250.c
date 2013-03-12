@@ -22,6 +22,8 @@
 
 #include <mach/map.h>
 #include <mach/regs-pmu.h>
+#include <mach/regs-mem.h>
+#include <mach/exynos5_bus.h>
 #include <mach/abb-exynos.h>
 
 #include <plat/cpu.h>
@@ -69,6 +71,7 @@ static bool fused_vol_locked[FUSED_VOL_LOCK_END] =
 static unsigned int arm_vol_lock_freq;
 static int arm_vol_lock_level;
 static unsigned int asv_group[ID_END];
+static unsigned int mem_type = 0;
 
 static unsigned int exynos5250_default_asv_max_volt[] = {
 	[ID_ARM] = 1300000,
@@ -125,7 +128,10 @@ static void exynos5250_pre_set_abb(unsigned int asv_group_number)
 		break;
 	}
 
-	set_abb_member(ABB_MIF, ABB_MODE_130V);
+	if (mem_type == EXYNOS5_MEMTYPE_DDR3)
+		set_abb_member(ABB_MIF, ABB_MODE_BYPASS);
+	else
+		set_abb_member(ABB_MIF, ABB_MODE_130V);
 }
 static unsigned int exynos5250_get_asv_group(unsigned int ids,
 			unsigned int hpm, enum asv_type_id target_type)
@@ -353,6 +359,8 @@ int exynos5250_init_asv(struct asv_common *asv_info)
 			}
 		}
 	}
+
+	mem_type = exynos5_get_memory_type();
 
 	exynos5250_pre_set_abb(asv_group[ID_ARM]);
 

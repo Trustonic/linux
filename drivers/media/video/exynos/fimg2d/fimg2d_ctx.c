@@ -18,7 +18,9 @@
 #include "fimg2d_ctx.h"
 #include "fimg2d_cache.h"
 #include "fimg2d_helper.h"
-
+#include <linux/cma.h>
+static int yuv_stride(int width, enum color_format cf, enum pixel_order order,
+                int plane);
 static inline bool is_yuvfmt(enum color_format fmt)
 {
 	switch (fmt) {
@@ -113,6 +115,7 @@ static inline int image_stride(struct fimg2d_image *img, int plane)
 
 static int fimg2d_check_params(struct fimg2d_bltcmd *cmd)
 {
+	int bw;
 	struct fimg2d_blit *blt = &cmd->blt;
 	struct fimg2d_image *img;
 	struct fimg2d_scale *scl;
@@ -153,6 +156,25 @@ static int fimg2d_check_params(struct fimg2d_bltcmd *cmd)
 			r->x1 >= w || r->y1 >= h ||
 			r->x1 >= r->x2 || r->y1 >= r->y2)
 			return -1;
+#if defined(CONFIG_CMA)
+		if (img->addr.type == ADDR_PHYS) {
+			if (is_yuvfmt(img->fmt))
+				bw = yuv_stride(img->width, img->fmt, img->order, 0);
+			else
+				bw = img->stride;
+			if (!cma_is_registered_region(img->addr.start, (h * img->stride))) {
+				printk(KERN_ERR "[%s] Surface[%d] is not included in CMA region\n", __func__, i);
+				return -1;
+			}
+			if (img->order == P2_CRCB || img->order == P2_CBCR) {
+				bw = yuv_stride(img->width, img->fmt, img->order, 1);
+				if (!cma_is_registered_region(img->plane2.start, (h * bw))) {
+					printk(KERN_ERR "[%s] plane2[%d] is not included in CMA region\n", __func__, i);
+					return -1;
+				}
+			}
+		}
+#endif
 	}
 
 	clp = &blt->param.clipping;
@@ -219,6 +241,29 @@ static void fimg2d_fixup_params(struct fimg2d_bltcmd *cmd)
 		scl->mode = NO_SCALING;
 }
 
+static int yuv_stride(int width, enum color_format cf, enum pixel_order order,
+		int plane)
+{
+	int bpp;
+	switch (cf) {
+	case CF_YCBCR_420:
+		bpp = (!plane) ? 8 : 4;
+		break;
+	case CF_YCBCR_422:
+		if (order == P2_CRCB || order == P2_CBCR)
+			bpp = 8;
+		else
+			bpp = (!plane) ? 16 : 0;
+		break;
+	case CF_YCBCR_444:
+		bpp = (!plane) ? 8 : 16;
+		break;
+	default:
+		bpp = 0;
+		break;
+	}
+	return width * bpp >> 3;
+}
 static int fimg2d_calc_dma_size(struct fimg2d_bltcmd *cmd)
 {
 	struct fimg2d_blit *blt = &cmd->blt;
@@ -496,7 +541,7 @@ static int fimg2d_check_dma_sync(struct fimg2d_bltcmd *cmd)
 			continue;
 
 		pt = fimg2d_check_pagetable(mm, c->addr, c->size);
-		if (pt == PT_FAULT) {
+		if (pt != PT_NORMAL) {
 			ret = -EFAULT;
 			goto err_pgtable;
 		}
@@ -592,19 +637,18 @@ int fimg2d_add_command(struct fimg2d_control *ctrl,
 	}
 
 	/* add command node and increase ncmd */
-	g2d_spin_lock(&ctrl->bltlock, flags);
+	spin_lock_irqsave(&ctrl->bltlock, flags);
 	if (atomic_read(&ctrl->drvact) || atomic_read(&ctrl->suspended)) {
 		fimg2d_debug("driver is unavailable, do sw fallback\n");
-		g2d_spin_unlock(&ctrl->bltlock, flags);
+		spin_unlock_irqrestore(&ctrl->bltlock, flags);
 		ret = -EPERM;
 		goto err;
 	}
 	atomic_inc(&ctx->ncmd);
 	fimg2d_enqueue(&cmd->node, &ctrl->cmd_q);
-	fimg2d_debug("ctx %p pgd %p ncmd(%d) seq_no(%u)\n",
-			cmd->ctx, (unsigned long *)cmd->ctx->mm->pgd,
-			atomic_read(&ctx->ncmd), cmd->blt.seq_no);
-	g2d_spin_unlock(&ctrl->bltlock, flags);
+	fimg2d_debug("ctx 0x%p cmd 0x%p ncmd %d\n",
+		ctx, cmd, atomic_read(&ctx->ncmd));
+	spin_unlock_irqrestore(&ctrl->bltlock, flags);
 	return 0;
 
 err:
@@ -619,16 +663,14 @@ void fimg2d_del_command(struct fimg2d_control *ctrl, struct fimg2d_bltcmd *cmd)
 
 	perf_end(cmd, PERF_TOTAL);
 	perf_print(cmd);
-	g2d_spin_lock(&ctrl->bltlock, flags);
+	spin_lock_irqsave(&ctrl->bltlock, flags);
 	fimg2d_dequeue(&cmd->node);
 	kfree(cmd);
 	atomic_dec(&ctx->ncmd);
-#ifdef BLIT_WORKQUE
 	/* wake up context */
 	if (!atomic_read(&ctx->ncmd))
 		wake_up(&ctx->wait_q);
-#endif
-	g2d_spin_unlock(&ctrl->bltlock, flags);
+	spin_unlock_irqrestore(&ctrl->bltlock, flags);
 }
 
 struct fimg2d_bltcmd *fimg2d_get_command(struct fimg2d_control *ctrl)
@@ -636,31 +678,55 @@ struct fimg2d_bltcmd *fimg2d_get_command(struct fimg2d_control *ctrl)
 	unsigned long flags;
 	struct fimg2d_bltcmd *cmd;
 
-	g2d_spin_lock(&ctrl->bltlock, flags);
+	spin_lock_irqsave(&ctrl->bltlock, flags);
 	cmd = fimg2d_get_first_command(ctrl);
-	g2d_spin_unlock(&ctrl->bltlock, flags);
+	spin_unlock_irqrestore(&ctrl->bltlock, flags);
 	return cmd;
 }
 
 void fimg2d_add_context(struct fimg2d_control *ctrl, struct fimg2d_context *ctx)
 {
 	unsigned long flags;
+	struct fimg2d_context *pos;
 
-	g2d_spin_lock(&ctrl->bltlock, flags);
+	spin_lock_irqsave(&ctrl->bltlock, flags);
 	atomic_set(&ctx->ncmd, 0);
 	init_waitqueue_head(&ctx->wait_q);
-
+	fimg2d_enqueue(&ctx->node, &ctrl->ctx_q);
 	atomic_inc(&ctrl->nctx);
-	fimg2d_debug("ctx %p nctx(%d)\n", ctx, atomic_read(&ctrl->nctx));
-	g2d_spin_unlock(&ctrl->bltlock, flags);
+	fimg2d_trace("added ctx 0x%p. nctx %d\n", ctx, atomic_read(&ctrl->nctx));
+	list_for_each_entry(pos, &ctrl->ctx_q, node)
+		fimg2d_trace(" ctx_q: ctx 0x%p\n", pos);
+	spin_unlock_irqrestore(&ctrl->bltlock, flags);
 }
 
 void fimg2d_del_context(struct fimg2d_control *ctrl, struct fimg2d_context *ctx)
 {
 	unsigned long flags;
+	struct fimg2d_context *pos;
 
-	g2d_spin_lock(&ctrl->bltlock, flags);
+	spin_lock_irqsave(&ctrl->bltlock, flags);
+	fimg2d_dequeue(&ctx->node);
 	atomic_dec(&ctrl->nctx);
-	fimg2d_debug("ctx %p nctx(%d)\n", ctx, atomic_read(&ctrl->nctx));
-	g2d_spin_unlock(&ctrl->bltlock, flags);
+	fimg2d_trace("deleted ctx 0x%p. nctx %d\n", ctx, atomic_read(&ctrl->nctx));
+	list_for_each_entry(pos, &ctrl->ctx_q, node)
+		fimg2d_trace(" ctx_q: ctx 0x%p\n", pos);
+	spin_unlock_irqrestore(&ctrl->bltlock, flags);
+}
+
+struct fimg2d_context *fimg2d_get_context(struct fimg2d_control *ctrl,
+					struct fimg2d_bltcmd *cmd)
+{
+	unsigned long flags;
+	struct fimg2d_context *ctx;
+
+	spin_lock_irqsave(&ctrl->bltlock, flags);
+	list_for_each_entry(ctx, &ctrl->ctx_q, node) {
+		if (ctx == cmd->ctx) {
+			spin_unlock_irqrestore(&ctrl->bltlock, flags);
+			return ctx;
+		}
+	}
+	spin_unlock_irqrestore(&ctrl->bltlock, flags);
+	return NULL;
 }

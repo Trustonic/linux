@@ -318,7 +318,8 @@ static ssize_t show_ehci_power(struct device *dev,
 	struct platform_device *pdev = to_platform_device(dev);
 	struct s5p_ehci_hcd *s5p_ehci = platform_get_drvdata(pdev);
 
-	return sprintf(buf, "EHCI Power %s\n", (s5p_ehci->power_on) ? "on" : "off");
+	return snprintf(buf, PAGE_SIZE, "EHCI Power %s\n",
+			(s5p_ehci->power_on) ? "on" : "off");
 }
 
 static ssize_t store_ehci_power(struct device *dev,

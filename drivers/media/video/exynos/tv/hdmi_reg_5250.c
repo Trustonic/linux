@@ -2442,15 +2442,46 @@ int hdmi_conf_apply(struct hdmi_device *hdmi_dev)
 	struct device *dev = hdmi_dev->dev;
 	const struct hdmi_preset_conf *conf = hdmi_dev->cur_conf;
 	struct v4l2_dv_preset preset;
-	int ret;
+	int ret, tries;
 
 	dev_dbg(dev, "%s\n", __func__);
 
+	/* sequence for guarantee PLL locking time */
+	ret = v4l2_subdev_call(hdmi_dev->phy_sd, video, s_stream, 0);
+	if (ret) {
+		dev_err(dev, "failed to turn off PLL\n");
+		return ret;
+	}
+	/* HDMIPHY pad disable */
+	ret = v4l2_subdev_call(hdmi_dev->phy_sd, core, s_power, 0);
+	if (ret) {
+		dev_err(dev, "failed to turn off PLL\n");
+		return ret;
+	}
 	/* configure presets */
 	preset.preset = hdmi_dev->cur_preset;
 	ret = v4l2_subdev_call(hdmi_dev->phy_sd, video, s_dv_preset, &preset);
 	if (ret) {
 		dev_err(dev, "failed to set preset (%u)\n", preset.preset);
+		return ret;
+	}
+	/* waiting for HDMIPHY's PLL to get to steady state */
+	for (tries = 100; tries; --tries) {
+		if (is_hdmiphy_ready(hdmi_dev))
+			break;
+
+		mdelay(1);
+	}
+	/* steady state not achieved */
+	if (tries == 0) {
+		dev_err(dev, "hdmiphy's pll could not reach steady state.\n");
+		hdmi_dumpregs(hdmi_dev, "conf_apply");
+		return -EIO;
+	}
+	/* HDMIPHY enable */
+	ret = v4l2_subdev_call(hdmi_dev->phy_sd, core, s_power, 1);
+	if (ret) {
+		dev_err(dev, "failed to turn on PLL\n");
 		return ret;
 	}
 
@@ -2616,12 +2647,16 @@ void hdmi_reg_infoframe(struct hdmi_device *hdev,
 		hdmi_writeb(hdev, HDMI_AUI_HEADER2, infoframe->len);
 		hdr_sum = infoframe->type + infoframe->ver + infoframe->len;
 		/* speaker placement */
-		if (hdev->audio_channel_count == 6)
+		if (hdev->audio_channel_count == 6) {
 			hdmi_writeb(hdev, HDMI_AUI_BYTE(4), 0x0b);
-		else if (hdev->audio_channel_count == 8)
+			hdmi_writeb(hdev, HDMI_AUI_BYTE(1), 0x5);
+		} else if (hdev->audio_channel_count == 8) {
 			hdmi_writeb(hdev, HDMI_AUI_BYTE(4), 0x13);
-		else
+			hdmi_writeb(hdev, HDMI_AUI_BYTE(1), 0x7);
+		} else {
 			hdmi_writeb(hdev, HDMI_AUI_BYTE(4), 0x00);
+			hdmi_writeb(hdev, HDMI_AUI_BYTE(1), 0x1);
+		}
 		chksum = hdmi_chksum(hdev, HDMI_AUI_BYTE(1), infoframe->len, hdr_sum);
 		dev_dbg(dev, "AUI checksum = 0x%x\n", chksum);
 		hdmi_writeb(hdev, HDMI_AUI_CHECK_SUM, chksum);
@@ -2779,9 +2814,17 @@ void hdmi_reg_i2s_audio_init(struct hdmi_device *hdev)
 	hdmi_write(hdev, HDMI_I2S_CH_ST_1, HDMI_I2S_CD_PLAYER);
 	hdmi_writeb(hdev, HDMI_I2S_CH_ST_2, HDMI_I2S_SET_SOURCE_NUM(0) |
 			HDMI_I2S_SET_CHANNEL_NUM(0x6));
-	hdmi_writeb(hdev, HDMI_ASP_CON,
-			HDMI_AUD_MODE_MULTI_CH | HDMI_AUD_SP_AUD2_EN |
-			HDMI_AUD_SP_AUD1_EN | HDMI_AUD_SP_AUD0_EN);
+	if (hdev->audio_channel_count == 6) {
+		hdmi_writeb(hdev, HDMI_ASP_CON, HDMI_AUD_MODE_MULTI_CH |
+				HDMI_AUD_SP_AUD2_EN | HDMI_AUD_SP_AUD1_EN |
+				HDMI_AUD_SP_AUD0_EN);
+	} else if (hdev->audio_channel_count == 8) {
+		hdmi_writeb(hdev, HDMI_ASP_CON, HDMI_AUD_MODE_MULTI_CH |
+				HDMI_AUD_SP_AUD3_EN | HDMI_AUD_SP_AUD2_EN |
+				HDMI_AUD_SP_AUD1_EN | HDMI_AUD_SP_AUD0_EN);
+	} else {
+		hdmi_writeb(hdev, HDMI_ASP_CON, HDMI_AUD_MODE_TWO_CH);
+	}
 	hdmi_writeb(hdev, HDMI_ASP_CHCFG0,
 			HDMI_SPK0R_SEL_I_PCM0R | HDMI_SPK0L_SEL_I_PCM0L);
 	hdmi_writeb(hdev, HDMI_ASP_CHCFG1,

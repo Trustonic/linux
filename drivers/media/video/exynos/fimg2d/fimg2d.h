@@ -37,7 +37,7 @@
  *	1: err
  *	2: info
  *	3: perf
- *	4: oneline (simple)
+ *	4: trace
  *	5: debug
  */
 extern int g2d_debug;
@@ -47,7 +47,7 @@ enum debug_level {
 	DBG_ERR,
 	DBG_INFO,
 	DBG_PERF,
-	DBG_ONELINE,
+	DBG_TRACE,
 	DBG_DEBUG,
 };
 
@@ -59,11 +59,13 @@ enum debug_level {
 
 #define fimg2d_err(fmt, args...)	g2d_print(DBG_ERR, fmt, ##args)
 #define fimg2d_info(fmt, args...)	g2d_print(DBG_INFO, fmt, ##args)
+#define fimg2d_trace(fmt, args...)	g2d_print(DBG_TRACE, fmt, ##args)
 #define fimg2d_debug(fmt, args...)	g2d_print(DBG_DEBUG, fmt, ##args)
 #else
 #define g2d_print(level, fmt, args...)
 #define fimg2d_err(fmt, args...)
 #define fimg2d_info(fmt, args...)
+#define fimg2d_trace(fmt, args...)
 #define fimg2d_debug(fmt, arg...)
 #endif
 
@@ -89,6 +91,8 @@ struct fimg2d_version {
 /**
  * @BLIT_SYNC: sync mode, to wait for blit done irq
  * @BLIT_ASYNC: async mode, not to wait for blit done irq
+ *
+ * SUPPORT ONLY SYNC MODE
  */
 enum blit_sync {
 	BLIT_SYNC,
@@ -97,8 +101,8 @@ enum blit_sync {
 
 /**
  * @ADDR_PHYS: physical address
- * @ADDR_USER: user virtual address (physically Non-contiguous)
- * @ADDR_USER_CONTIG: user virtual address (physically Contiguous)
+ * @ADDR_USER: uva (malloc)
+ * @ADDR_USER_CONTIG: uva (ion)
  * @ADDR_DEVICE: specific device virtual address
  */
 enum addr_space {
@@ -269,43 +273,6 @@ enum blit_op {
 };
 #define MAX_FIMG2D_BLIT_OP (int)BLIT_OP_END
 
-#ifdef __KERNEL__
-
-/**
- * @TMP: temporary buffer for 2-step blit at a single command
- *
- * DO NOT CHANGE THIS ORDER
- */
-enum image_object {
-	IMAGE_SRC = 0,
-	IMAGE_MSK,
-	IMAGE_TMP,
-	IMAGE_DST,
-	IMAGE_END,
-};
-#define MAX_IMAGES		IMAGE_END
-#define ISRC			IMAGE_SRC
-#define IMSK			IMAGE_MSK
-#define ITMP			IMAGE_TMP
-#define IDST			IMAGE_DST
-
-/**
- * @size: dma size of image
- * @cached: cached dma size of image
- */
-struct fimg2d_dma {
-	unsigned long addr;
-	size_t size;
-	size_t cached;
-};
-
-struct fimg2d_dma_group {
-	struct fimg2d_dma base;
-	struct fimg2d_dma plane2;
-};
-
-#endif /* __KERNEL__ */
-
 /**
  * @start: start address or unique id of image
  */
@@ -419,6 +386,49 @@ struct fimg2d_blit {
 
 #ifdef __KERNEL__
 
+#define BLIT_IDLE		0x13570000
+#define BLIT_REQUEST		0x13570001
+#define BLIT_PREPARE		0x13570002
+#define BLIT_START		0x13570004
+#define BLIT_DONE		0x13570008
+#define BLIT_ERR_NOBLIT		0x00000010
+#define BLIT_ERR_TIMEOUT	0x00000020
+#define BLIT_ERR_FAULT		0x00000040
+#define BLIT_ERR_MASK		0x000000f0
+
+/**
+ * @TMP: temporary buffer for 2-step blit at a single command
+ *
+ * DO NOT CHANGE THIS ORDER
+ */
+enum image_object {
+	IMAGE_SRC = 0,
+	IMAGE_MSK,
+	IMAGE_TMP,
+	IMAGE_DST,
+	IMAGE_END,
+};
+#define MAX_IMAGES		IMAGE_END
+#define ISRC			IMAGE_SRC
+#define IMSK			IMAGE_MSK
+#define ITMP			IMAGE_TMP
+#define IDST			IMAGE_DST
+
+/**
+ * @size: dma size of image
+ * @cached: cached dma size of image
+ */
+struct fimg2d_dma {
+	unsigned long addr;
+	size_t size;
+	size_t cached;
+};
+
+struct fimg2d_dma_group {
+	struct fimg2d_dma base;
+	struct fimg2d_dma plane2;
+};
+
 enum perf_desc {
 	PERF_CACHE = 0,
 	PERF_SFR,
@@ -435,15 +445,21 @@ struct fimg2d_perf {
 };
 
 /**
- * @pgd: base address of arm mmu pagetable
+ * @mm: user task's mm_struct for pgd
+ * @blt_state: blit command status
+ * @saved_fault_vaddr: previous fault vaddr
  * @ncmd: request count in blit command queue
- * @wait_q: conext wait queue head
+ * @wait_q: context wait queue head
+ * @node: list head of ctx queue
 */
 struct fimg2d_context {
 	struct mm_struct *mm;
+	int blt_state;
+	unsigned long saved_fault_vaddr;
 	atomic_t ncmd;
 	wait_queue_head_t wait_q;
 	struct fimg2d_perf perf[MAX_PERF_DESCS];
+	struct list_head node;
 };
 
 /**
@@ -473,17 +489,15 @@ struct fimg2d_bltcmd {
 };
 
 /**
- * @suspended: in suspend mode
- * @clkon: power status for runtime pm
- * @mem: resource platform device
- * @regs: base address of hardware
- * @dev: pointer to device struct
- * @err: true if hardware is timed out while blitting
- * @irq: irq number
+ * @dummy_page_paddr: dummy page's paddr for sysmmu page fault
+ * @drvact: driver activate/deactivate by user
+ * @suspended: suspend/resume
+ * @wq_state: work queue state
  * @nctx: context count
  * @busy: 1 if hardware is running
  * @bltlock: spinlock for blit
  * @wait_q: blit wait queue head
+ * @ctx_q: user context queue
  * @cmd_q: blit command queue
  * @workqueue: workqueue_struct for kfimg2dd
 */
@@ -493,16 +507,18 @@ struct fimg2d_control {
 	struct resource *mem;
 	void __iomem *regs;
 
+	unsigned long dummy_page_paddr;
 	atomic_t drvact;
 	atomic_t suspended;
 	atomic_t clkon;
-
+	int wq_state;
 	atomic_t nctx;
 	atomic_t busy;
 	spinlock_t bltlock;
-	struct mutex drvlock;
+
 	int irq;
 	wait_queue_head_t wait_q;
+	struct list_head ctx_q;
 	struct list_head cmd_q;
 	struct workqueue_struct *work_q;
 
@@ -517,18 +533,6 @@ struct fimg2d_control {
 
 int fimg2d_register_ops(struct fimg2d_control *ctrl);
 int fimg2d_ip_version_is(void);
-
-#ifdef BLIT_WORKQUE
-#define g2d_lock(x)		do {} while (0)
-#define g2d_unlock(x)		do {} while (0)
-#define g2d_spin_lock(x, f)	spin_lock_irqsave(x, f)
-#define g2d_spin_unlock(x, f)	spin_unlock_irqrestore(x, f)
-#else
-#define g2d_lock(x)		mutex_lock(x)
-#define g2d_unlock(x)		mutex_unlock(x)
-#define g2d_spin_lock(x, f)	do { f = 0; } while (0)
-#define g2d_spin_unlock(x, f)	do { f = 0; } while (0)
-#endif
 
 #endif /* __KERNEL__ */
 

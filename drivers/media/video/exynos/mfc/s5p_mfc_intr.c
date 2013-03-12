@@ -23,11 +23,13 @@
 #include "s5p_mfc_intr.h"
 #include "s5p_mfc_debug.h"
 
+#define is_err_cond(x) ((x->int_cond) && (x->int_type == S5P_FIMV_R2H_CMD_ERR_RET))
+
 int s5p_mfc_wait_for_done_dev(struct s5p_mfc_dev *dev, int command)
 {
 	int ret;
 
-	ret = wait_event_interruptible_timeout(dev->queue,
+	ret = wait_event_timeout(dev->queue,
 		(dev->int_cond && (dev->int_type == command
 		|| dev->int_type == S5P_FIMV_R2H_CMD_ERR_RET)),
 		msecs_to_jiffies(MFC_INT_TIMEOUT));
@@ -41,9 +43,6 @@ int s5p_mfc_wait_for_done_dev(struct s5p_mfc_dev *dev, int command)
 	}
 	mfc_debug(1, "Finished waiting (dev->int_type:%d, command: %d).\n",
 							dev->int_type, command);
-	/* RMVME: */
-	if (dev->int_type == S5P_FIMV_R2H_CMD_RSV_RET)
-		return 1;
 	return 0;
 }
 
@@ -66,12 +65,16 @@ int s5p_mfc_wait_for_done_ctx(struct s5p_mfc_ctx *ctx, int command)
 		mfc_err("Interrupt (ctx->int_type:%d, command:%d) timed out.\n",
 							ctx->int_type, command);
 		return 1;
+	} else if (ret > 0) {
+		if (is_err_cond(ctx)) {
+			mfc_err("Finished (ctx->int_type:%d, command: %d).\n",
+					ctx->int_type, command);
+			mfc_err("But error (ctx->int_err:%d).\n", ctx->int_err);
+			return -1;
+		}
 	}
 	mfc_debug(1, "Finished waiting (ctx->int_type:%d, command: %d).\n",
 							ctx->int_type, command);
-	/* RMVME: */
-	if (ctx->int_type == S5P_FIMV_R2H_CMD_RSV_RET)
-		return 1;
 	return 0;
 }
 
@@ -81,4 +84,3 @@ void s5p_mfc_clean_ctx_int_flags(struct s5p_mfc_ctx *ctx)
 	ctx->int_type = 0;
 	ctx->int_err = 0;
 }
-

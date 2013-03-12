@@ -132,6 +132,7 @@ struct dw_mci {
 	struct clk		*cclk;
 	atomic_t		cclk_cnt;
 	atomic_t		hclk_cnt;
+	spinlock_t		cclk_lock;
 	struct workqueue_struct	*card_workqueue;
 
 	/* DMA interface members*/
@@ -192,7 +193,9 @@ struct dw_mci {
 	struct regulator	*vmmc;	/* Power regulator */
 	struct regulator	*vqmmc;
 	unsigned long		irq_flags; /* IRQ flags */
-	unsigned int		irq;
+	int			irq;
+
+	struct mmc_queue_req    *mqrq;	/* for mmc trace */
 };
 
 /* DMA ops for Internal/External DMAC interface */
@@ -220,6 +223,8 @@ struct dw_mci_dma_ops {
 #define DW_MCI_QUIRK_NO_DETECT_EBIT             BIT(4)
 /* Hardware reset using power off/on of card */
 #define DW_MMC_QUIRK_HW_RESET_PW 		BIT(5)
+/* No use voltage switch interrupt */
+#define DW_MMC_QUIRK_NO_VOLSW_INT		BIT(6)
 
 enum dw_mci_cd_types {
 	DW_MCI_CD_INTERNAL,	/* use mmc internal CD line */
@@ -276,6 +281,9 @@ struct dw_mci_board {
 	void (*cfg_gpio)(int width);
 	void (*hw_reset)(u32 slot_id);
 	void (*set_io_timing)(void *data, unsigned char timing);
+	void (*save_drv_st)(void *data, u32 slot_id);
+	void (*restore_drv_st)(void *data, u32 slot_id);
+	void (*tuning_drv_st)(void *data, u32 slot_id);
 
 	/* Phase Shift Value */
 	unsigned int sdr_timing;
@@ -285,6 +293,10 @@ struct dw_mci_board {
 	u8 clk_smpl;
 	bool tuned;
 	bool only_once_tune;
+	struct drv_strength {
+		unsigned int pin;
+		unsigned int val;
+	} __drv_st;
 
 	/* cd_type: Type of Card Detection method (see cd_types enum above) */
 	enum dw_mci_cd_types cd_type;

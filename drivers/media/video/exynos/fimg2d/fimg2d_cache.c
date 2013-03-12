@@ -36,8 +36,8 @@ static inline unsigned long virt2phys(struct mm_struct *mm, unsigned long vaddr)
 	lv1d = pgd + (vaddr >> LV1_SHIFT);
 
 	if ((*lv1d & LV1_DESC_MASK) != 0x1) {
-		fimg2d_debug("invalid LV1 descriptor, "
-				"pgd %p lv1d 0x%lx vaddr 0x%lx\n",
+		fimg2d_debug("invalid LV1 descriptor, " \
+				"pgd 0x%p lv1d 0x%lx vaddr 0x%lx\n",
 				pgd, *lv1d, vaddr);
 		return 0;
 	}
@@ -46,8 +46,8 @@ static inline unsigned long virt2phys(struct mm_struct *mm, unsigned long vaddr)
 				((vaddr & LV2_PT_MASK) >> LV2_SHIFT);
 
 	if ((*lv2d & LV2_DESC_MASK) != 0x2) {
-		fimg2d_debug("invalid LV2 descriptor, "
-				"pgd %p lv2d 0x%lx vaddr 0x%lx\n",
+		fimg2d_debug("invalid LV2 descriptor, " \
+				"pgd 0x%p lv2d 0x%lx vaddr 0x%lx\n",
 				pgd, *lv2d, vaddr);
 		return 0;
 	}
@@ -138,10 +138,10 @@ enum pt_status fimg2d_check_pagetable(struct mm_struct *mm,
 		 *	lv1 desc[1:0] = 11 --> reserved
 		 */
 		if ((*lv1d & LV1_DESC_MASK) != 0x1) {
-			fimg2d_debug("invalid LV1 descriptor, "
-					"pgd %p lv1d 0x%lx vaddr 0x%lx\n",
+			fimg2d_trace("invalid LV1 descriptor, " \
+					"pgd 0x%p lv1d 0x%lx vaddr 0x%lx\n",
 					pgd, *lv1d, vaddr);
-			return PT_FAULT;
+			return PT_LV1_FAULT;
 		}
 
 		lv2d = (unsigned long *)phys_to_virt(*lv1d & ~LV2_BASE_MASK) +
@@ -154,10 +154,10 @@ enum pt_status fimg2d_check_pagetable(struct mm_struct *mm,
 		 *	lv2 desc[1:0] = 1x --> 4k page
 		 */
 		if ((*lv2d & LV2_DESC_MASK) != 0x2) {
-			fimg2d_debug("invalid LV2 descriptor, "
-					"pgd %p lv2d 0x%lx vaddr 0x%lx\n",
+			fimg2d_trace("invalid LV2 descriptor, " \
+					"pgd 0x%p lv2d 0x%lx vaddr 0x%lx\n",
 					pgd, *lv2d, vaddr);
-			return PT_FAULT;
+			return PT_LV2_FAULT;
 		}
 
 		vaddr += PAGE_SIZE;
@@ -165,4 +165,27 @@ enum pt_status fimg2d_check_pagetable(struct mm_struct *mm,
 	}
 
 	return PT_NORMAL;
+}
+
+void fimg2d_dummy_page_map(struct mm_struct *mm,
+		unsigned long vaddr, unsigned long paddr)
+{
+	unsigned long *pgd;
+	unsigned long *lv1d, *lv2d;
+	unsigned long lv2pa;
+
+	pgd = (unsigned long *)mm->pgd;
+
+	lv1d = pgd + (vaddr >> LV1_SHIFT);
+	lv2d = (unsigned long *)phys_to_virt(*lv1d & ~LV2_BASE_MASK) +
+				((vaddr & LV2_PT_MASK) >> LV2_SHIFT);
+
+	if (!paddr)
+		*lv2d = 0;
+	else
+		*lv2d = (paddr & ~0xfff) | 0xc7f;
+
+	dmac_flush_range((void *)lv2d, (void *)(lv2d + 4));
+	lv2pa = *lv1d & ~LV2_BASE_MASK;
+	outer_flush_range((void *)lv2pa, (void *)(lv2pa + 4));
 }

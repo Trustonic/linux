@@ -34,12 +34,14 @@
 #include <linux/delay.h>
 #include <linux/capability.h>
 #include <linux/compat.h>
+#include <linux/blktrace_api.h>
 
 #include <linux/mmc/ioctl.h>
 #include <linux/mmc/card.h>
 #include <linux/mmc/host.h>
 #include <linux/mmc/mmc.h>
 #include <linux/mmc/sd.h>
+#include <linux/mmc/mmc_trace.h>
 
 #include <asm/uaccess.h>
 
@@ -1948,6 +1950,9 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 	}
 
 	mq->flags &= ~MMC_QUEUE_NEW_REQUEST;
+	card->host->mqrq_prev = mq->mqrq_prev;
+	card->host->mqrq_cur = mq->mqrq_cur;
+
 	if (req && req->cmd_flags & REQ_DISCARD) {
 		/* complete ongoing async transfer before issuing discard */
 		if (card->host->areq)
@@ -2351,6 +2356,8 @@ static ssize_t bkops_mode_store(struct device *dev,
 	if (err)
 		return err;
 
+	mmc_add_trace_msg(md->queue.queue, "bkops_en : %d",
+				card->bkops_enable);
 	return count;
 store_out:
 	return -EINVAL;
@@ -2415,8 +2422,10 @@ static int mmc_blk_probe(struct mmc_card *card)
 	}
 
 	/* init sysfs for bkops mode */
-	if (card && mmc_card_mmc(card))
+	if (card && mmc_card_mmc(card)) {
 		mmc_blk_bkops_sysfs_init(card);
+		spin_lock_init(&card->bkops_lock);
+	}
 
 	return 0;
 

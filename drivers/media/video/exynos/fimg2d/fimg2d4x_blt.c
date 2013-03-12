@@ -34,27 +34,35 @@
 static int fimg2d4x_blit_wait(struct fimg2d_control *ctrl,
 		struct fimg2d_bltcmd *cmd)
 {
-	int ret;
+	int done;
 
-	ret = wait_event_timeout(ctrl->wait_q, !atomic_read(&ctrl->busy),
+retry:
+	wait_event_timeout(ctrl->wait_q, !atomic_read(&ctrl->busy),
 			BLIT_TIMEOUT);
-	if (!ret) {
+
+	if (atomic_read(&ctrl->busy)) {
+		/* DO NOT USE SOFT_RESET() */
 		fimg2d4x_disable_irq(ctrl);
 
-		if (!fimg2d4x_blit_done_status(ctrl))
-			fimg2d_err("blit not finished\n");
-
-		fimg2d_dump_command(cmd);
-		fimg2d4x_reset(ctrl);
-
-		return -1;
+		done = fimg2d4x_blit_done_status(ctrl);
+		if (!done) {
+			fimg2d_err("waiting for done again. " \
+				"ctx 0x%p cmd 0x%p blt_state 0x%x\n",
+				cmd->ctx, cmd, cmd->ctx->blt_state);
+			cmd->ctx->blt_state |= BLIT_ERR_TIMEOUT;
+			goto retry;
+		}
 	}
-	return 0;
-}
 
-static void fimg2d4x_pre_bitblt(struct fimg2d_control *ctrl, struct fimg2d_bltcmd *cmd)
-{
-	/* TODO */
+	atomic_set(&ctrl->busy, 0);
+
+	if (cmd->ctx->blt_state & BLIT_ERR_TIMEOUT) {
+		fimg2d_err("blit timeout. ctx 0x%p cmd 0x%p blt_state 0x%x\n",
+				cmd->ctx, cmd, cmd->ctx->blt_state);
+		return -ETIME;
+	}
+
+	return 0;
 }
 
 int fimg2d4x_bitblt(struct fimg2d_control *ctrl)
@@ -72,7 +80,14 @@ int fimg2d4x_bitblt(struct fimg2d_control *ctrl)
 		if (!cmd)
 			break;
 
-		ctx = cmd->ctx;
+		ctx = fimg2d_get_context(ctrl, cmd);
+		if (!ctx)
+			break;
+
+		ctx->blt_state = BLIT_PREPARE;
+
+		fimg2d_trace("thread loop ctx 0x%p cmd 0x%p blt_state 0x%x\n",
+			ctx, cmd, ctx->blt_state);
 
 		atomic_set(&ctrl->busy, 1);
 
@@ -84,13 +99,12 @@ int fimg2d4x_bitblt(struct fimg2d_control *ctrl)
 
 		if (addr_type == ADDR_USER || addr_type == ADDR_USER_CONTIG) {
 			pgd = (unsigned long *)ctx->mm->pgd;
-			exynos_sysmmu_enable(ctrl->dev,
-					(unsigned long)virt_to_phys(pgd));
-			fimg2d_debug("sysmmu enable: pgd %p ctx %p seq_no(%u)\n",
-					pgd, ctx, cmd->blt.seq_no);
+			exynos_sysmmu_enable(ctrl->dev, virt_to_phys(pgd));
+			fimg2d_trace("sysmmu enable ctx 0x%p cmd 0x%p pgd 0x%lx\n",
+				ctx, cmd, (unsigned long)virt_to_phys(pgd));
 		}
 
-		fimg2d4x_pre_bitblt(ctrl, cmd);
+		ctx->blt_state = BLIT_START;
 
 		perf_start(cmd, PERF_BLIT);
 		/* start blit */
@@ -98,11 +112,20 @@ int fimg2d4x_bitblt(struct fimg2d_control *ctrl)
 		ret = fimg2d4x_blit_wait(ctrl, cmd);
 		perf_end(cmd, PERF_BLIT);
 
+		ctx->blt_state |= BLIT_DONE;
+
 		if (addr_type == ADDR_USER || addr_type == ADDR_USER_CONTIG) {
 			exynos_sysmmu_disable(ctrl->dev);
-			fimg2d_debug("sysmmu disable\n");
+			fimg2d_debug("sysmmu disable ctx 0x%p cmd 0x%p\n", ctx, cmd);
 		}
 
+#ifdef RECOVER_PGTABLE
+		if (ctx->saved_fault_vaddr) {
+			fimg2d_dummy_page_map(ctx->mm, ctx->saved_fault_vaddr, 0);
+			ctx->saved_fault_vaddr = 0;
+			fimg2d_err("dummy page mapping. ctx 0x%p cmd 0x%p\n", ctx, cmd);
+		}
+#endif
 		fimg2d_del_command(ctrl, cmd);
 	}
 
@@ -208,7 +231,7 @@ static int fimg2d4x_configure(struct fimg2d_control *ctrl,
 	struct fimg2d_param *p;
 	struct fimg2d_image *src, *msk, *dst;
 
-	fimg2d_debug("ctx %p seq_no(%u)\n", cmd->ctx, cmd->blt.seq_no);
+	fimg2d_debug("ctx 0x%p cmd 0x%p\n", cmd->ctx, cmd);
 
 	p = &cmd->blt.param;
 	src = &cmd->image[ISRC];

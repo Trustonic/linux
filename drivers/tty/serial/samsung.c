@@ -827,6 +827,8 @@ static void s3c24xx_serial_shutdown(struct uart_port *port)
 	if (ourport->tx_claimed) {
 		if (!s3c24xx_serial_has_interrupt_mask(port))
 			free_irq(ourport->tx_irq, ourport);
+		else
+			free_irq(port->irq, ourport);
 		tx_enabled(port) = 0;
 		ourport->tx_claimed = 0;
 
@@ -843,6 +845,8 @@ static void s3c24xx_serial_shutdown(struct uart_port *port)
 	if (ourport->rx_claimed) {
 		if (!s3c24xx_serial_has_interrupt_mask(port))
 			free_irq(ourport->rx_irq, ourport);
+		/* else already freed above as the s3c64xx_serial_startup()
+		 * will have set both tx_claimed and rx_claimed */
 		ourport->rx_claimed = 0;
 		rx_enabled(port) = 0;
 
@@ -1449,6 +1453,9 @@ static void s3c24xx_serial_resetport(struct uart_port *port,
 
 	/* some delay is required after fifo reset */
 	udelay(1);
+
+	/* enable all interrupts except TX */
+	wr_regl(port, S3C64XX_UINTM, S3C64XX_UINTM_TXD_MSK);
 }
 
 
@@ -1826,7 +1833,15 @@ s3c24xx_serial_console_txrdy(struct uart_port *port, unsigned int ufcon)
 static void
 s3c24xx_serial_console_putchar(struct uart_port *port, int ch)
 {
-	unsigned int ufcon = rd_regl(cons_uart, S3C2410_UFCON);
+	unsigned int ufcon;
+
+	if (!(rd_regl(cons_uart, S3C2410_UCON) & S3C2410_UCON_TXIRQMODE)) {
+		wr_regl(port, S3C64XX_UINTM, 0xf);
+		wr_regl(port, S3C64XX_UINTP, 0xf);
+		s3c24xx_serial_resetport(port, s3c24xx_port_to_cfg(port));
+	}
+
+	ufcon = rd_regl(cons_uart, S3C2410_UFCON);
 	while (!s3c24xx_serial_console_txrdy(port, ufcon))
 		barrier();
 	wr_regb(cons_uart, S3C2410_UTXH, ch);

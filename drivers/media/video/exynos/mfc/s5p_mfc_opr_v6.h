@@ -105,6 +105,19 @@ void s5p_mfc_enc_calc_src_size(struct s5p_mfc_ctx *ctx);
 					S5P_FIMV_D_MVC_VIEW_ID)		\
 					& S5P_FIMV_D_MVC_VIEW_ID_DISP_MASK)
 
+#define s5p_mfc_is_interlace_picture()	((readl(dev->regs_base + \
+					S5P_FIMV_D_DECODED_STATUS) & \
+					S5P_FIMV_DEC_STATUS_INTERLACE_MASK) == \
+					S5P_FIMV_DEC_STATUS_INTERLACE)
+
+#define s5p_mfc_get_dec_status()	(readl(dev->regs_base + \
+						S5P_FIMV_D_DECODED_STATUS) \
+						& S5P_FIMV_DECODED_FRAME_MASK)
+
+#define s5p_mfc_get_dec_frame()		(readl(dev->regs_base + \
+						S5P_FIMV_D_DECODED_FRAME_TYPE) \
+						& S5P_FIMV_DECODED_FRAME_MASK)
+
 #define mb_width(x_size)		((x_size + 15) / 16)
 #define mb_height(y_size)		((y_size + 15) / 16)
 #define s5p_mfc_dec_mv_size(x, y)	(mb_width(x) * (((mb_height(y)+1)/2)*2) * 64 + 128)
@@ -160,9 +173,7 @@ void s5p_mfc_enc_calc_src_size(struct s5p_mfc_ctx *ctx);
 #define DEC_V65_H264_SCRATCH_SIZE(x, y)				\
 		((x * 192) + 64)
 #define DEC_V65_MPEG4_SCRATCH_SIZE(x, y)			\
-		((x) * ((y) * 64 + 144) +			\
-		(((x) * ((y) * 64 + 144)) +			\
-		 (8192 * (y)) + 49216))
+		(((x) * 144) + ((y) * 8192) + 49216 + 1048576)
 #define DEC_V65_VC1_SCRATCH_SIZE(x, y)				\
 		(2096 * ((x) + (y) + 1))
 #define DEC_V65_MPEG2_SCRATCH_SIZE(x, y)	0

@@ -23,6 +23,9 @@
 #include <linux/regulator/consumer.h>
 #include <linux/module.h>
 #include <linux/pm_qos.h>
+#include <linux/debugfs.h>
+#include <linux/jiffies.h>
+#include <asm/cputime.h>
 
 #include <mach/map.h>
 #include <mach/regs-clock.h>
@@ -65,6 +68,9 @@ struct busfreq_data_int {
 	struct exynos5_ppmu_handle *ppmu;
 	struct delayed_work work;
 	int busy;
+
+	cputime64_t time_in_state[_LV_END];
+	unsigned long long last_time;
 };
 
 struct int_bus_opp_table {
@@ -94,6 +100,27 @@ static struct busfreq_data_int *exynos5_bus_int_data;
 static DEFINE_MUTEX(exynos5_bus_int_data_lock);
 static LIST_HEAD(exynos5_bus_int_requests);
 static DEFINE_MUTEX(exynos5_bus_int_requests_lock);
+
+void update_devfreq_int_stat(struct busfreq_data_int *data, unsigned int freq)
+{
+	int index;
+	unsigned long long cur_time;
+
+	for (index = LV_0; index < _LV_END; index++) {
+		if (freq == exynos5_int_opp_table[index].clk)
+			break;
+	}
+
+	if (index == _LV_END)
+		return 0;
+
+	cur_time = get_jiffies_64();
+
+	if (data->last_time)
+		data->time_in_state[index] += cur_time - data->last_time;
+
+	data->last_time = cur_time;
+}
 
 static int exynos5_int_setvolt(struct busfreq_data_int *data,
 		unsigned long volt)
@@ -142,6 +169,8 @@ static int exynos5_busfreq_int_target(struct device *dev, unsigned long *_freq,
 	mutex_lock(&data->lock);
 
 	old_freq = data->curr_freq;
+
+	update_devfreq_int_stat(data, old_freq);
 
 	if (old_freq == freq)
 		goto out;
@@ -366,6 +395,44 @@ static struct devfreq_simple_ondemand_data exynos5_int_ondemand_data = {
 	.upthreshold = INT_BUS_SATURATION_RATIO,
 };
 
+static int exynos5_busfreq_int_show(struct seq_file *s, void *d)
+{
+	int i;
+
+	seq_printf(s, "exynos5_devfreq_int time in state\n");
+
+	mutex_lock(&exynos5_bus_int_data->lock);
+	for (i = LV_0; i < _LV_END; i++)
+		seq_printf(s, "%lu %llu\n", exynos5_int_opp_table[i].clk,
+			(unsigned long long)cputime64_to_clock_t
+			(exynos5_bus_int_data->time_in_state[i]));
+	mutex_unlock(&exynos5_bus_int_data->lock);
+
+	seq_printf(s, "\n");
+
+	return 0;
+}
+
+static int
+exynos5_devfreq_int_debug_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, exynos5_busfreq_int_show, inode->i_private);
+}
+
+const static struct file_operations exynos5_devfreq_int_debug_fops = {
+	.open		= exynos5_devfreq_int_debug_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+static int exynos5_devfreq_int_init(struct busfreq_data_int *data)
+{
+	debugfs_create_file("exynos5_devfreq_int_time_in_state",
+		S_IRUGO, NULL, NULL, &exynos5_devfreq_int_debug_fops);
+	return 0;
+}
+
 static __devinit int exynos5_busfreq_int_probe(struct platform_device *pdev)
 {
 	struct busfreq_data_int *data;
@@ -451,6 +518,8 @@ static __devinit int exynos5_busfreq_int_probe(struct platform_device *pdev)
 	mutex_lock(&exynos5_bus_int_data_lock);
 	exynos5_bus_int_data = data;
 	mutex_unlock(&exynos5_bus_int_data_lock);
+
+	exynos5_devfreq_int_init(data);
 
 	exynos5_int_update(data);
 	exynos5_int_poll_start(data);

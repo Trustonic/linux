@@ -18,6 +18,7 @@
 
 #include <linux/mmc/card.h>
 #include <linux/mmc/host.h>
+#include <linux/mmc/mmc_trace.h>
 #include "queue.h"
 
 #define MMC_QUEUE_BOUNCESZ	65536
@@ -65,12 +66,20 @@ static int mmc_queue_thread(void *d)
 		spin_unlock_irq(q->queue_lock);
 
 		if (req || mq->mqrq_prev->req) {
+			if (mq->flags & MMC_QUEUE_NEW_REQUEST) {
+				mmc_add_trace(__MMC_TA_ASYNC_REQ_FETCH,
+							mq->mqrq_cur);
+				mq->flags &= ~MMC_QUEUE_NEW_REQUEST;
+			} else {
+				if (req)
+					mmc_add_trace(__MMC_TA_REQ_FETCH,
+								mq->mqrq_cur);
+			}
+
 			set_current_state(TASK_RUNNING);
 			mq->issue_fn(mq, req);
-			if (mq->flags & MMC_QUEUE_NEW_REQUEST) {
-				mq->flags &= ~MMC_QUEUE_NEW_REQUEST;
+			if (mq->flags & MMC_QUEUE_NEW_REQUEST)
 				continue; /* fetch again */
-			}
 
 			/*
 			 * Current request becomes previous request

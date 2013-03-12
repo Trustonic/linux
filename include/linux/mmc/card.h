@@ -427,6 +427,7 @@ static inline void __maybe_unused remove_quirk(struct mmc_card *card, int data)
 #define mmc_card_set_sleep(c)	((c)->state |= MMC_STATE_SLEEP)
 
 #define mmc_card_clr_sleep(c)	((c)->state &= ~MMC_STATE_SLEEP)
+#define mmc_card_clr_hs200(c)	((c)->state &= ~MMC_STATE_HIGHSPEED_200)
 /*
  * Quirk add/remove for MMC products.
  */

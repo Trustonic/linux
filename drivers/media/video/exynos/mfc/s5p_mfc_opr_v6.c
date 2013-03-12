@@ -109,8 +109,7 @@ int s5p_mfc_alloc_codec_buffers(struct s5p_mfc_ctx *ctx)
 	switch (ctx->codec_mode) {
 	case S5P_FIMV_CODEC_H264_DEC:
 	case S5P_FIMV_CODEC_H264_MVC_DEC:
-		if (dev->fw.date < 0x120206)
-			dec->mv_count = dec->total_dpb_count;
+		dec->mv_count = dec->total_dpb_count;
 		if (dev->fw.ver == 0x61)
 			ctx->scratch_buf_size =
 				DEC_V61_H264_SCRATCH_SIZE(mb_width, mb_height);
@@ -281,10 +280,8 @@ int s5p_mfc_alloc_instance_buffer(struct s5p_mfc_ctx *ctx)
 		break;
 	}
 
-	if (ctx->is_drm) {
-		ctx->ctx_buf_size = buf_size->h264_dec_ctx;
+	if (ctx->is_drm)
 		alloc_ctx = dev->alloc_ctx_drm;
-	}
 
 	ctx->ctx.alloc = s5p_mfc_mem_alloc(alloc_ctx, ctx->ctx_buf_size);
 	if (IS_ERR(ctx->ctx.alloc)) {
@@ -340,7 +337,8 @@ int s5p_mfc_alloc_dev_context_buffer(struct s5p_mfc_dev *dev)
 	mfc_debug_enter();
 
 #ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
-	alloc_ctx = dev->alloc_ctx_drm;
+	if (dev->num_drm_inst)
+		alloc_ctx = dev->alloc_ctx_drm;
 #endif
 	dev->ctx_buf.alloc = s5p_mfc_mem_alloc(alloc_ctx, buf_size->dev_ctx);
 	if (IS_ERR(dev->ctx_buf.alloc)) {
@@ -350,8 +348,11 @@ int s5p_mfc_alloc_dev_context_buffer(struct s5p_mfc_dev *dev)
 
 	dev->ctx_buf.ofs = s5p_mfc_mem_daddr(dev->ctx_buf.alloc);
 #ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
-	iovmm_map_oto(&dev->plat_dev->dev, dev->ctx_buf.ofs,
-			buf_size->dev_ctx);
+	if (dev->num_drm_inst) {
+		iovmm_map_oto(&dev->plat_dev->dev, dev->ctx_buf.ofs,
+				buf_size->dev_ctx);
+		dev->buf_oto_status |= OTO_BUF_COMMON_CTX;
+	}
 #endif
 	dev->ctx_buf.virt = s5p_mfc_mem_vaddr(dev->ctx_buf.alloc);
 	if (!dev->ctx_buf.virt) {
@@ -363,8 +364,6 @@ int s5p_mfc_alloc_dev_context_buffer(struct s5p_mfc_dev *dev)
 		return -ENOMEM;
 	}
 
-	s5p_mfc_cache_inv_priv(dev->ctx_buf.alloc);
-
 	mfc_debug_leave();
 
 	return 0;
@@ -375,7 +374,10 @@ void s5p_mfc_release_dev_context_buffer(struct s5p_mfc_dev *dev)
 {
 	if (dev->ctx_buf.alloc) {
 #ifdef CONFIG_EXYNOS_CONTENT_PATH_PROTECTION
-		iovmm_unmap_oto(&dev->plat_dev->dev, dev->ctx_buf.ofs);
+		if (dev->buf_oto_status & OTO_BUF_COMMON_CTX) {
+			iovmm_unmap_oto(&dev->plat_dev->dev, dev->ctx_buf.ofs);
+			dev->buf_oto_status &= ~OTO_BUF_COMMON_CTX;
+		}
 #endif
 		s5p_mfc_mem_free(dev->ctx_buf.alloc);
 		dev->ctx_buf.alloc = NULL;
@@ -671,7 +673,11 @@ static int s5p_mfc_set_slice_mode(struct s5p_mfc_ctx *ctx)
 	struct s5p_mfc_enc *enc = ctx->enc_priv;
 
 	/* multi-slice control */
-	WRITEL(enc->slice_mode, S5P_FIMV_E_MSLICE_MODE);
+	if (enc->slice_mode == V4L2_MPEG_VIDEO_MULTI_SICE_MODE_MAX_BYTES)
+		WRITEL((enc->slice_mode + 0x4), S5P_FIMV_E_MSLICE_MODE);
+	else
+		WRITEL(enc->slice_mode, S5P_FIMV_E_MSLICE_MODE);
+
 	/* multi-slice MB number or bit size */
 	if (enc->slice_mode == V4L2_MPEG_VIDEO_MULTI_SICE_MODE_MAX_MB) {
 		WRITEL(enc->slice_size.mb, S5P_FIMV_E_MSLICE_SIZE_MB);
@@ -716,20 +722,17 @@ static int s5p_mfc_set_enc_params(struct s5p_mfc_ctx *ctx)
 
 	/* multi-slice control */
 	/* multi-slice MB number or bit size */
-	reg = 0;
 	enc->slice_mode = p->slice_mode;
 
+	WRITEL(0, S5P_FIMV_E_ENC_OPTIONS);
+
 	if (p->slice_mode == V4L2_MPEG_VIDEO_MULTI_SICE_MODE_MAX_MB) {
-		/* reg |= (0x1 << 3); */
-		WRITEL(reg, S5P_FIMV_E_ENC_OPTIONS);
 		enc->slice_size.mb = p->slice_mb;
 	} else if (p->slice_mode == V4L2_MPEG_VIDEO_MULTI_SICE_MODE_MAX_BYTES) {
-		/* reg |= (0x1 << 3); */
-		WRITEL(reg, S5P_FIMV_E_ENC_OPTIONS);
 		enc->slice_size.bits = p->slice_bit;
 	} else {
-		reg &= ~(0x1 << 3);
-		WRITEL(reg, S5P_FIMV_E_ENC_OPTIONS);
+		enc->slice_size.mb = 0;
+		enc->slice_size.bits = 0;
 	}
 
 	s5p_mfc_set_slice_mode(ctx);
@@ -1020,6 +1023,12 @@ static int s5p_mfc_set_enc_params_h264(struct s5p_mfc_ctx *ctx)
 		WRITEL(reg, S5P_FIMV_E_FIXED_PICTURE_QP);
 	}
 
+	/* sps pps control */
+	reg = READL(S5P_FIMV_E_H264_OPTIONS);
+	reg &= ~(0x1 << 29);
+	reg |= (p_264->prepend_sps_pps_to_idr << 29);
+	WRITEL(reg, S5P_FIMV_E_H264_OPTIONS);
+
 	/* extended encoder ctrl */
 	reg = READL(S5P_FIMV_E_H264_OPTIONS);
 	reg &= ~(0x1 << 5);
@@ -1076,6 +1085,13 @@ static int s5p_mfc_set_enc_params_h264(struct s5p_mfc_ctx *ctx)
 	else
 		reg &= ~(0x1 << 6);
 	WRITEL(reg, S5P_FIMV_E_H264_OPTIONS);
+
+	/* VUI parameter enable */
+	if (FW_HAS_VUI_PARAMS(dev)) {
+		reg = READL(S5P_FIMV_E_H264_OPTIONS);
+		reg |= (0x1 << 30);
+		WRITEL(reg, S5P_FIMV_E_H264_OPTIONS);
+	}
 
 	/* hier qp enable */
 	reg = READL(S5P_FIMV_E_H264_OPTIONS);
@@ -1509,14 +1525,16 @@ static inline int s5p_mfc_run_dec_last_frames(struct s5p_mfc_ctx *ctx)
 	/* Frames are being decoded */
 	if (list_empty(&ctx->src_queue)) {
 		mfc_debug(2, "No src buffers.\n");
-		spin_unlock_irqrestore(&dev->irqlock, flags);
-		return -EAGAIN;
-	}
-	/* Get the next source buffer */
-	temp_vb = list_entry(ctx->src_queue.next, struct s5p_mfc_buf, list);
-	temp_vb->used = 1;
-	s5p_mfc_set_dec_stream_buffer(ctx,
+		s5p_mfc_set_dec_stream_buffer(ctx, 0, 0, 0);
+	} else {
+		/* Get the next source buffer */
+		temp_vb = list_entry(ctx->src_queue.next,
+					struct s5p_mfc_buf, list);
+		temp_vb->used = 1;
+		s5p_mfc_set_dec_stream_buffer(ctx,
 			s5p_mfc_mem_plane_addr(ctx, &temp_vb->vb, 0), 0, 0);
+	}
+
 	spin_unlock_irqrestore(&dev->irqlock, flags);
 
 	dev->curr_ctx = ctx->num;
@@ -1563,7 +1581,8 @@ static inline int s5p_mfc_run_dec_frame(struct s5p_mfc_ctx *ctx)
 
 	dev->curr_ctx = ctx->num;
 	s5p_mfc_clean_ctx_int_flags(ctx);
-	if (temp_vb->vb.v4l2_planes[0].bytesused == 0) {
+	if (temp_vb->vb.v4l2_planes[0].bytesused == 0 ||
+			temp_vb->vb.v4l2_buf.input == DEC_LAST_FRAME) {
 		last_frame = 1;
 		mfc_debug(2, "Setting ctx->state to FINISHING\n");
 		ctx->state = MFCINST_FINISHING;
@@ -1735,6 +1754,19 @@ static inline int s5p_mfc_run_init_enc_buffers(struct s5p_mfc_ctx *ctx)
 	return ret;
 }
 
+static inline int s5p_mfc_dec_dpb_flush(struct s5p_mfc_ctx *ctx)
+{
+	struct s5p_mfc_dev *dev = ctx->dev;
+
+	dev->curr_ctx = ctx->num;
+	s5p_mfc_clean_ctx_int_flags(ctx);
+
+	WRITEL(ctx->inst_no, S5P_FIMV_INSTANCE_ID);
+	s5p_mfc_cmd_host2risc(S5P_FIMV_H2R_CMD_FLUSH, NULL);
+
+	return 0;
+}
+
 static inline int s5p_mfc_ctx_ready(struct s5p_mfc_ctx *ctx)
 {
 	if (ctx->type == MFCINST_DECODER)
@@ -1825,6 +1857,9 @@ void s5p_mfc_try_run(struct s5p_mfc_dev *dev)
 			ctx->capture_state = QUEUE_FREE;
 			mfc_debug(2, "Will re-init the codec`.\n");
 			s5p_mfc_run_init_dec(ctx);
+			break;
+		case MFCINST_DPB_FLUSHING:
+			ret = s5p_mfc_dec_dpb_flush(ctx);
 			break;
 		default:
 			ret = -EAGAIN;

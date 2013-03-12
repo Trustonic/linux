@@ -80,6 +80,18 @@ static void exynos_drd_ack_evntcount(struct exynos_drd_core *core, u32 val)
 	writel(val, drd->regs + EXYNOS_USB3_GEVNTCOUNT(0));
 }
 
+static void exynos_drd_events_enable(struct exynos_drd_core *core, int on)
+{
+	struct exynos_drd *drd = container_of(core, struct exynos_drd, core);
+
+	if (on)
+		__bic32(drd->regs + EXYNOS_USB3_GEVNTSIZ(0),
+			EXYNOS_USB3_GEVNTSIZx_EvntIntMask);
+	else
+		__orr32(drd->regs + EXYNOS_USB3_GEVNTSIZ(0),
+			EXYNOS_USB3_GEVNTSIZx_EvntIntMask);
+}
+
 static void exynos_drd_set_event_buff(struct exynos_drd_core *core,
 				      dma_addr_t event_buff_dma,
 				      int size)
@@ -94,14 +106,12 @@ static void exynos_drd_set_event_buff(struct exynos_drd_core *core,
 	writel(size, drd->regs + EXYNOS_USB3_GEVNTSIZ(0));
 
 	/* Flush any pending events */
-	__orr32(drd->regs + EXYNOS_USB3_GEVNTSIZ(0),
-		EXYNOS_USB3_GEVNTSIZx_EvntIntMask);
+	exynos_drd_events_enable(core, 0);
 
 	reg = readl(drd->regs + EXYNOS_USB3_GEVNTCOUNT(0));
 	writel(reg, drd->regs + EXYNOS_USB3_GEVNTCOUNT(0));
 
-	__bic32(drd->regs + EXYNOS_USB3_GEVNTSIZ(0),
-		EXYNOS_USB3_GEVNTSIZx_EvntIntMask);
+	exynos_drd_events_enable(core, 1);
 }
 
 static void exynos_drd_phy20_suspend(struct exynos_drd_core *core, int suspend)
@@ -222,6 +232,7 @@ static void exynos_drd_config(struct exynos_drd_core *core)
 	struct exynos_drd *drd = container_of(core, struct exynos_drd, core);
 	struct platform_device *pdev = to_platform_device(drd->dev);
 	struct dwc3_exynos_data *pdata = drd->pdata;
+	u32 reg;
 
 	/* AHB bus configuration */
 	writel(EXYNOS_USB3_GSBUSCFG0_INCR16BrstEna |
@@ -229,6 +240,30 @@ static void exynos_drd_config(struct exynos_drd_core *core)
 	       drd->regs + EXYNOS_USB3_GSBUSCFG0);
 	writel(EXYNOS_USB3_GSBUSCFG1_BREQLIMIT(3),
 	       drd->regs + EXYNOS_USB3_GSBUSCFG1);
+
+	/*
+	 * WORKAROUND: DWC3 revisions from 1.90a to 2.10a have a bug
+	 * For ss bulk-in data packet, when the host detects
+	 * a DPP error or the internal buffer becomes full,
+	 * it retries with an ACK TP Retry=1. Under the following
+	 * conditions, the Retry=1 is falsely carried over to the next burst
+	 * - There is only single active asynchronous SS EP at the time.
+	 * - The active asynchronous EP is a Bulk IN EP.
+	 * - The burst with the correctly Retry=1 ACK TP and
+	 *   the next burst belong to the same transfer.
+	 */
+	if (drd->core.release >= 0x190a && drd->core.release <= 0x210a) {
+		__orr32(drd->regs + EXYNOS_USB3_GUCTL,
+			EXYNOS_USB3_GUCTL_USBHstInAutoRetryEn);
+
+		reg = readl(drd->regs + EXYNOS_USB3_GRXTHRCFG);
+		reg &= ~(EXYNOS_USB3_GRXTHRCFG_USBRxPktCnt_MASK |
+			EXYNOS_USB3_GRXTHRCFG_USBMaxRxBurstSize_MASK);
+		reg |= EXYNOS_USB3_GRXTHRCFG_USBRxPktCntSel |
+		      EXYNOS_USB3_GRXTHRCFG_USBRxPktCnt(3) |
+		      EXYNOS_USB3_GRXTHRCFG_USBMaxRxBurstSize(3);
+		writel(reg, drd->regs + EXYNOS_USB3_GRXTHRCFG);
+	}
 
 	/* los_bias configuration */
 	if (pdata->phy_crport_ctrl) {
@@ -285,8 +320,7 @@ static void exynos_drd_init(struct exynos_drd_core *core)
 			reg |= EXYNOS_USB3_GCTL_PwrDnScale(susp_clk_freq/16000);
 	}
 
-	reg |= EXYNOS_USB3_GCTL_RAMClkSel(0x1) | /* Ram Clock Select */
-	       EXYNOS_USB3_GCTL_U2RSTECN;
+	reg |= EXYNOS_USB3_GCTL_U2RSTECN;
 
 	writel(reg, drd->regs + EXYNOS_USB3_GCTL);
 }
@@ -300,6 +334,7 @@ static struct exynos_drd_core_ops core_ops = {
 	.phy20_suspend	= exynos_drd_phy20_suspend,
 	.phy30_suspend	= exynos_drd_phy30_suspend,
 	.set_event_buff	= exynos_drd_set_event_buff,
+	.events_enable	= exynos_drd_events_enable,
 	.get_evntcount	= exynos_drd_get_evntcount,
 	.ack_evntcount	= exynos_drd_ack_evntcount,
 };
@@ -611,6 +646,7 @@ static int exynos_drd_suspend(struct device *dev)
 		return 0;
 	}
 #endif
+	disable_irq(drd->irq);
 	exynos_drd_phy_unset(&drd->core);
 	clk_disable(drd->clk);
 
@@ -626,7 +662,6 @@ static int exynos_drd_resume(struct device *dev)
 		      __func__, atomic_read(&dev->power.usage_count));
 #endif
 
-	pm_runtime_resume(dev);
 	clk_enable(drd->clk);
 	exynos_drd_phy_set(&drd->core);
 	exynos_drd_init(&drd->core);
@@ -638,6 +673,8 @@ static int exynos_drd_resume(struct device *dev)
 	pm_runtime_disable(dev);
 	pm_runtime_set_active(dev);
 	pm_runtime_enable(dev);
+
+	enable_irq(drd->irq);
 
 	return 0;
 }
@@ -653,9 +690,9 @@ static int exynos_drd_runtime_suspend(struct device *dev)
 
 	dev_dbg(dev, "%s\n", __func__);
 
+	disable_irq(drd->irq);
 	exynos_drd_phy_unset(&drd->core);
 	clk_disable(drd->clk);
-	disable_irq(drd->irq);
 	return 0;
 }
 
@@ -665,13 +702,13 @@ static int exynos_drd_runtime_resume(struct device *dev)
 
 	dev_dbg(dev, "%s\n", __func__);
 
-	enable_irq(drd->irq);
 	if (dev->power.is_suspended) {
 		dev_dbg(dev, "DRD is system suspended\n");
 		return 0;
 	}
 	clk_enable(drd->clk);
 	exynos_drd_phy_set(&drd->core);
+	enable_irq(drd->irq);
 
 	return 0;
 }

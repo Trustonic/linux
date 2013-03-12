@@ -599,6 +599,9 @@ struct kbase_device {
 #ifdef CONFIG_MALI_T6XX_RT_PM
 	struct delayed_work runtime_pm_workqueue;
 #endif
+	struct dentry *mem_usage;
+	struct dentry *den;
+	atomic_t total_pages;
 };
 
 struct kbase_context
@@ -652,6 +655,7 @@ struct kbase_context
 
 	spinlock_t         mm_update_lock;
 	struct mm_struct * process_mm;
+	struct dentry *den;
 };
 
 typedef enum kbase_reg_access_type

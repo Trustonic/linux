@@ -19,8 +19,9 @@ bool srp_enabled_status(void) {return 1;}
 extern unsigned int srp_get_idma_addr(void);
 extern void srp_prepare_pm(void *info);
 extern void srp_core_reset(void);
-extern void srp_core_suspend(int num);
+extern int srp_core_suspend(int num);
 extern void srp_wait_for_pending(void);
+extern bool srp_fw_ready_done;
 #else
 bool srp_enabled_status(void) {return 0;}
 unsigned int srp_get_idma_addr(void) {return 0;}

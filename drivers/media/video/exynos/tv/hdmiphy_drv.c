@@ -117,13 +117,19 @@ static int hdmiphy_s_power(struct v4l2_subdev *sd, int on)
 	if (!on)
 		hdmiphy_enable_oscpad(client, 0, recv_buffer);
 
-	hdmiphy_ctrl(client, 0x1d, 0x7, recv_buffer, on);
-	hdmiphy_ctrl(client, 0x1d, 0x0, recv_buffer, on);
-	hdmiphy_ctrl(client, 0x1d, 0x1, recv_buffer, on);
-	hdmiphy_ctrl(client, 0x1d, 0x2, recv_buffer, on);
-	hdmiphy_ctrl(client, 0x1d, 0x4, recv_buffer, on);
-	hdmiphy_ctrl(client, 0x1d, 0x5, recv_buffer, on);
-	hdmiphy_ctrl(client, 0x1d, 0x6, recv_buffer, on);
+	if (on) {
+		hdmiphy_ctrl(client, 0x1d, 0x7, recv_buffer, on);
+		hdmiphy_ctrl(client, 0x1d, 0x0, recv_buffer, on);
+		hdmiphy_ctrl(client, 0x1d, 0x1, recv_buffer, on);
+		hdmiphy_ctrl(client, 0x1d, 0x2, recv_buffer, on);
+		hdmiphy_ctrl(client, 0x1d, 0x4, recv_buffer, on);
+		hdmiphy_ctrl(client, 0x1d, 0x5, recv_buffer, on);
+		hdmiphy_ctrl(client, 0x1d, 0x6, recv_buffer, on);
+	} else {
+		hdmiphy_ctrl(client, 0x1d, 0x7, recv_buffer, on);
+		hdmiphy_ctrl(client, 0x1d, 0x2, recv_buffer, on);
+		hdmiphy_ctrl(client, 0x1d, 0x4, recv_buffer, on);
+	}
 
 	if (!on)
 		hdmiphy_ctrl(client, 0x4, 0x3, recv_buffer, 0);

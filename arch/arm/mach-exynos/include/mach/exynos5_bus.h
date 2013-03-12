@@ -113,4 +113,27 @@ static inline void exynos5_ppmu_trace(void)
 {
 }
 #endif
+
+#include <mach/regs-mem.h>
+#if defined(CONFIG_ARM_TRUSTZONE)
+#include <mach/smc.h>
+#endif
+
+static inline
+unsigned int exynos5_get_memory_type(void)
+{
+	unsigned int val;
+
+#if defined(CONFIG_ARM_TRUSTZONE)
+	exynos_smc_read_sfr(SMC_CMD_REG,
+		SMC_REG_ID_SFR_R(EXYNOS5_PA_DREXII + EXYNOS_DMC_MEMCONTROL_OFFSET),
+		&val, 0);
+#else
+	val = __raw_readl(S5P_VA_DREXII + EXYNOS_DMC_MEMCONTROL_OFFSET);
+#endif
+
+	val = (val >> 8) & 0xf;
+
+	return val;
+}
 #endif /* _MACH_EXYNOS_EXYNOS5_BUS_H_ */

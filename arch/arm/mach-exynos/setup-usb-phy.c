@@ -16,6 +16,7 @@
 #include <linux/platform_device.h>
 #include <linux/string.h>
 #include <linux/platform_data/dwc3-exynos.h>
+#include <mach/cpuidle.h>
 #include <mach/regs-pmu.h>
 #include <mach/regs-usb-phy.h>
 #include <mach/regs-usb3-drd-phy.h>
@@ -40,6 +41,8 @@ struct exynos_usb_phy {
 	u8 lpa_entered;
 	unsigned long flags;
 	unsigned long usage;
+	u8 host_lpa_registered;
+	u8 device_lpa_registered;
 };
 
 static struct exynos_usb_phy usb_phy_control = {
@@ -217,7 +220,7 @@ static int exynos4_usb_phy20_is_on(void)
 
 static int exynos5_usb_phy20_is_on(void)
 {
-	return (readl(EXYNOS5_PHY_HOST_CTRL0) & HOST_CTRL0_PHYSWRSTALL) ? 0 : 1;
+	return (readl(EXYNOS5_PHY_HOST_CTRL0) & HOST_CTRL0_SIDDQ) ? 0 : 1;
 }
 
 static int exynos5_usb_phy30_is_on(void)
@@ -504,6 +507,7 @@ static int exynos4_usb_phy20_init(struct platform_device *pdev)
 	atomic_inc(&host_usage);
 
 	if (exynos4_usb_phy20_is_on()) {
+		exynos4_usb_phy1_resume(pdev);
 		dev_err(&pdev->dev, "Already power on PHY\n");
 		return 0;
 	}
@@ -672,6 +676,7 @@ static int exynos5_usb_phy20_init(struct platform_device *pdev)
 	atomic_inc(&host_usage);
 
 	if (exynos5_usb_phy20_is_on()) {
+		exynos5_usb_phy_host_resume(pdev);
 		dev_err(&pdev->dev, "Already power on PHY\n");
 		return 0;
 	}
@@ -1269,10 +1274,14 @@ int s5p_usb_phy_suspend(struct platform_device *pdev, int type)
 	if (type == S5P_USB_PHY_HOST) {
 		if (soc_is_exynos4210() ||
 			soc_is_exynos4212() ||
-			soc_is_exynos4412())
+			soc_is_exynos4412()) {
 			ret = exynos4_usb_phy1_suspend(pdev);
-		else
+		} else {
 			ret = exynos5_usb_phy_host_suspend(pdev);
+
+			if (usb_phy_control.host_lpa_registered)
+				set_lpa_device_usage(LPA_CDEV_USB_H, false);
+		}
 	}
 done:
 	mutex_unlock(&usb_phy_control.phy_lock);
@@ -1295,10 +1304,14 @@ int s5p_usb_phy_resume(struct platform_device *pdev, int type)
 	if (type == S5P_USB_PHY_HOST) {
 		if (soc_is_exynos4210() ||
 			soc_is_exynos4212() ||
-			soc_is_exynos4412())
+			soc_is_exynos4412()) {
 			ret = exynos4_usb_phy1_resume(pdev);
-		else
+		} else {
 			ret = exynos5_usb_phy_host_resume(pdev);
+
+			if (usb_phy_control.host_lpa_registered)
+				set_lpa_device_usage(LPA_CDEV_USB_H, true);
+		}
 	}
 done:
 	if (!strcmp(pdev->name, "s5p-ehci"))
@@ -1347,6 +1360,12 @@ int s5p_usb_phy_init(struct platform_device *pdev, int type)
 		} else {
 			ret = exynos5_usb_phy20_init(pdev);
 			set_exynos_usb_phy_tune(type);
+
+			if (!usb_phy_control.host_lpa_registered) {
+				usb_phy_control.host_lpa_registered = 1;
+				add_lpa_device(LPA_CDEV_USB_H);
+				set_lpa_device_usage(LPA_CDEV_USB_H, true);
+			}
 		}
 	} else if (type == S5P_USB_PHY_DEVICE) {
 		if (soc_is_exynos4210()) {
@@ -1357,9 +1376,21 @@ int s5p_usb_phy_init(struct platform_device *pdev, int type)
 		} else {
 			ret = exynos_usb_dev_phy20_init(pdev);
 			set_exynos_usb_phy_tune(type);
+
+			if (!usb_phy_control.device_lpa_registered) {
+				usb_phy_control.device_lpa_registered = 1;
+				add_lpa_device(LPA_CDEV_USB_D);
+				set_lpa_device_usage(LPA_CDEV_USB_D, true);
+			}
 		}
 	} else if (type == S5P_USB_PHY_DRD) {
 		ret = exynos5_usb_phy30_init(pdev);
+
+		if (!usb_phy_control.device_lpa_registered) {
+			usb_phy_control.device_lpa_registered = 1;
+			add_lpa_device(LPA_CDEV_USB_DRD);
+			set_lpa_device_usage(LPA_CDEV_USB_DRD, true);
+		}
 	}
 	mutex_unlock(&usb_phy_control.phy_lock);
 	exynos_usb_phy_clock_disable(pdev, type);
@@ -1376,12 +1407,19 @@ int s5p_usb_phy_exit(struct platform_device *pdev, int type)
 
 	mutex_lock(&usb_phy_control.phy_lock);
 	if (type == S5P_USB_PHY_HOST) {
-		if (soc_is_exynos4210())
+		if (soc_is_exynos4210()) {
 			ret = exynos4_usb_phy1_exit(pdev);
-		else if (soc_is_exynos4212() || soc_is_exynos4412())
+		} else if (soc_is_exynos4212() || soc_is_exynos4412()) {
 			ret = exynos4_usb_phy20_exit(pdev);
-		else
+		} else {
 			ret = exynos5_usb_phy20_exit(pdev);
+
+			if (!ret && usb_phy_control.host_lpa_registered) {
+				usb_phy_control.host_lpa_registered = 0;
+				set_lpa_device_usage(LPA_CDEV_USB_H, false);
+				remove_lpa_device(LPA_CDEV_USB_H);
+			}
+		}
 
 		if (!strcmp(pdev->name, "s5p-ehci"))
 			clear_bit(HOST_PHY_EHCI, &usb_phy_control.flags);
@@ -1395,9 +1433,21 @@ int s5p_usb_phy_exit(struct platform_device *pdev, int type)
 			ret = exynos_usb_dev_phy20_exit(pdev);
 		} else {
 			ret = exynos_usb_dev_phy20_exit(pdev);
+
+			if (usb_phy_control.device_lpa_registered) {
+				usb_phy_control.device_lpa_registered = 0;
+				set_lpa_device_usage(LPA_CDEV_USB_D, false);
+				remove_lpa_device(LPA_CDEV_USB_D);
+			}
 		}
 	} else if (type == S5P_USB_PHY_DRD) {
 		ret = exynos5_usb_phy30_exit(pdev);
+
+		if (usb_phy_control.device_lpa_registered) {
+			usb_phy_control.device_lpa_registered = 0;
+			set_lpa_device_usage(LPA_CDEV_USB_DRD, false);
+			remove_lpa_device(LPA_CDEV_USB_DRD);
+		}
 	}
 
 	mutex_unlock(&usb_phy_control.phy_lock);

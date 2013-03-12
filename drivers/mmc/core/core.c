@@ -32,6 +32,7 @@
 #include <linux/mmc/host.h>
 #include <linux/mmc/mmc.h>
 #include <linux/mmc/sd.h>
+#include <linux/mmc/mmc_trace.h>
 
 #include "core.h"
 #include "bus.h"
@@ -41,6 +42,10 @@
 #include "mmc_ops.h"
 #include "sd_ops.h"
 #include "sdio_ops.h"
+
+#if defined(CONFIG_BLK_DEV_IO_TRACE)
+#include "../card/queue.h"
+#endif
 
 static struct workqueue_struct *workqueue;
 
@@ -253,8 +258,12 @@ mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
  */
 static void mmc_wait_data_done(struct mmc_request *mrq)
 {
+	unsigned long flags;
+
+	spin_lock_irqsave(&mrq->host->context_info.lock, flags);
 	mrq->host->context_info.is_done_rcv = true;
 	wake_up_interruptible(&mrq->host->context_info.wait);
+	spin_unlock_irqrestore(&mrq->host->context_info.lock, flags);
 }
 
 static void mmc_wait_done(struct mmc_request *mrq)
@@ -323,15 +332,18 @@ static int mmc_wait_for_data_req_done(struct mmc_host *host,
 				 context_info->is_new_req));
 		spin_lock_irqsave(&context_info->lock, flags);
 		context_info->is_waiting_last_req = false;
-		spin_unlock_irqrestore(&context_info->lock, flags);
 		if (context_info->is_done_rcv) {
 			context_info->is_done_rcv = false;
 			context_info->is_new_req = false;
+			spin_unlock_irqrestore(&context_info->lock, flags);
 			cmd = mrq->cmd;
 			if (!cmd->error || !cmd->retries ||
 					mmc_card_removed(host->card)) {
 				err = host->areq->err_check(host->card,
 						host->areq);
+
+				mmc_add_trace(__MMC_TA_REQ_DONE,
+							host->mqrq_prev);
 				break; /* return err */
 			} else {
 				pr_info("%s: req failed (CMD%u): %d, retrying...\n",
@@ -345,10 +357,13 @@ static int mmc_wait_for_data_req_done(struct mmc_host *host,
 		} else if (context_info->is_new_req) {
 			context_info->is_new_req = false;
 			if (!next_req) {
+				spin_unlock_irqrestore(&context_info->lock,
+							flags);
 				err = MMC_BLK_NEW_REQUEST;
 				break; /* return err */
 			}
 		}
+		spin_unlock_irqrestore(&context_info->lock, flags);
 	} /* while */
 	return err;
 }
@@ -443,6 +458,7 @@ struct mmc_async_req *mmc_start_req(struct mmc_host *host,
 		if (areq->__mrq) {
 			mmc_pre_req(host, areq->__mrq, 0);
 		}
+		mmc_add_trace(__MMC_TA_PRE_DONE, host->mqrq_cur);
 	}
 
 	if (host->areq) {
@@ -459,8 +475,11 @@ struct mmc_async_req *mmc_start_req(struct mmc_host *host,
 		}
 	}
 
-	if (!err && areq)
+	if (!err && areq) {
+		mmc_add_trace(__MMC_TA_MMC_ISSUE, host->mqrq_cur);
 		start_err = __mmc_start_data_req(host, areq->mrq);
+		mmc_add_trace(__MMC_TA_MMC_DONE, host->mqrq_cur);
+	}
 
 	if (host->areq)
 		mmc_post_req(host, host->areq->mrq, 0);
@@ -519,7 +538,7 @@ int mmc_interrupt_hpi(struct mmc_card *card)
 	}
 
 	mmc_claim_host(card->host);
-	err = mmc_send_status(card, &status);
+	err = mmc_send_status(card, &status, 0);
 	if (err) {
 		pr_err("%s: Get card status fail\n", mmc_hostname(card->host));
 		goto out;
@@ -543,7 +562,7 @@ int mmc_interrupt_hpi(struct mmc_card *card)
 				pr_debug("%s: abort HPI (%d error)\n",
 					 mmc_hostname(card->host), err);
 
-			err = mmc_send_status(card, &status);
+			err = mmc_send_status(card, &status, 0);
 			if (err)
 				break;
 		} while (R1_CURRENT_STATE(status) == R1_STATE_PRG);
@@ -1652,6 +1671,7 @@ static int mmc_do_erase(struct mmc_card *card, unsigned int from,
 	unsigned int qty = 0;
 	int err;
 
+	mmc_add_trace(__MMC_TA_PRE_DONE, card->host->mqrq_cur);
 	/*
 	 * qty is used to calculate the erase timeout which depends on how many
 	 * erase groups (or allocation units in SD terminology) are affected.
@@ -1716,6 +1736,8 @@ static int mmc_do_erase(struct mmc_card *card, unsigned int from,
 	cmd.arg = arg;
 	cmd.flags = MMC_RSP_SPI_R1B | MMC_RSP_R1B | MMC_CMD_AC;
 	cmd.cmd_timeout_ms = mmc_erase_timeout(card, arg, qty);
+
+	mmc_add_trace(__MMC_TA_MMC_ISSUE, card->host->mqrq_cur);
 	err = mmc_wait_for_cmd(card->host, &cmd, 0);
 	if (err) {
 		pr_err("mmc_erase: erase error %d, status %#x\n",
@@ -1724,6 +1746,7 @@ static int mmc_do_erase(struct mmc_card *card, unsigned int from,
 		goto out;
 	}
 
+	mmc_add_trace(__MMC_TA_MMC_DONE, card->host->mqrq_cur);
 	if (mmc_host_is_spi(card->host))
 		goto out;
 
@@ -1742,6 +1765,8 @@ static int mmc_do_erase(struct mmc_card *card, unsigned int from,
 		}
 	} while (!(cmd.resp[0] & R1_READY_FOR_DATA) ||
 		 R1_CURRENT_STATE(cmd.resp[0]) == R1_STATE_PRG);
+
+	mmc_add_trace(__MMC_TA_REQ_DONE, card->host->mqrq_cur);
 out:
 	return err;
 }
@@ -2367,6 +2392,9 @@ int mmc_flush_cache(struct mmc_card *card)
 	if (!(host->caps2 & MMC_CAP2_CACHE_CTRL))
 		return err;
 
+	mmc_add_trace(__MMC_TA_PRE_DONE, card->host->mqrq_cur);
+	mmc_add_trace(__MMC_TA_MMC_ISSUE, card->host->mqrq_cur);
+
 	if (mmc_card_mmc(card) &&
 			(card->ext_csd.cache_size > 0) &&
 			(card->ext_csd.cache_ctrl & 1)) {
@@ -2376,6 +2404,9 @@ int mmc_flush_cache(struct mmc_card *card)
 			pr_err("%s: cache flush error %d\n",
 					mmc_hostname(card->host), err);
 	}
+
+	mmc_add_trace(__MMC_TA_MMC_DONE, card->host->mqrq_cur);
+	mmc_add_trace(__MMC_TA_REQ_DONE, card->host->mqrq_cur);
 
 	return err;
 }

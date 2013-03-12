@@ -51,12 +51,31 @@
 
 static struct srp_info srp;
 static DEFINE_MUTEX(srp_mutex);
+static DEFINE_SPINLOCK(lock);
 static DECLARE_WAIT_QUEUE_HEAD(reset_wq);
 static DECLARE_WAIT_QUEUE_HEAD(read_wq);
 static DECLARE_WAIT_QUEUE_HEAD(decinfo_wq);
+bool srp_fw_ready_done;
 
+void srp_core_reset(void);
 extern void i2s_enable(struct snd_soc_dai *dai);
 extern void i2s_disable(struct snd_soc_dai *dai);
+
+static int srp_check_sound_list(void)
+{
+	int idx, ok = 0;
+
+	pr_info("ALSA device list:\n");
+	for (idx = 0; idx < SNDRV_CARDS; idx++) {
+		if (snd_cards[idx] != NULL)
+			ok++;
+	}
+	if (ok == 0) {
+		pr_info("  No soundcards found.\n");
+		return 0;
+	}
+	return ok;
+}
 
 void srp_pm_control(bool enable)
 {
@@ -399,26 +418,39 @@ static void srp_set_default_fw(void)
 void srp_core_reset(void)
 {
 	unsigned int reset_type = srp.pdata->type;
+	unsigned long deadline;
+	int ret = 0;
 
-	if (!srp.is_loaded)
+	if (!srp.is_loaded || srp.hw_reset_stat)
 		return;
 
 	if (reset_type == SRP_HW_RESET)
 		return;
 
-	srp_commbox_init();
-	srp_fw_download();
+	deadline = jiffies + (HZ / 4);
+	do {
+		srp_commbox_init();
+		srp_fw_download();
 
-	/* RESET */
-	writel(0x0, srp.commbox + SRP_CONT);
-	srp_pending_ctrl(RUN);
+		/* RESET */
+		writel(0x0, srp.commbox + SRP_CONT);
+		srp_pending_ctrl(RUN);
 
-	if (!wait_event_interruptible_timeout(reset_wq,
-			srp.hw_reset_stat, HZ / 20))
+		ret = wait_event_interruptible_timeout(reset_wq,
+				srp.hw_reset_stat, HZ / 20);
+		if (ret)
+			break;
+
+		srp_pending_ctrl(STALL);
+	} while(time_before(jiffies, deadline));
+
+	if (!ret) {
 		srp_err("Not ready to sw reset.\n");
+		srp.is_loaded = false;
+	}
 }
 
-void srp_core_suspend(int num)
+int srp_core_suspend(int num)
 {
 	unsigned long ibuf_size = srp.pdata->ibuf.size;
 	unsigned long obuf_size = srp.pdata->obuf.size;
@@ -429,11 +461,16 @@ void srp_core_suspend(int num)
 	size_t size;
 
 	if (!srp.is_loaded)
-		return;
+		return -1;
 
 	if ((reset_type == SRP_HW_RESET && !srp.decoding_started)
 		|| (reset_type == SRP_HW_RESET && num == RUNTIME))
-		return;
+		return -1;
+
+	if (!srp.idle)
+		return -1;
+
+	spin_lock(&lock);
 
 #ifdef CONFIG_PM_RUNTIME
 	if (srp.pm_suspended)
@@ -459,6 +496,9 @@ exit_func:
 	if (reset_type == SRP_SW_RESET)
 		srp.hw_reset_stat = false;
 #endif
+	spin_unlock(&lock);
+
+	return 0;
 }
 
 void srp_core_resume(void)
@@ -542,7 +582,9 @@ static ssize_t srp_write(struct file *file, const char *buffer,
 
 	srp_debug("Write(%d bytes)\n", size);
 
+	srp.idle = false;
 	srp_pm_control(true);
+
 	if (srp.pm_suspended) {
 #ifdef CONFIG_PM_RUNTIME
 		if (reset_type == SRP_SW_RESET) {
@@ -554,9 +596,12 @@ static ssize_t srp_write(struct file *file, const char *buffer,
 			}
 		}
 #endif
+		spin_lock(&lock);
 		srp_core_resume();
+		spin_unlock(&lock);
 	}
 
+	spin_lock(&lock);
 	if (srp.initialized) {
 		srp.initialized = false;
 		srp.pm_suspended = false;
@@ -596,16 +641,15 @@ static ssize_t srp_write(struct file *file, const char *buffer,
 		goto exit_func;
 	}
 
-	mutex_lock(&srp_mutex);
 	if (!srp.decoding_started) {
 		srp_fill_ibuf();
 		srp_info("First Start decoding!!\n");
 		srp_pending_ctrl(RUN);
 		srp.decoding_started = 1;
 	}
-	mutex_unlock(&srp_mutex);
 
 exit_func:
+	spin_unlock(&lock);
 	return ret;
 }
 
@@ -623,6 +667,7 @@ static ssize_t srp_read(struct file *file, char *buffer,
 
 	srp_debug("Entered Get Obuf in PCM function\n");
 
+	srp.idle = false;
 	if (srp.prepare_for_eos) {
 		srp_pm_control(true);
 		if (srp.pm_suspended) {
@@ -636,14 +681,26 @@ static ssize_t srp_read(struct file *file, char *buffer,
 				}
 			}
 #endif
+			spin_lock(&lock);
 			srp_core_resume();
+			spin_unlock(&lock);
 		}
 
+		spin_lock(&lock);
 		srp.obuf_fill_done[srp.obuf_ready] = 0;
 		srp_debug("Elapsed Obuf[%d] after Send EOS\n", srp.obuf_ready);
 
+		if (srp.play_done && srp.ibuf_empty[0] && srp.ibuf_empty[1]) {
+			srp_info("Protect read operation after play done.\n");
+			srp.pcm_info.size = 0;
+			srp.stop_after_eos = 1;
+			spin_unlock(&lock);
+			return copy_to_user(argp, &srp.pcm_info, sizeof(struct srp_buf_info));
+		}
+
 		srp_pending_ctrl(RUN);
 		srp_obuf_elapsed();
+		spin_unlock(&lock);
 	}
 
 	if (srp.wait_for_eos)
@@ -653,7 +710,8 @@ static ssize_t srp_read(struct file *file, char *buffer,
 		if (srp.obuf_copy_done[srp.obuf_ready] && !srp.wait_for_eos) {
 			srp_debug("Wrong ordering read() OBUF[%d] int!!!\n", srp.obuf_ready);
 			srp.pcm_info.size = 0;
-			return copy_to_user(argp, &srp.pcm_info, sizeof(struct srp_buf_info));
+			ret = copy_to_user(argp, &srp.pcm_info, sizeof(struct srp_buf_info));
+			goto exit_func;
 		}
 
 		if (srp.obuf_fill_done[srp.obuf_ready]) {
@@ -665,13 +723,15 @@ static ssize_t srp_read(struct file *file, char *buffer,
 			if (!ret) {
 				srp_err("Couldn't occurred OBUF[%d] int!!!\n", srp.obuf_ready);
 				srp.pcm_info.size = 0;
-				return copy_to_user(argp, &srp.pcm_info, sizeof(struct srp_buf_info));
+				ret = copy_to_user(argp, &srp.pcm_info, sizeof(struct srp_buf_info));
+				goto exit_func;
 			}
 		}
 	} else {
 		srp_debug("not prepared not yet! OBUF[%d]\n", srp.obuf_ready);
 		srp.pcm_info.size = 0;
-		return copy_to_user(argp, &srp.pcm_info, sizeof(struct srp_buf_info));
+		ret = copy_to_user(argp, &srp.pcm_info, sizeof(struct srp_buf_info));
+		goto exit_func;
 	}
 
 	srp.pcm_info.addr = srp.obuf_ready ? mmapped_obuf1 : mmapped_obuf0;
@@ -695,6 +755,7 @@ static ssize_t srp_read(struct file *file, char *buffer,
 		srp_pending_ctrl(RUN);
 	}
 
+exit_func:
 	return ret;
 }
 
@@ -718,6 +779,9 @@ static long srp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	unsigned long ibuf_num = srp.pdata->ibuf.num;
 	unsigned long val = 0;
 	long ret = 0;
+#ifdef CONFIG_PM_RUNTIME
+	unsigned int reset_type = srp.pdata->type;
+#endif
 
 	mutex_lock(&srp_mutex);
 
@@ -744,10 +808,18 @@ static long srp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	case SRP_FLUSH:
 		srp_debug("SRP_FLUSH\n");
-		srp_commbox_deinit();
+#ifdef CONFIG_PM_RUNTIME
+		if (reset_type == SRP_SW_RESET) {
+			ret = wait_event_interruptible_timeout(reset_wq,
+					    srp.hw_reset_stat, HZ / 20);
+			if (!ret)
+				srp_pm_control(true);
+		}
+#endif
 		srp_flush_ibuf();
 		srp_flush_obuf();
 		srp_set_default_fw();
+		srp_core_resume();
 		srp_reset();
 		break;
 
@@ -881,8 +953,14 @@ static int srp_mmap(struct file *filep, struct vm_area_struct *vma)
 {
 	unsigned int base = srp.pdata->obuf.base;
 	unsigned long size = vma->vm_end - vma->vm_start;
+	unsigned long size_max;
 	unsigned int pfn;
 	unsigned int mmap_addr;
+
+	size_max = (srp.obuf_info.mmapped_size + PAGE_SIZE - 1) &
+			~(PAGE_SIZE - 1);
+	if (size > size_max)
+		return -EINVAL;
 
 	vma->vm_flags |= VM_IO;
 	vma->vm_flags |= VM_RESERVED;
@@ -1107,6 +1185,8 @@ static irqreturn_t srp_irq(int irqno, void *dev_id)
 		srp.pcm_size = 0;
 		srp.play_done = 1;
 
+		srp.ibuf_empty[0] = 1;
+		srp.ibuf_empty[1] = 1;
 		srp.obuf_fill_done[0] = 1;
 		srp.obuf_fill_done[1] = 1;
 		wakeup_read = 1;
@@ -1121,6 +1201,7 @@ static irqreturn_t srp_irq(int irqno, void *dev_id)
 	writel(0, srp.commbox + SRP_INTERRUPT);
 
 	if (wakeup_read) {
+		srp.idle = true;
 		if (waitqueue_active(&read_wq))
 			wake_up_interruptible(&read_wq);
 	}
@@ -1133,6 +1214,7 @@ static irqreturn_t srp_irq(int irqno, void *dev_id)
 	if (hw_reset) {
 		srp_info("Complete h/w reset.\n");
 		srp.hw_reset_stat = true;
+		srp.idle = true;
 		if (waitqueue_active(&reset_wq))
 			wake_up_interruptible(&reset_wq);
 	}
@@ -1152,6 +1234,15 @@ srp_firmware_request_complete(const struct firmware *vliw, void *context)
 	unsigned long dmem_size = srp.pdata->dmem_size;
 	unsigned long cmem_size = srp.pdata->cmem_size;
 	unsigned int reset_type = srp.pdata->type;
+	unsigned int check_card;
+
+	check_card = srp_check_sound_list();
+
+	if (check_card < 1) {
+		srp_err("Failed to detect sound card\n");
+		check_card = 0;
+		return;
+	}
 
 	if (!vliw) {
 		srp_err("Failed to requset firmware[%s]\n", VLIW_NAME);
@@ -1222,6 +1313,8 @@ srp_firmware_request_complete(const struct firmware *vliw, void *context)
 		srp_pm_control(false);
 	}
 
+	srp_fw_ready_done = srp.is_loaded;
+
 	return;
 
 err3:
@@ -1268,6 +1361,8 @@ static int srp_suspend(struct platform_device *pdev, pm_message_t state)
 	}
 
 	srp_pm_control(true);
+
+	srp.idle = true;
 
 	srp_core_suspend(SLEEP);
 

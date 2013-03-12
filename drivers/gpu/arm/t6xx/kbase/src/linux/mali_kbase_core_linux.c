@@ -48,6 +48,7 @@
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/compat.h>            /* is_compat_task */
+#include <linux/debugfs.h>
 #include <kbase/src/common/mali_kbase_8401_workaround.h>
 #include <kbase/src/common/mali_kbase_hw.h>
 #ifdef CONFIG_SYNC
@@ -2390,6 +2391,10 @@ static int kbase_platform_device_probe(struct platform_device *pdev)
 															   KBASE_CONFIG_ATTR_GPU_FREQ_KHZ_MAX);
 	kbdev->gpu_props.irq_throttle_time_us = kbasep_get_config_value(kbdev, platform_data,
 		                                                       KBASE_CONFIG_ATTR_GPU_IRQ_THROTTLE_TIME_US);
+	if (!kbdev->mem_usage) {
+		struct dentry *mem_usage = debugfs_create_dir("mem_usage", NULL);
+		kbdev->mem_usage = mem_usage;
+	}
 
 	err = kbase_common_device_init(kbdev);
 	if (err)
@@ -2469,6 +2474,7 @@ static int kbase_platform_device_remove(struct platform_device *pdev)
 		return -ENODEV;
 	}
 
+	debugfs_remove(kbdev->mem_usage);
 	return kbase_common_device_remove(kbdev);
 }
 

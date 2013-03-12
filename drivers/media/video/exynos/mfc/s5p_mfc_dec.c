@@ -297,6 +297,24 @@ static struct v4l2_queryctrl controls[] = {
 		.step = 1,
 		.default_value = 0,
 	},
+	{
+		.id = V4L2_CID_MPEG_VIDEO_DECODER_IMMEDIATE_DISPLAY,
+		.type = V4L2_CTRL_TYPE_BOOLEAN,
+		.name = "Immediate Display Enable",
+		.minimum = 0,
+		.maximum = 1,
+		.step = 1,
+		.default_value = 0,
+	},
+	{
+		.id = V4L2_CID_MPEG_VIDEO_DECODER_DECODING_TIMESTAMP_MODE,
+		.type = V4L2_CTRL_TYPE_BOOLEAN,
+		.name = "Decoding Timestamp Mode Enable",
+		.minimum = 0,
+		.maximum = 1,
+		.step = 1,
+		.default_value = 0,
+	},
 };
 
 #define NUM_CTRLS ARRAY_SIZE(controls)
@@ -871,7 +889,7 @@ static int dec_set_buf_ctrls_val(struct s5p_mfc_ctx *ctx, struct list_head *head
 		buf_ctrl->updated = 1;
 
 		if (buf_ctrl->id == V4L2_CID_MPEG_MFC51_VIDEO_FRAME_TAG)
-			dec->eos_tag = buf_ctrl->val;
+			dec->stored_tag = buf_ctrl->val;
 
 		mfc_debug(8, "Set buffer control "\
 				"id: 0x%08x val: %d\n",
@@ -1057,6 +1075,7 @@ static int vidioc_g_fmt_vid_cap_mplane(struct file *file, void *priv,
 						struct v4l2_format *f)
 {
 	struct s5p_mfc_ctx *ctx = fh_to_mfc_ctx(file->private_data);
+	struct s5p_mfc_dec *dec = ctx->dec_priv;
 	struct v4l2_pix_format_mplane *pix_mp = &f->fmt.pix_mp;
 
 	mfc_debug_enter();
@@ -1066,7 +1085,8 @@ static int vidioc_g_fmt_vid_cap_mplane(struct file *file, void *priv,
 	    ctx->state == MFCINST_RES_CHANGE_END) {
 		/* If the MFC is parsing the header,
 		 * so wait until it is finished */
-		s5p_mfc_wait_for_done_ctx(ctx, S5P_FIMV_R2H_CMD_SEQ_DONE_RET);
+		if (s5p_mfc_wait_for_done_ctx(ctx, S5P_FIMV_R2H_CMD_SEQ_DONE_RET))
+			mfc_err("Err returning instance.\n");
 	}
 
 	if (ctx->state >= MFCINST_HEAD_PARSED &&
@@ -1076,19 +1096,24 @@ static int vidioc_g_fmt_vid_cap_mplane(struct file *file, void *priv,
 		   of the movie, the buffer is bigger and
 		   further processing stages should crop to this
 		   rectangle. */
+		s5p_mfc_dec_calc_dpb_size(ctx);
+
 		pix_mp->width = ctx->img_width;
 		pix_mp->height = ctx->img_height;
-		pix_mp->field = V4L2_FIELD_NONE;
 		pix_mp->num_planes = 2;
+
+		if (dec->is_interlaced)
+			pix_mp->field = V4L2_FIELD_INTERLACED;
+		else
+			pix_mp->field = V4L2_FIELD_NONE;
+
 		/* Set pixelformat to the format in which MFC
 		   outputs the decoded frame */
-		pix_mp->pixelformat = V4L2_PIX_FMT_NV12MT;
+		pix_mp->pixelformat = ctx->dst_fmt->fourcc;
 		pix_mp->plane_fmt[0].bytesperline = ctx->buf_width;
-		pix_mp->plane_fmt[0].sizeimage =
-			ctx->buf_width * ctx->buf_height;
+		pix_mp->plane_fmt[0].sizeimage = ctx->luma_size;
 		pix_mp->plane_fmt[1].bytesperline = ctx->buf_width;
-		pix_mp->plane_fmt[1].sizeimage =
-			ctx->buf_width * (ctx->buf_height >> 1);
+		pix_mp->plane_fmt[1].sizeimage = ctx->chroma_size;
 	}
 
 	mfc_debug_leave();
@@ -1235,6 +1260,7 @@ static int vidioc_s_fmt_vid_out_mplane(struct file *file, void *priv,
 
 	/* In case of calling s_fmt twice or more */
 	if (ctx->inst_no != MFC_NO_INSTANCE_SET) {
+		mfc_err("ctx->state = %d, ctx->inst_no = %d\n", ctx->state, ctx->inst_no);
 		ctx->state = MFCINST_RETURN_INST;
 		spin_lock_irqsave(&dev->condlock, flags);
 		set_bit(ctx->num, &dev->ctx_work_bits);
@@ -1246,8 +1272,7 @@ static int vidioc_s_fmt_vid_out_mplane(struct file *file, void *priv,
 			mfc_err("Err returning instance.\n");
 		}
 		/* Free resources */
-		if (!ctx->is_drm)
-			s5p_mfc_release_instance_buffer(ctx);
+		s5p_mfc_release_instance_buffer(ctx);
 		s5p_mfc_release_dec_desc_buffer(ctx);
 
 		ctx->state = MFCINST_INIT;
@@ -1293,8 +1318,7 @@ static int vidioc_s_fmt_vid_out_mplane(struct file *file, void *priv,
 		}
 	}
 
-	if (!ctx->is_drm)
-		s5p_mfc_alloc_instance_buffer(ctx);
+	s5p_mfc_alloc_instance_buffer(ctx);
 	s5p_mfc_alloc_dec_temp_buffers(ctx);
 
 	spin_lock_irqsave(&dev->condlock, flags);
@@ -1480,6 +1504,7 @@ static int vidioc_querybuf(struct file *file, void *priv,
 static int vidioc_qbuf(struct file *file, void *priv, struct v4l2_buffer *buf)
 {
 	struct s5p_mfc_ctx *ctx = fh_to_mfc_ctx(file->private_data);
+	struct s5p_mfc_dec *dec = ctx->dec_priv;
 
 	mfc_debug_enter();
 
@@ -1489,10 +1514,19 @@ static int vidioc_qbuf(struct file *file, void *priv, struct v4l2_buffer *buf)
 		return -EIO;
 	}
 
-	if (buf->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE)
+	if (buf->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE) {
+		if (dec->is_dts_mode) {
+			ctx->last_framerate =
+				get_framerate(&ctx->last_timestamp,
+						&buf->timestamp);
+
+			memcpy(&ctx->last_timestamp, &buf->timestamp,
+				sizeof(struct timeval));
+		}
 		return vb2_qbuf(&ctx->vq_src, buf);
-	else
+	} else {
 		return vb2_qbuf(&ctx->vq_dst, buf);
+	}
 
 	mfc_debug_leave();
 	return -EINVAL;
@@ -1618,8 +1652,9 @@ static int get_ctrl_val(struct s5p_mfc_ctx *ctx, struct v4l2_control *ctrl)
 		}
 
 		/* Should wait for the header to be parsed */
-		s5p_mfc_wait_for_done_ctx(ctx,
-				S5P_FIMV_R2H_CMD_SEQ_DONE_RET);
+		if (s5p_mfc_wait_for_done_ctx(ctx,
+				S5P_FIMV_R2H_CMD_SEQ_DONE_RET))
+			mfc_err("Err returning instance.\n");
 		if (ctx->state >= MFCINST_HEAD_PARSED &&
 		    ctx->state < MFCINST_ABORT) {
 			ctrl->value = ctx->dpb_count;
@@ -1708,12 +1743,9 @@ static int vidioc_s_ctrl(struct file *file, void *priv,
 	struct s5p_mfc_dec *dec = ctx->dec_priv;
 	struct s5p_mfc_ctx_ctrl *ctx_ctrl;
 	int ret = 0;
-	int stream_on;
 	int found = 0;
 
 	mfc_debug_enter();
-
-	stream_on = ctx->vq_src.streaming || ctx->vq_dst.streaming;
 
 	ret = check_ctrl_val(ctx, ctrl);
 	if (ret)
@@ -1721,49 +1753,31 @@ static int vidioc_s_ctrl(struct file *file, void *priv,
 
 	switch (ctrl->id) {
 	case V4L2_CID_MPEG_VIDEO_DECODER_MPEG4_DEBLOCK_FILTER:
-		if (stream_on)
-			return -EBUSY;
 		dec->loop_filter_mpeg4 = ctrl->value;
 		break;
 	case V4L2_CID_MPEG_MFC51_VIDEO_DECODER_H264_DISPLAY_DELAY:
-		if (stream_on)
-			return -EBUSY;
 		dec->display_delay = ctrl->value;
 		break;
 	case V4L2_CID_MPEG_VIDEO_DECODER_SLICE_INTERFACE:
-		if (stream_on)
-			return -EBUSY;
 		dec->slice_enable = ctrl->value;
 		break;
 	case V4L2_CID_MPEG_MFC51_VIDEO_PACKED_PB:
-		if (stream_on)
-			return -EBUSY;
-		if (ctx->codec_mode != S5P_FIMV_CODEC_MPEG4_DEC &&
-			ctx->codec_mode != S5P_FIMV_CODEC_FIMV1_DEC &&
-			ctx->codec_mode != S5P_FIMV_CODEC_FIMV2_DEC &&
-			ctx->codec_mode != S5P_FIMV_CODEC_FIMV3_DEC &&
-			ctx->codec_mode != S5P_FIMV_CODEC_FIMV4_DEC)
-			return -EINVAL;
 		dec->is_packedpb = ctrl->value;
 		break;
 	case V4L2_CID_MPEG_MFC51_VIDEO_CRC_ENABLE:
-		if (ctrl->value == 1 || ctrl->value == 0)
-			dec->crc_enable = ctrl->value;
-		else
-			dec->crc_enable = 0;
+		dec->crc_enable = ctrl->value;
 		break;
 	case V4L2_CID_CACHEABLE:
-		/*if (stream_on)
-			return -EBUSY; */
 		ctx->cacheable |= ctrl->value;
 		break;
 	case V4L2_CID_MPEG_VIDEO_H264_SEI_FRAME_PACKING:
-		/*if (stream_on)
-			return -EBUSY; */
-		if (ctrl->value == 0 || ctrl->value == 1)
-			dec->sei_parse = ctrl->value;
-		else
-			dec->sei_parse = 0;
+		dec->sei_parse = ctrl->value;
+		break;
+	case V4L2_CID_MPEG_VIDEO_DECODER_IMMEDIATE_DISPLAY:
+		dec->immediate_display = ctrl->value;
+		break;
+	case V4L2_CID_MPEG_VIDEO_DECODER_DECODING_TIMESTAMP_MODE:
+		dec->is_dts_mode = ctrl->value;
 		break;
 	default:
 		list_for_each_entry(ctx_ctrl, &ctx->ctrls, list) {
@@ -1792,12 +1806,30 @@ static int vidioc_s_ctrl(struct file *file, void *priv,
 	return 0;
 }
 
+void s5p_mfc_dec_store_crop_info(struct s5p_mfc_ctx *ctx)
+{
+	struct s5p_mfc_dec *dec = ctx->dec_priv;
+	u32 left, right, top, bottom;
+
+	left = s5p_mfc_read_info(ctx, CROP_INFO_H);
+	right = left >> S5P_FIMV_SHARED_CROP_RIGHT_SHIFT;
+	left = left & S5P_FIMV_SHARED_CROP_LEFT_MASK;
+	top = s5p_mfc_read_info(ctx, CROP_INFO_V);
+	bottom = top >> S5P_FIMV_SHARED_CROP_BOTTOM_SHIFT;
+	top = top & S5P_FIMV_SHARED_CROP_TOP_MASK;
+
+	dec->cr_left = left;
+	dec->cr_right = right;
+	dec->cr_top = top;
+	dec->cr_bot = bottom;
+}
+
 /* Get cropping information */
 static int vidioc_g_crop(struct file *file, void *priv,
 		struct v4l2_crop *cr)
 {
 	struct s5p_mfc_ctx *ctx = fh_to_mfc_ctx(file->private_data);
-	u32 left, right, top, bottom;
+	struct s5p_mfc_dec *dec = ctx->dec_priv;
 
 	mfc_debug_enter();
 	if (ctx->state != MFCINST_HEAD_PARSED &&
@@ -1807,21 +1839,14 @@ static int vidioc_g_crop(struct file *file, void *priv,
 			return -EINVAL;
 		}
 	if (ctx->src_fmt->fourcc == V4L2_PIX_FMT_H264) {
-		s5p_mfc_clock_on();
-		left = s5p_mfc_read_info(ctx, CROP_INFO_H);
-		right = left >> S5P_FIMV_SHARED_CROP_RIGHT_SHIFT;
-		left = left & S5P_FIMV_SHARED_CROP_LEFT_MASK;
-		top = s5p_mfc_read_info(ctx, CROP_INFO_V);
-		s5p_mfc_clock_off();
-		bottom = top >> S5P_FIMV_SHARED_CROP_BOTTOM_SHIFT;
-		top = top & S5P_FIMV_SHARED_CROP_TOP_MASK;
-		cr->c.left = left;
-		cr->c.top = top;
-		cr->c.width = ctx->img_width - left - right;
-		cr->c.height = ctx->img_height - top - bottom;
-		mfc_debug(2, "Cropping info [h264]: l=%d t=%d "
-			"w=%d h=%d (r=%d b=%d fw=%d fh=%d\n", left, top,
-			cr->c.width, cr->c.height, right, bottom,
+		cr->c.left = dec->cr_left;
+		cr->c.top = dec->cr_top;
+		cr->c.width = ctx->img_width - dec->cr_left - dec->cr_right;
+		cr->c.height = ctx->img_height - dec->cr_top - dec->cr_bot;
+		mfc_debug(2, "Cropping info [h264]: l=%d t=%d "	\
+			"w=%d h=%d (r=%d b=%d fw=%d fh=%d\n",
+			dec->cr_left, dec->cr_top, cr->c.width, cr->c.height,
+			dec->cr_right, dec->cr_bot,
 			ctx->buf_width, ctx->buf_height);
 	} else {
 		cr->c.left = 0;
@@ -1927,8 +1952,6 @@ static int s5p_mfc_queue_setup(struct vb2_queue *vq,
 		/* Setup buffer count */
 		if (*buf_count < ctx->dpb_count)
 			*buf_count = ctx->dpb_count;
-		if (*buf_count > ctx->dpb_count + MFC_MAX_EXTRA_DPB)
-			*buf_count = ctx->dpb_count + MFC_MAX_EXTRA_DPB;
 		if (*buf_count > MFC_MAX_BUFFERS)
 			*buf_count = MFC_MAX_BUFFERS;
 	} else {
@@ -2143,6 +2166,9 @@ static int s5p_mfc_start_streaming(struct vb2_queue *q, unsigned int count)
 	return 0;
 }
 
+#define need_to_dpb_flush(ctx)			\
+	((ctx->state == MFCINST_FINISHING) ||	\
+	 (ctx->state == MFCINST_RUNNING))
 static int s5p_mfc_stop_streaming(struct vb2_queue *q)
 {
 	unsigned long flags;
@@ -2151,6 +2177,7 @@ static int s5p_mfc_stop_streaming(struct vb2_queue *q)
 	struct s5p_mfc_dev *dev = ctx->dev;
 	int aborted = 0;
 	int index = 0;
+	int prev_state;
 
 	if ((ctx->state == MFCINST_FINISHING ||
 		ctx->state ==  MFCINST_RUNNING) &&
@@ -2198,6 +2225,18 @@ static int s5p_mfc_stop_streaming(struct vb2_queue *q)
 
 	spin_unlock_irqrestore(&dev->irqlock, flags);
 
+	if (IS_MFCV6(dev) && q->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE &&
+			need_to_dpb_flush(ctx)) {
+		prev_state = ctx->state;
+		ctx->state = MFCINST_DPB_FLUSHING;
+		spin_lock_irq(&dev->condlock);
+		set_bit(ctx->num, &dev->ctx_work_bits);
+		spin_unlock_irq(&dev->condlock);
+		s5p_mfc_try_run(dev);
+		if (s5p_mfc_wait_for_done_ctx(ctx,
+				S5P_FIMV_R2H_CMD_DPB_FLUSH_RET));
+		ctx->state = prev_state;
+	}
 	return 0;
 }
 
@@ -2226,6 +2265,9 @@ static void s5p_mfc_buf_queue(struct vb2_buffer *vb)
 		list_add_tail(&buf->list, &ctx->src_queue);
 		ctx->src_queue_cnt++;
 		spin_unlock_irqrestore(&dev->irqlock, flags);
+		if (!ctx->is_drm)
+			buf->kaddr.stream =
+				(dma_addr_t)vb2_plane_vaddr(&buf->vb, 0);
 	} else if (vq->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
 		buf->used = 0;
 		mfc_debug(2, "Dst queue: %p\n", &ctx->dst_queue);
@@ -2338,6 +2380,9 @@ int s5p_mfc_init_dec_ctx(struct s5p_mfc_ctx *ctx)
 
 	dec->display_delay = -1;
 	dec->is_packedpb = 0;
+	dec->is_interlaced = 0;
+	dec->immediate_display = 0;
+	dec->is_dts_mode = 0;
 
 	/* Init videobuf2 queue for OUTPUT */
 	ctx->vq_src.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;

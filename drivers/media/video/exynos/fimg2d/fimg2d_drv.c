@@ -34,12 +34,13 @@
 #include <linux/pm_runtime.h>
 #endif
 #include "fimg2d.h"
+#include "fimg2d4x.h"
 #include "fimg2d_clk.h"
 #include "fimg2d_ctx.h"
+#include "fimg2d_cache.h"
 #include "fimg2d_helper.h"
 
 #define POLL_TIMEOUT	2
-#define POLL_RETRY	1000
 #define CTX_TIMEOUT	msecs_to_jiffies(2000)
 
 #ifdef DEBUG
@@ -49,54 +50,59 @@ module_param(g2d_debug, int, S_IRUGO | S_IWUSR);
 
 static struct fimg2d_control *ctrl;
 
-static int fimg2d_do_bitblt(struct fimg2d_control *ctrl)
+static void fimg2d_worker(struct work_struct *work)
 {
-	int ret;
+	fimg2d_trace("start kernel thread\n");
 
+	ctrl->wq_state = 1;
 #ifdef CONFIG_PM_RUNTIME
 	pm_runtime_get_sync(ctrl->dev);
-	fimg2d_debug("pm_runtime_get_sync\n");
 	fimg2d_clk_on(ctrl);
+	fimg2d_debug("pm_runtime_get_sync\n");
 #endif
 
-	ret = ctrl->blit(ctrl);
+	ctrl->blit(ctrl);
 
 #ifdef CONFIG_PM_RUNTIME
 	fimg2d_clk_off(ctrl);
 	pm_runtime_put_sync(ctrl->dev);
 	fimg2d_debug("pm_runtime_put_sync\n");
 #endif
-
-	return ret;
-}
-
-#ifdef BLIT_WORKQUE
-static void fimg2d_worker(struct work_struct *work)
-{
-	fimg2d_debug("start kernel thread\n");
-	fimg2d_do_bitblt(ctrl);
+	ctrl->wq_state = 2;
 }
 static DECLARE_WORK(fimg2d_work, fimg2d_worker);
 
 static int fimg2d_context_wait(struct fimg2d_context *ctx)
 {
-	int ret;
-
-	ret = wait_event_timeout(ctx->wait_q, !atomic_read(&ctx->ncmd),
+retry:
+	wait_event_timeout(ctx->wait_q, !atomic_read(&ctx->ncmd),
 			CTX_TIMEOUT);
-	if (!ret) {
-		fimg2d_err("ctx %p wait timeout\n", ctx);
-		return -ETIME;
+
+	if (atomic_read(&ctx->ncmd)) {
+		fimg2d_err("waiting for ctx done all again. " \
+			"ctx 0x%p blt_state 0x%x wq_state %d\n",
+			ctx, ctx->blt_state, ctrl->wq_state);
+		goto retry;
 	}
+
+	if (ctx->blt_state & BLIT_ERR_MASK) {
+		fimg2d_trace("ctx not done. ctx 0x%p " \
+			"blt_state 0x%x wq_state %d\n",
+			ctx, ctx->blt_state, ctrl->wq_state);
+		return -EAGAIN;
+	}
+
+	/* blit done */
 	return 0;
 }
-#endif
 
 static irqreturn_t fimg2d_irq(int irq, void *dev_id)
 {
-	fimg2d_debug("irq\n");
-	if (!WARN_ON(!atomic_read(&ctrl->clkon)))
+	fimg2d_trace("blit interrupt occurred\n");
+	spin_lock(&ctrl->bltlock);
+	if (atomic_read(&ctrl->clkon))
 		ctrl->stop(ctrl);
+	spin_unlock(&ctrl->bltlock);
 
 	return IRQ_HANDLED;
 }
@@ -106,29 +112,52 @@ static int fimg2d_sysmmu_fault_handler(struct device *dev,
 		unsigned long pgtable_base, unsigned long fault_addr)
 {
 	struct fimg2d_bltcmd *cmd;
+	struct fimg2d_context *ctx, *pos;
+	enum pt_status pt;
+	static struct fimg2d_bltcmd *saved_cmd;
+
+	cmd = fimg2d_get_command(ctrl);
+	ctx = fimg2d_get_context(ctrl, cmd);
+
+	ctx->blt_state |= BLIT_ERR_FAULT;
 
 	if (itype == SYSMMU_PAGEFAULT) {
 		fimg2d_err("sysmmu page fault(0x%lx), pgd(0x%lx)\n",
 				fault_addr, pgtable_base);
+
+#ifdef RECOVER_PGTABLE
+		if (ctx->saved_fault_vaddr) {
+			fimg2d_dummy_page_map(ctx->mm, ctx->saved_fault_vaddr, 0);
+			ctx->saved_fault_vaddr = 0;
+		}
+
+		pt = fimg2d_check_pagetable(ctx->mm, fault_addr, 4);
+		if (pt == PT_NORMAL)
+			return 0;
+		else if (pt == PT_LV2_FAULT) {
+			if (cmd != saved_cmd) {
+				fimg2d_err("cancel bitblt. ctx 0x%p cmd 0x%p\n",
+					ctx, cmd);
+				fimg2d4x_reset(ctrl);
+				saved_cmd = cmd;
+			}
+			fimg2d_dummy_page_map(ctx->mm, fault_addr, ctrl->dummy_page_paddr);
+			ctx->saved_fault_vaddr = fault_addr;
+			return 0;
+		}
+#endif
 	} else {
 		fimg2d_err("sysmmu fault type(%d) pgd(0x%lx) addr(0x%lx)\n",
 				itype, pgtable_base, fault_addr);
 	}
 
-	cmd = fimg2d_get_command(ctrl);
-	if (WARN_ON(!cmd))
-		goto next;
+	fimg2d_err("ctx 0x%p cmd 0x%p blt_state 0x%x wq_state %d\n",
+		ctx, cmd, ctx->blt_state, ctrl->wq_state);
+	fimg2d_err("nctx %d\n", atomic_read(&ctrl->nctx));
+	list_for_each_entry(pos, &ctrl->ctx_q, node)
+		fimg2d_err("\t ctx_q: ctx 0x%p\n", pos);
 
-	if (cmd->ctx->mm->pgd != phys_to_virt(pgtable_base)) {
-		fimg2d_err("pgtable base invalid\n");
-		goto next;
-	}
-
-	fimg2d_dump_command(cmd);
-
-next:
-	ctrl->dump(ctrl);
-
+	fimg2d_debug_command(cmd);
 	BUG();
 	return 0;
 }
@@ -136,17 +165,11 @@ next:
 static int fimg2d_request_bitblt(struct fimg2d_control *ctrl,
 		struct fimg2d_context *ctx)
 {
-#ifdef BLIT_WORKQUE
-	unsigned long flags;
-
-	g2d_spin_lock(&ctrl->bltlock, flags);
-	fimg2d_debug("dispatch ctx %p to kernel thread\n", ctx);
+	fimg2d_trace("dispatch to kernel thread. ctx 0x%p wq_state %d\n",
+			ctx, ctrl->wq_state);
+	ctx->blt_state = BLIT_REQUEST;
 	queue_work(ctrl->work_q, &fimg2d_work);
-	g2d_spin_unlock(&ctrl->bltlock, flags);
 	return fimg2d_context_wait(ctx);
-#else
-	return fimg2d_do_bitblt(ctrl);
-#endif
 }
 
 static int fimg2d_open(struct inode *inode, struct file *file)
@@ -160,32 +183,24 @@ static int fimg2d_open(struct inode *inode, struct file *file)
 	}
 	file->private_data = (void *)ctx;
 
-	ctx->mm = current->mm;
-	fimg2d_debug("ctx %p current pgd %p init_mm pgd %p\n",
-			ctx, (unsigned long *)ctx->mm->pgd,
-			(unsigned long *)init_mm.pgd);
-
-	g2d_lock(&ctrl->drvlock);
+	ctx->blt_state = BLIT_IDLE;
 	fimg2d_add_context(ctrl, ctx);
-	g2d_unlock(&ctrl->drvlock);
 	return 0;
 }
 
 static int fimg2d_release(struct inode *inode, struct file *file)
 {
 	struct fimg2d_context *ctx = file->private_data;
-	int retry = POLL_RETRY;
 
-	fimg2d_debug("ctx %p\n", ctx);
-	g2d_lock(&ctrl->drvlock);
-	while (retry--) {
-		if (!atomic_read(&ctx->ncmd))
-			break;
+retry:
+	if (atomic_read(&ctx->ncmd)) {
 		mdelay(POLL_TIMEOUT);
+		goto retry;
 	}
+	fimg2d_trace("ctx 0x%p ncmd %d blt_state 0x%x wq_state %d\n",
+		ctx, atomic_read(&ctx->ncmd), ctx->blt_state, ctrl->wq_state);
 	fimg2d_del_context(ctrl, ctx);
 	kfree(ctx);
-	g2d_unlock(&ctrl->drvlock);
 	return 0;
 }
 
@@ -199,36 +214,39 @@ static unsigned int fimg2d_poll(struct file *file, struct poll_table_struct *wai
 	return 0;
 }
 
-static long fimg2d_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+static long fimg2d_ioctl(struct file *file, unsigned int ioc, unsigned long arg)
 {
 	int ret = 0;
 	struct fimg2d_context *ctx;
 
 	ctx = file->private_data;
 
-	switch (cmd) {
+	switch (ioc) {
 	case FIMG2D_BITBLT_BLIT:
-		g2d_lock(&ctrl->drvlock);
-
 		if (atomic_read(&ctrl->drvact) || atomic_read(&ctrl->suspended)) {
-			fimg2d_debug("driver is unavailable, do sw fallback\n");
-			g2d_unlock(&ctrl->drvlock);
+			fimg2d_trace("do s/w fallback ctx 0x%p\n", ctx);
 			return -EPERM;
+		}
+
+		ctx->mm = get_task_mm(current);
+		if (!ctx->mm) {
+			fimg2d_err("not user task ctx 0x%p\n", ctx);
+			return -EFAULT;
 		}
 
 		ret = fimg2d_add_command(ctrl, ctx, (struct fimg2d_blit __user *)arg);
 		if (ret) {
-			g2d_unlock(&ctrl->drvlock);
+			mmput(ctx->mm);
 			return ret;
 		}
 
 		ret = fimg2d_request_bitblt(ctrl, ctx);
 		if (ret) {
-			g2d_unlock(&ctrl->drvlock);
-			return -EBUSY;
+			mmput(ctx->mm);
+			return ret;
 		}
 
-		g2d_unlock(&ctrl->drvlock);
+		mmput(ctx->mm);
 		break;
 
 	case FIMG2D_BITBLT_VERSION:
@@ -252,13 +270,11 @@ static long fimg2d_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		if (copy_from_user(&act, (void *)arg, sizeof(act)))
 			return -EFAULT;
 
-		g2d_lock(&ctrl->drvlock);
 		atomic_set(&ctrl->drvact, act);
 		if (act == DRV_ACT)
 			fimg2d_info("fimg2d driver is activated\n");
 		else
 			fimg2d_info("fimg2d driver is deactivated\n");
-		g2d_unlock(&ctrl->drvlock);
 		break;
 	}
 	default:
@@ -296,17 +312,15 @@ static int fimg2d_setup_controller(struct fimg2d_control *ctrl)
 	atomic_set(&ctrl->nctx, 0);
 
 	spin_lock_init(&ctrl->bltlock);
-	mutex_init(&ctrl->drvlock);
 
+	INIT_LIST_HEAD(&ctrl->ctx_q);
 	INIT_LIST_HEAD(&ctrl->cmd_q);
 	init_waitqueue_head(&ctrl->wait_q);
 	fimg2d_register_ops(ctrl);
 
-#ifdef BLIT_WORKQUE
 	ctrl->work_q = create_singlethread_workqueue("kfimg2dd");
 	if (!ctrl->work_q)
 		return -ENOMEM;
-#endif
 
 	return 0;
 }
@@ -315,6 +329,9 @@ static int fimg2d_probe(struct platform_device *pdev)
 {
 	int ret = 0;
 	struct resource *res;
+#ifdef RECOVER_PGTABLE
+	struct page *dummy_page;
+#endif
 
 	if (!to_fimg2d_plat(&pdev->dev)) {
 		fimg2d_err("failed to get platform data\n");
@@ -395,6 +412,11 @@ static int fimg2d_probe(struct platform_device *pdev)
 	exynos_sysmmu_set_fault_handler(ctrl->dev, fimg2d_sysmmu_fault_handler);
 	fimg2d_info("register sysmmu page fault handler\n");
 
+#ifdef RECOVER_PGTABLE
+	dummy_page = alloc_page(__GFP_ZERO | __GFP_REPEAT | __GFP_NOWARN | __GFP_COLD);
+	ctrl->dummy_page_paddr = page_to_phys(dummy_page);
+#endif
+
 	/* misc register */
 	ret = misc_register(&fimg2d_dev);
 	if (ret) {
@@ -421,11 +443,9 @@ mem_free:
 res_free:
 	release_resource(ctrl->mem);
 drv_free:
-#ifdef BLIT_WORKQUE
 	if (ctrl->work_q)
 		destroy_workqueue(ctrl->work_q);
-#endif
-	mutex_destroy(&ctrl->drvlock);
+
 	kfree(ctrl);
 
 	return ret;
@@ -449,10 +469,7 @@ static int fimg2d_remove(struct platform_device *pdev)
 		kfree(ctrl->mem);
 	}
 
-#ifdef BLIT_WORKQUE
 	destroy_workqueue(ctrl->work_q);
-#endif
-	mutex_destroy(&ctrl->drvlock);
 	kfree(ctrl);
 	return 0;
 }
@@ -460,19 +477,16 @@ static int fimg2d_remove(struct platform_device *pdev)
 static int fimg2d_suspend(struct device *dev)
 {
 	unsigned long flags;
-	int retry = POLL_RETRY;
 
-	g2d_lock(&ctrl->drvlock);
-	g2d_spin_lock(&ctrl->bltlock, flags);
+	spin_lock_irqsave(&ctrl->bltlock, flags);
 	atomic_set(&ctrl->suspended, 1);
-	g2d_spin_unlock(&ctrl->bltlock, flags);
-	while (retry--) {
-		if (fimg2d_queue_is_empty(&ctrl->cmd_q))
-			break;
+	spin_unlock_irqrestore(&ctrl->bltlock, flags);
+retry:
+	if (!fimg2d_queue_is_empty(&ctrl->cmd_q)) {
 		mdelay(POLL_TIMEOUT);
+		goto retry;
 	}
-	g2d_unlock(&ctrl->drvlock);
-	fimg2d_info("suspend... done\n");
+	fimg2d_trace("suspend... done\n");
 	return 0;
 }
 
@@ -480,12 +494,10 @@ static int fimg2d_resume(struct device *dev)
 {
 	unsigned long flags;
 
-	g2d_lock(&ctrl->drvlock);
-	g2d_spin_lock(&ctrl->bltlock, flags);
+	spin_lock_irqsave(&ctrl->bltlock, flags);
 	atomic_set(&ctrl->suspended, 0);
-	g2d_spin_unlock(&ctrl->bltlock, flags);
-	g2d_unlock(&ctrl->drvlock);
-	fimg2d_info("resume... done\n");
+	spin_unlock_irqrestore(&ctrl->bltlock, flags);
+	fimg2d_trace("resume... done\n");
 	return 0;
 }
 

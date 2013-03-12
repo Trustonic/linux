@@ -30,6 +30,8 @@
 /* Number of USB endpoints: EP0 + 10xEPin + 10xEPout */
 #define EXYNOS_USB3_EPS	(1 + 10 + 10)
 
+#define NUM_ISOC_TRBS	64
+
 /* Has to be multiple of four */
 #define EXYNOS_USB3_EVENT_BUFF_WSIZE	256
 #define EXYNOS_USB3_EVENT_BUFF_BSIZE	(EXYNOS_USB3_EVENT_BUFF_WSIZE << 2)
@@ -133,6 +135,7 @@
 #define EXYNOS_USB3_DGCMD_CmdTyp(_x)			((_x) << 0)
 /* Device generic commands */
 #define EXYNOS_USB3_DGCMD_CmdTyp_SetPerParams		0x2
+#define EXYNOS_USB3_DGCMD_CmdTyp_AllFIFOFlush		0xa
 
 #define EXYNOS_USB3_DALEPENA		0xC720
 
@@ -214,6 +217,7 @@
 #define EXYNOS_USB3_TRB_TRBSTS_MASK			(0xf << 28)
 #define EXYNOS_USB3_TRB_TRBSTS_SHIFT			28
 #define EXYNOS_USB3_TRB_TRBSTS(_x)			((_x) << 28)
+#define EXYNOS_USB3_TRB_TRBSTS_MissedIsoc		(1 << 28)
 #define EXYNOS_USB3_TRB_PCM1_MASK			(0x3 << 24)
 #define EXYNOS_USB3_TRB_PCM1_SHIFT			24
 #define EXYNOS_USB3_TRB_PCM1(_x)			((_x) << 24)
@@ -237,6 +241,8 @@
 #define EXYNOS_USB3_DEPEVT_EventParam_MASK		(0xffff << 16)
 #define EXYNOS_USB3_DEPEVT_EventParam_SHIFT		16
 #define EXYNOS_USB3_DEPEVT_EventParam(_x)		((_x) << 16)
+#define EXYNOS_USB3_DEPEVT_IsocMicroFrameNum_LIMIT	0xffff
+#define EXYNOS_USB3_DEPEVT_CmdTyp_SHIFT			24
 #define EXYNOS_USB3_DEPEVT_EventStatus_MASK		(0xf << 12)
 #define EXYNOS_USB3_DEPEVT_EventStatus_SHIFT		12
 #define EXYNOS_USB3_DEPEVT_EventStatus_CTL_MASK		(0x3 << 12)
@@ -244,6 +250,7 @@
 #define EXYNOS_USB3_DEPEVT_EventStatus_CTL_DATA		(1 << 12)
 #define EXYNOS_USB3_DEPEVT_EventStatus_CTL_STATUS	(2 << 12)
 #define EXYNOS_USB3_DEPEVT_EventStatus_BUSERR		(1 << 12)
+#define EXYNOS_USB3_DEPEVT_EventStatus_BusTimeExp	(2 << 12)
 #define EXYNOS_USB3_DEPEVT_EVENT_MASK			(0xf << 6)
 #define EXYNOS_USB3_DEPEVT_EVENT_SHIFT			6
 #define EXYNOS_USB3_DEPEVT_EVENT_EPCmdCmplt		(7 << 6)
@@ -347,8 +354,22 @@ struct exynos_ss_udc_ep_command {
 };
 
 /**
+ * struct exynos_ss_udc_gen_command - generic command.
+ * @param: Command parameter.
+ * @cmdtype: Command to issue.
+ * @cmdflags: Command flags.
+ */
+struct exynos_ss_udc_gen_command {
+	u32 param;
+	u32 cmdtyp;
+	u32 cmdflags;
+};
+
+/**
  * struct exynos_ss_udc_req - data transfer request
  * @req: The USB gadget request.
+ * @trb: Transfer Request Block for the request.
+ * @trb_dma: Transfer Request Block DMA address.
  * @queue: The list of requests for the endpoint this is queued for.
  * @buf: Holds original buffer address if bounce buffer is used.
  * @length: Holds original buffer length of data if bounce buffer is used.
@@ -356,6 +377,8 @@ struct exynos_ss_udc_ep_command {
  */
 struct exynos_ss_udc_req {
 	struct usb_request	req;
+	struct exynos_ss_udc_trb *trb;
+	dma_addr_t		trb_dma;
 	struct list_head	queue;
 	void			*buf;
 	unsigned		length;
@@ -373,11 +396,17 @@ struct exynos_ss_udc_req {
  *       and has yet to be completed (maybe due to data move, or simply
  *	 awaiting an ack from the core all the data has been completed).
  * @lock: State lock to protect contents of endpoint.
- * @trb: Transfer Request Block.
- * @trb_dma: Transfer Request Block DMA address.
+ * @trb: Points the the first Transfer Request Block in the pool.
+ * @trb_dma: First Transfer Request Block DMA address.
+ * @trb_index: Points to the next free Transfer Request Block.
+ * @trbs_avail: Number of available Transfer Request Blocks.
  * @tri: Transfer resource index.
  * @epnum: The USB endpoint number.
  * @type: The endpoint type.
+ * @interval: Period for polling endpoint for data transfers (for isochronous
+ *	      endpoints only).
+ * @uframe: Indicates the (micro)frame number to which the first TRB applies
+ *	    (for isochronous endpoints only).
  * @dir_in: Set to true if this endpoint is of the IN direction, which
  *	    means that it is sending data to the Host.
  * @halted: Set if the endpoint has been halted.
@@ -385,6 +414,7 @@ struct exynos_ss_udc_req {
  * @wedged: Set if the endpoint has been wedged.
  * @not_ready: Set to true if a command for the endpoint hasn't completed
  *	       during timeout interval.
+ * @pending_xfer: Set if request queue is empty on XferNotReady event.
  * @name: The driver generated name for the endpoint.
  *
  * This is the driver's state for each registered enpoint, allowing it
@@ -395,24 +425,31 @@ struct exynos_ss_udc_req {
 struct exynos_ss_udc_ep {
 	struct usb_ep			ep;
 	struct list_head		req_queue;
+	struct list_head		req_started;
 	struct list_head		cmd_queue;
 	struct exynos_ss_udc		*parent;
-	struct exynos_ss_udc_req	*req;
 
 	spinlock_t			lock;
 
 	struct exynos_ss_udc_trb	*trb;
 	dma_addr_t			trb_dma;
+	int				trb_index;
+	int				trbs_avail;
 	u8				tri;
 
 	unsigned char		epnum;
 	unsigned int		type;
+
+	unsigned int		interval;
+	unsigned int		uframe;
+
 	unsigned int		dir_in:1;
 	unsigned int		halted:1;
 	unsigned int		enabled:1;
 	unsigned int		wedged:1;
 	unsigned int		not_ready:1;
 	unsigned int		sent_zlp:1;
+	unsigned int		pending_xfer:1;
 
 	char			name[13];
 };
@@ -423,6 +460,7 @@ struct exynos_ss_udc_ep {
  * @driver: USB gadget driver
  * @pdata: The platform specific configuration data.
  * @core: The link to drd core.
+ * @enabled: Indicate whether UDC enabled or disabled.
  * @state: The device USB state.
  * @regs: The memory area mapped for accessing registers.
  * @irq: The IRQ number we are using.
@@ -436,6 +474,8 @@ struct exynos_ss_udc_ep {
  * @ep0_three_stage: Set if control transfer has three stages.
  * @our_status: Indicate that UDC driver (not gadget) is responsible for Status
  *		stage handling.
+ * @setup_pending: Indicate that Setup transfer must be started at nearest time.
+ * @lock: Lock to protect controller state.
  * @ep0_buff: Buffer for EP0 data.
  * @ep0_buff_dma: EP0 data buffer DMA address.
  * @ctrl_buff: Buffer for EP0 control requests.
@@ -452,6 +492,7 @@ struct exynos_ss_udc {
 	struct dwc3_exynos_data		*pdata;
 	struct exynos_drd_core		*core;
 
+	bool			enabled;
 	enum usb_device_state	state;
 
 	void __iomem		*regs;
@@ -466,9 +507,11 @@ struct exynos_ss_udc {
 	enum ctrl_ep_state	ep0_state;
 	int			ep0_three_stage;
 	bool			our_status;
+	bool			setup_pending;
 
 	unsigned int		pullup_state:1;
-	unsigned int		vbus_state:1;
+
+	spinlock_t		lock;
 
 	u8			*ep0_buff;
 	dma_addr_t		ep0_buff_dma;

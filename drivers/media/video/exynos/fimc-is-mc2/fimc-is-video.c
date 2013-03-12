@@ -147,6 +147,7 @@ void fimc_is_set_plane_size(struct fimc_is_frame *frame, unsigned int sizes[])
 #endif
 		break;
 	case V4L2_PIX_FMT_NV12M:
+	case V4L2_PIX_FMT_NV21M:
 		dbg("V4L2_PIX_FMT_NV12M(w:%d)(h:%d)\n",
 				frame->width, frame->height);
 		sizes[0] = width[0]*frame->height;

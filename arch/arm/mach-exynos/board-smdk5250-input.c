@@ -45,7 +45,7 @@ static void exynos5_smdk5250_touch_init(void)
 #ifdef CONFIG_TOUCHSCREEN_COASIA
 	int gpio;
 
-	if (get_smdk5250_rev() == SMDK5250_REV_0_0)
+	if (get_smdk5250_regulator() == SMDK5250_REGULATOR_MAX77686)
 		gpio = EXYNOS5_GPX2(4);
 	else
 		gpio = EXYNOS5_GPX2(1);
@@ -92,7 +92,7 @@ static struct platform_device *smdk5250_input_devices[] __initdata = {
 void __init exynos5_smdk5250_input_init(void)
 {
 	s3c_i2c3_set_platdata(&i2c_data3);
-	if (get_smdk5250_rev() == SMDK5250_REV_0_0)
+	if (get_smdk5250_regulator() == SMDK5250_REGULATOR_MAX77686)
 		i2c_devs3[0].irq = IRQ_EINT(21);
 	else
 		i2c_devs3[0].irq = IRQ_EINT(18);

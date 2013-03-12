@@ -151,6 +151,7 @@
 								a frame */
 #define S5P_FIMV_SI_DISPLAY_STATUS	0x201c /* status of decoded picture */
 #define S5P_FIMV_SI_FRAME_TYPE		0x2020 /* frame type such as skip/I/P/B */
+#define S5P_FIMV_SI_DECODED_Y_ADR	0x2024 /* luma address of decoded pic */
 #define S5P_FIMV_SI_DECODED_STATUS	0x202c /* status of decoded picture */
 #define S5P_FIMV_DEC_CRC_GEN_MASK	0x3
 #define S5P_FIMV_DEC_CRC_GEN_SHIFT	4
@@ -373,9 +374,11 @@
 #define S5P_FIMV_D_NUM_MV			-1
 #define S5P_FIMV_MFC_VERSION			0
 #define S5P_FIMV_ERR_FRAME_CONCEAL		-1
+#define S5P_FIMV_R2H_CMD_DPB_FLUSH_RET		-2
 
 /* Error handling defines */
 #define S5P_FIMV_ERR_WARNINGS_START		145
+#define S5P_FIMV_ERR_WARNINGS_END		182
 #define S5P_FIMV_ERR_DEC_MASK			0xFFFF
 #define S5P_FIMV_ERR_DEC_SHIFT			0
 #define S5P_FIMV_ERR_DSPL_MASK			0xFFFF0000

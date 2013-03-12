@@ -1074,7 +1074,7 @@ static void mmc_sd_remove(struct mmc_host *host)
  */
 static int mmc_sd_alive(struct mmc_host *host)
 {
-	return mmc_send_status(host->card, NULL);
+	return mmc_send_status(host->card, NULL, 0);
 }
 
 /*
@@ -1097,7 +1097,7 @@ static void mmc_sd_detect(struct mmc_host *host)
 	 */
 #ifdef CONFIG_MMC_PARANOID_SD_INIT
 	while(retries) {
-		err = mmc_send_status(host->card, NULL);
+		err = mmc_send_status(host->card, NULL, 0);
 		if (err) {
 			retries--;
 			udelay(5);
