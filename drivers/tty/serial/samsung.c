@@ -1454,8 +1454,6 @@ static void s3c24xx_serial_resetport(struct uart_port *port,
 	/* some delay is required after fifo reset */
 	udelay(1);
 
-	/* enable all interrupts except TX */
-	wr_regl(port, S3C64XX_UINTM, S3C64XX_UINTM_TXD_MSK);
 }
 
 
