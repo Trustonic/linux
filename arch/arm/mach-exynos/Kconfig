@@ -710,6 +710,7 @@ config MACH_ARNDALE
 	select EXYNOS5_SETUP_HSI2C1
 	select EXYNOS5_SETUP_HSI2C2
 	select EXYNOS5_SETUP_HSI2C3
+	select EXYNOS5_DEV_AHCI
 	help
 	  Machine support for InSignal ARNDALE
 

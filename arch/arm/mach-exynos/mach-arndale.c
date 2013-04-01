@@ -183,6 +183,7 @@ static struct platform_device *smdk5250_devices[] __initdata = {
 #ifdef CONFIG_MALI_T6XX
 	&exynos5_device_g3d,
 #endif
+	&exynos5_device_ahci,
 };
 
 /* TMU */
