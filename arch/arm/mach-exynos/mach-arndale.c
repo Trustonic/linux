@@ -456,6 +456,26 @@ static void __init smdk5250_panic_init(void)
        atomic_notifier_chain_register(&panic_notifier_list, &smdk5250_panic_nb);
 }
 
+static int exynos5_arndale_uhostphy_reset(void)
+{
+	int err;
+	err = gpio_request(EXYNOS5_GPX3(5), "GPX3");
+	if (!err) {
+		gpio_direction_output(EXYNOS5_GPX3(5), 1);
+		gpio_set_value(EXYNOS5_GPX3(5), 1);
+		s3c_gpio_setpull(EXYNOS5_GPX3(5), S3C_GPIO_PULL_UP);
+		gpio_free(EXYNOS5_GPX3(5));
+	}
+	err = gpio_request(EXYNOS5_GPD1(7), "GPD1");
+	if (!err) {
+		gpio_direction_output(EXYNOS5_GPD1(7), 1);
+		gpio_set_value(EXYNOS5_GPD1(7), 1);
+		s3c_gpio_setpull(EXYNOS5_GPD1(7), S3C_GPIO_PULL_UP);
+		gpio_free(EXYNOS5_GPD1(7));
+	}
+	return 0;
+}
+
 static void __init smdk5250_machine_init(void)
 {
 	smdk5250_init_hw_rev();
@@ -495,6 +515,7 @@ static void __init smdk5250_machine_init(void)
 #ifdef CONFIG_GPS_POWER
 	exynos5_arndale_gps_init();
 #endif
+	exynos5_arndale_uhostphy_reset();
 }
 
 MACHINE_START(ARNDALE, "ARNDALE")
