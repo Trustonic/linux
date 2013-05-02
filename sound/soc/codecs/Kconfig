@@ -25,6 +25,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_AK4641 if I2C
 	select SND_SOC_AK4642 if I2C
 	select SND_SOC_AK4671 if I2C
+	select SND_SOC_AK4678 if I2C
 	select SND_SOC_ALC5623 if I2C
 	select SND_SOC_ALC5632 if I2C
 	select SND_SOC_CQ0093VC if MFD_DAVINCI_VOICECODEC
@@ -168,6 +169,9 @@ config SND_SOC_AK4642
 	tristate
 
 config SND_SOC_AK4671
+	tristate
+
+config SND_SOC_AK4678
 	tristate
 
 config SND_SOC_ALC5623
