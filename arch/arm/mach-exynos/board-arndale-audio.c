@@ -135,15 +135,20 @@ static struct wm8994_pdata wm8994_platform_data = {
 	.ldo[1] = { 0, &wm8994_ldo2_data },
 };
 
-static struct i2c_board_info i2c_devs1[] __initdata = {
+static struct i2c_board_info i2c_devs3[] __initdata = {
+	{
+		I2C_BOARD_INFO("ak4678", 0x12),
+	},
+#if defined(CONFIG_SND_SOC_WM8994)
 	{
 		I2C_BOARD_INFO("wm8994", 0x1a),
 		.platform_data	= &wm8994_platform_data,
 	},
+#endif
 };
 
 static struct platform_device *smdk5250_audio_devices[] __initdata = {
-	&s3c_device_i2c1,
+	&s3c_device_i2c3,
 	&wm8994_fixed_voltage0,
 	&wm8994_fixed_voltage1,
 	&wm8994_fixed_voltage2,
@@ -151,14 +156,12 @@ static struct platform_device *smdk5250_audio_devices[] __initdata = {
 	&samsung_asoc_idma,
 	&exynos5_device_srp,
 	&exynos5_device_i2s0,
-	&exynos5_device_pcm0,
-	&exynos5_device_spdif,
 };
 
 void __init exynos5_smdk5250_audio_init(void)
 {
-	s3c_i2c1_set_platdata(NULL);
-	i2c_register_board_info(1, i2c_devs1, ARRAY_SIZE(i2c_devs1));
+	s3c_i2c3_set_platdata(NULL);
+	i2c_register_board_info(3, i2c_devs3, ARRAY_SIZE(i2c_devs3));
 
 	platform_add_devices(smdk5250_audio_devices,
 			ARRAY_SIZE(smdk5250_audio_devices));
