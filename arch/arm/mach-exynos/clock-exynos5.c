@@ -2999,7 +2999,8 @@ void __init exynos5_register_clocks(void)
 	s3c24xx_register_clock(&exynos5_c2c_clock);
 	s3c_disable_clocks(&exynos5_c2c_clock, 1);
 
-	s3c_disable_clocks(&exynos5_clk_clkout.clk, 1);
+	/* temp blocked by claude for wm1811 MCLK clock ctrl. */
+	/* s3c_disable_clocks(&exynos5_clk_clkout.clk, 1); */
 	register_syscore_ops(&exynos5_clock_syscore_ops);
 	s3c24xx_register_clock(&dummy_apb_pclk);
 
