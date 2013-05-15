@@ -139,6 +139,11 @@ static struct i2c_board_info i2c_devs3[] __initdata = {
 	{
 		I2C_BOARD_INFO("ak4678", 0x12),
 	},
+#if defined(CONFIG_SND_SOC_RT5631)
+	{
+		I2C_BOARD_INFO("rt5631", 0x1a),
+	},
+#endif
 #if defined(CONFIG_SND_SOC_WM8994)
 	{
 		I2C_BOARD_INFO("wm8994", 0x1a),
