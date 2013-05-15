@@ -20,17 +20,17 @@
 #include "board-smdk5250.h"
 
 static struct regulator_consumer_supply wm8994_fixed_voltage0_supplies[] = {
-	REGULATOR_SUPPLY("AVDD2", "1-001a"),
-	REGULATOR_SUPPLY("CPVDD", "1-001a"),
+	REGULATOR_SUPPLY("AVDD2", "3-001a"),
+	REGULATOR_SUPPLY("CPVDD", "3-001a"),
 };
 
 static struct regulator_consumer_supply wm8994_fixed_voltage1_supplies[] = {
-	REGULATOR_SUPPLY("SPKVDD1", "1-001a"),
-	REGULATOR_SUPPLY("SPKVDD2", "1-001a"),
+	REGULATOR_SUPPLY("SPKVDD1", "3-001a"),
+	REGULATOR_SUPPLY("SPKVDD2", "3-001a"),
 };
 
 static struct regulator_consumer_supply wm8994_fixed_voltage2_supplies =
-	REGULATOR_SUPPLY("DBVDD", "1-001a");
+	REGULATOR_SUPPLY("DBVDD", "3-001a");
 
 static struct regulator_init_data wm8994_fixed_voltage0_init_data = {
 	.constraints = {
@@ -102,10 +102,10 @@ static struct platform_device wm8994_fixed_voltage2 = {
 };
 
 static struct regulator_consumer_supply wm8994_avdd1_supply =
-	REGULATOR_SUPPLY("AVDD1", "1-001a");
+	REGULATOR_SUPPLY("AVDD1", "3-001a");
 
 static struct regulator_consumer_supply wm8994_dcvdd_supply =
-	REGULATOR_SUPPLY("DCVDD", "1-001a");
+	REGULATOR_SUPPLY("DCVDD", "3-001a");
 
 static struct regulator_init_data wm8994_ldo1_data = {
 	.constraints	= {
