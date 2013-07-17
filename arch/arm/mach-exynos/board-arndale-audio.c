@@ -136,9 +136,11 @@ static struct wm8994_pdata wm8994_platform_data = {
 };
 
 static struct i2c_board_info i2c_devs3[] __initdata = {
+#if defined(CONFIG_SND_SOC_AK4678)
 	{
 		I2C_BOARD_INFO("ak4678", 0x12),
 	},
+#endif
 #if defined(CONFIG_SND_SOC_RT5631)
 	{
 		I2C_BOARD_INFO("rt5631", 0x1a),
@@ -148,6 +150,11 @@ static struct i2c_board_info i2c_devs3[] __initdata = {
 	{
 		I2C_BOARD_INFO("wm8994", 0x1a),
 		.platform_data	= &wm8994_platform_data,
+	},
+#endif
+#if defined(CONFIG_SND_SOC_AK4953)
+	{
+		I2C_BOARD_INFO("ak4953a", 0x13),
 	},
 #endif
 };
