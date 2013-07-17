@@ -46,6 +46,7 @@ snd-soc-littlemill-objs := littlemill.o
 snd-soc-manta-wm1811-objs := manta_wm1811.o
 snd-soc-manta-spdif-objs := manta_spdif.o
 snd-soc-arndale-ak4678-objs := arndale_ak4678.o
+snd-soc-arndale-ak4953-objs := arndale_ak4953.o
 snd-soc-arndale-rt5631-objs := arndale_rt5631.o
 snd-soc-arndale-wm1811-objs := arndale_wm1811.o
 
@@ -74,5 +75,6 @@ obj-$(CONFIG_SND_SOC_LITTLEMILL) += snd-soc-littlemill.o
 obj-$(CONFIG_SND_SOC_SAMSUNG_MANTA_WM1811) += snd-soc-manta-wm1811.o
 obj-$(CONFIG_SND_SOC_SAMSUNG_MANTA_SPDIF) += snd-soc-manta-spdif.o
 obj-$(CONFIG_SND_SOC_ARNDALE_AK4678) += snd-soc-arndale-ak4678.o
+obj-$(CONFIG_SND_SOC_ARNDALE_AK4953) += snd-soc-arndale-ak4953.o
 obj-$(CONFIG_SND_SOC_ARNDALE_RT5631) += snd-soc-arndale-rt5631.o
 obj-$(CONFIG_SND_SOC_ARNDALE_WM1811) += snd-soc-arndale-wm1811.o

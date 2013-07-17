@@ -268,6 +268,13 @@ config SND_SOC_ARNDALE_AK4678
         select SND_SAMSUNG_I2S
         select SND_SOC_AK4678
 
+config SND_SOC_ARNDALE_AK4953
+        tristate "Audio support for AK4953 on Arndale Board"
+        depends on SND_SOC_SAMSUNG
+        select SND_SAMSUNG_I2S
+        select SND_SOC_AK4953
+        #select SND_SAMSUNG_I2S_MASTER
+
 config SND_SOC_ARNDALE_RT5631
         tristate "Audio support for RT5631(ALC5631) on Arndale Board"
         depends on SND_SOC_SAMSUNG
