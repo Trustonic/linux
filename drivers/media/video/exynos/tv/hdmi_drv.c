@@ -177,11 +177,13 @@ static int hdmi_streamon(struct hdmi_device *hdev)
 	dev_dbg(dev, "HDMI_ACR_MCTS1 : 0x%08x\n", val1);
 	dev_dbg(dev, "HDMI_ACR_MCTS2 : 0x%08x\n", val2);
 
-	/* start HDCP if enabled */
-	if (hdev->hdcp_info.hdcp_enable) {
-		ret = hdcp_start(hdev);
-		if (ret)
-			return ret;
+	if (edid_supports_hdmi(hdev)) {
+		/* start HDCP if enabled */
+		if (hdev->hdcp_info.hdcp_enable) {
+			ret = hdcp_start(hdev);
+			if (ret)
+				return ret;
+		}
 	}
 
 	hdmi_dumpregs(hdev, "streamon");
@@ -195,8 +197,10 @@ static int hdmi_streamoff(struct hdmi_device *hdev)
 
 	dev_dbg(dev, "%s\n", __func__);
 
-	if (hdev->hdcp_info.hdcp_enable)
-		hdcp_stop(hdev);
+	if (edid_supports_hdmi(hdev)) {
+		if (hdev->hdcp_info.hdcp_enable)
+			hdcp_stop(hdev);
+	}
 
 	hdmi_audio_enable(hdev, 0);
 	hdmi_enable(hdev, 0);
