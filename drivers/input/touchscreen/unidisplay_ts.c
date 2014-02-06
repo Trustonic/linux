@@ -62,6 +62,8 @@ struct unidisplay_ts_data {
 	unsigned int irq_pending;
 };
 
+int unidisplay_ts_inited = 0;
+EXPORT_SYMBOL(unidisplay_ts_inited);
 
 static irqreturn_t unidisplay_ts_isr(int irq, void *dev_id);
 
@@ -371,6 +373,8 @@ static int unidisplay_ts_probe(struct i2c_client *client,
 	/* disable irq for now, will be enabled when device is opened */
 	disable_irq(tsdata->irq);
 	pr_info("Unidisplay touch driver registered successfully\n");
+	unidisplay_ts_inited = 1;
+
 	return err;
 fail3:
 	input_unregister_device(tsdata->input);
