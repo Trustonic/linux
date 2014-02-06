@@ -90,6 +90,11 @@ static struct i2c_board_info i2c_devs7[] __initdata = {
 		.irq	= IRQ_EINT(9),
 	},
 #endif
+#ifdef CONFIG_TOUCHSCREEN_GT9XX
+	{
+		I2C_BOARD_INFO("Goodix-TS", (0xBA >> 1)),
+	},
+#endif
 };
 
 static struct platform_device *smdk5250_input_devices[] __initdata = {
