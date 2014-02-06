@@ -113,8 +113,8 @@ static int smdk5250_vbus_ctrl(struct platform_device *pdev, int on)
 	return 0;
 }
 
-#define SMDK5250_ID0_GPIO	EXYNOS5_GPX1(7)
-#define SMDK5250_VBUS0_GPIO	EXYNOS5_GPX0(6)
+#define SMDK5250_ID0_GPIO	EXYNOS5_GPV0(0)
+#define SMDK5250_VBUS0_GPIO	EXYNOS5_GPV0(1)
 
 static int smdk5250_get_id_state(struct platform_device *pdev)
 {
