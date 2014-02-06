@@ -104,6 +104,8 @@ static struct platform_device *smdk5250_input_devices[] __initdata = {
 
 void __init exynos5_smdk5250_input_init(void)
 {
+	int i;
+
 	s3c_i2c7_set_platdata(NULL);
 	i2c_register_board_info(7, i2c_devs7, ARRAY_SIZE(i2c_devs7));
 
@@ -111,4 +113,11 @@ void __init exynos5_smdk5250_input_init(void)
 
 	platform_add_devices(smdk5250_input_devices,
 			ARRAY_SIZE(smdk5250_input_devices));
+
+	for (i = 0; i < ARRAY_SIZE(smdk5250_button); i++) {
+		s3c_gpio_cfgpin(smdk5250_button[i].gpio, 0xF);
+		s3c_gpio_setpull(smdk5250_button[i].gpio,
+			smdk5250_button[i].active_low ? \
+			S3C_GPIO_PULL_NONE : S3C_GPIO_PULL_UP);
+	}
 }
