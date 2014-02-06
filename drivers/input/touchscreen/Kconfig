@@ -872,4 +872,11 @@ config TOUCHSCREEN_UNIDISPLAY_TS
 	depends on I2C
 	help
 	  Say Y here if you have a Pixcir capacitive based touchscreen
+
+config TOUCHSCREEN_GT9XX
+        tristate "Goodix GT9XX touch solution"
+        depends on I2C
+        help
+          Say Y here if you have a Goodix GT9XX based touchscreen
+          controller.
 endif
