@@ -728,6 +728,27 @@ static int ak4953a_hw_params(struct snd_pcm_substream *substream,
 		return -EINVAL;
 	}
 
+#if 0
+	// ghcstop
+	if(1)
+	{
+		struct snd_soc_pcm_runtime *rtd = substream->private_data;
+		int stream = substream->stream;
+		struct snd_soc_codec *gcodec = rtd->codec; // see above
+		u8 val;
+
+		val = snd_soc_read(gcodec, AK4953A_02_SIGNAL_SELECT1);
+		gprintk("AK4953A_02_SIGNAL_SELECT1 val = 0x%02x\n", val);
+
+		if( stream == SNDRV_PCM_STREAM_CAPTURE )
+			gprintk("===========================hw params = CAPTURE\n");
+		else if( stream == SNDRV_PCM_STREAM_PLAYBACK )
+			gprintk("===========================hw params = PLAYBACK\n");
+		val = snd_soc_read(gcodec, AK4953A_02_SIGNAL_SELECT1);
+		gprintk("AK4953A_02_SIGNAL_SELECT1 val = 0x%02x\n", val);
+	}
+#endif
+
 	snd_soc_write(codec, AK4953A_06_MODE_CONTROL2, fs);
 
 	return 0;
@@ -1048,6 +1069,31 @@ static int ak4953a_probe(struct snd_soc_codec *codec)
 	snd_soc_write(codec, AK4953A_00_POWER_MANAGEMENT1, 0x00);
 	snd_soc_write(codec, AK4953A_00_POWER_MANAGEMENT1, 0x00);
 
+#if 1
+#if 1
+	// ghcstop fix, speaker out for default output path
+	//val = snd_soc_read(codec, reg)
+	//snd_soc_write(codec, AK4953A_1D_DIGITAL_FILTER_MODE, 0x3);
+	snd_soc_write(codec, 0x02, 0x23);
+	snd_soc_write(codec, 0x03, 0x40);
+	snd_soc_write(codec, 0x0A, 0x70);
+	snd_soc_write(codec, 0x0D, 0x28);
+	snd_soc_write(codec, 0x11, 0x91);
+	snd_soc_write(codec, 0x12, 0x91);
+	snd_soc_write(codec, 0x1D, 0x04);
+	snd_soc_write(codec, 0x00, 0xD4);
+	snd_soc_write(codec, 0x02, 0xA3);
+#else // for headphone
+	snd_soc_write(codec, 0x00, 0x44);
+	snd_soc_write(codec, 0x01, 0x30);
+	snd_soc_write(codec, 0x02, 0x03);
+	snd_soc_write(codec, 0x13, 0x18);
+	snd_soc_write(codec, 0x1D, 0x03);
+	snd_soc_write(codec, 0x00, 0x44);
+	snd_soc_write(codec, 0x01, 0x39);
+#endif
+#endif
+
 	ak4953a_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
 
 	akdbgprt("\t[AK4953A bias] %s(%d)\n",__FUNCTION__,__LINE__);
@@ -1093,6 +1139,115 @@ static int ak4953a_resume(struct snd_soc_codec *codec)
 	return 0;
 }
 
+// blocked by ghcstop
+#if 1
+static ssize_t ak4953_show_regs(struct device *dev,
+			struct device_attribute *attr, char *buf)
+{
+	struct snd_soc_codec *codec = ak4953a_codec;
+	int i, cnt = 0;
+
+	for (i = 0; i < 0x4f; i+=16) {
+		cnt += sprintf(buf + cnt, "%02x: %02x", i,
+				snd_soc_read(codec, i));
+		cnt += sprintf(buf + cnt, " %02x",
+				snd_soc_read(codec, i+1));
+		cnt += sprintf(buf + cnt, " %02x",
+				snd_soc_read(codec, i+2));
+		cnt += sprintf(buf + cnt, " %02x",
+				snd_soc_read(codec, i+3));
+		cnt += sprintf(buf + cnt, " %02x",
+				snd_soc_read(codec, i+4));
+		cnt += sprintf(buf + cnt, " %02x",
+				snd_soc_read(codec, i+5));
+		cnt += sprintf(buf + cnt, " %02x",
+				snd_soc_read(codec, i+6));
+		cnt += sprintf(buf + cnt, " %02x",
+				snd_soc_read(codec, i+7));
+		cnt += sprintf(buf + cnt, " %02x",
+				snd_soc_read(codec, i+8));
+		cnt += sprintf(buf + cnt, " %02x",
+				snd_soc_read(codec, i+9));
+		cnt += sprintf(buf + cnt, " %02x",
+				snd_soc_read(codec, i+10));
+		cnt += sprintf(buf + cnt, " %02x",
+				snd_soc_read(codec, i+11));
+		cnt += sprintf(buf + cnt, " %02x",
+				snd_soc_read(codec, i+12));
+		cnt += sprintf(buf + cnt, " %02x",
+				snd_soc_read(codec, i+13));
+		cnt += sprintf(buf + cnt, " %02x",
+				snd_soc_read(codec, i+14));
+		cnt += sprintf(buf + cnt, " %02x\n",
+				snd_soc_read(codec, i+15));
+	}
+
+	return cnt;
+}
+
+static ssize_t ak4953_store_regs(struct device *dev,
+			struct device_attribute *attr,
+			const char *buf, size_t cnt)
+{
+	struct snd_soc_codec *codec = ak4953a_codec;
+	unsigned int reg = 0, val = 0;
+	char tmp[5];
+	int i;
+
+	memset(tmp,0x00,5);
+	for(i = 0; i < cnt; i++) {
+		if ( buf[i] != ' ' )
+			tmp[i] = buf[i];
+		else {
+			buf += i+1;
+			reg = simple_strtoul(tmp, NULL, 16);
+			val = simple_strtoul(buf, NULL, 16);
+			break;
+		}
+	}
+	printk(KERN_INFO "writing: 0x%x: 0x%02X --> 0x%02X\n",
+			reg, snd_soc_read(codec, reg), val);
+	snd_soc_write(codec, reg, val);
+
+	return cnt;
+}
+static DEVICE_ATTR(audio_reg, (S_IWUGO|S_IRUGO),
+		ak4953_show_regs, ak4953_store_regs);
+
+static ssize_t ak4953_index_reg_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct snd_soc_codec *codec = ak4953a_codec;
+	int count = 0;
+	int value;
+	int i;
+
+	count += sprintf(buf, "%s index register\n", codec->name);
+
+	for (i = 0; i < 0x4f; i++) {
+		count += sprintf(buf + count, "%2x= ", i);
+		if (count >= PAGE_SIZE - 1)
+			break;
+		value = snd_soc_read(codec, i);
+		count += snprintf(buf + count, PAGE_SIZE - count, "0x%02x", value);
+
+		if (count >= PAGE_SIZE - 1)
+			break;
+
+		count += snprintf(buf + count, PAGE_SIZE - count, "\n");
+		if (count >= PAGE_SIZE - 1)
+			break;
+	}
+
+	if (count >= PAGE_SIZE)
+			count = PAGE_SIZE - 1;
+
+	return count;
+
+}
+static DEVICE_ATTR(index_reg, 0444, ak4953_index_reg_show, NULL);
+#endif
+
 struct snd_soc_codec_driver soc_codec_dev_ak4953a = {
 	.probe = ak4953a_probe,
 	.remove = ak4953a_remove,
@@ -1134,7 +1289,16 @@ static int ak4953a_i2c_probe(struct i2c_client *i2c,
 
 	codec->dev = &i2c->dev;
 	snd_soc_codec_set_drvdata(codec, ak4953a);
-	
+
+#if 1 // ghcstop
+	ret = device_create_file(&i2c->dev, &dev_attr_audio_reg);
+	if (ret < 0)
+		printk(KERN_WARNING "asoc: failed to add index_reg sysfs files\n");
+	ret = device_create_file(&i2c->dev, &dev_attr_index_reg);
+	if (ret < 0)
+		printk(KERN_WARNING "asoc: failed to add index_reg sysfs files\n");
+#endif
+
 	ret = snd_soc_register_codec(&i2c->dev,
 			&soc_codec_dev_ak4953a, &ak4953a_dai[0], ARRAY_SIZE(ak4953a_dai));
 	if (ret < 0){
