@@ -82,31 +82,35 @@ static void unidisplay_ts_config(void)
 	gpio_free(TOUCH_RST_PIN);
 }
 
-static void unidisplay_ts_start(void)
+static void unidisplay_ts_reset(void)
 {
 	if (gpio_request(TOUCH_RST_PIN, "TOUCH_RST_PIN")) {
 		pr_err("%s : gpio request failed.\n", __func__);
 		return;
 	}
+	s3c_gpio_setpull(TOUCH_RST_PIN, S3C_GPIO_PULL_DOWN);
 	gpio_set_value(TOUCH_RST_PIN, 0);
-	gpio_free(TOUCH_RST_PIN);
-}
-
-static void unidisplay_ts_stop(void)
-{
-	if (gpio_request(TOUCH_RST_PIN, "TOUCH_RST_PIN")) {
-		pr_err("%s : gpio request failed.\n", __func__);
-		return;
-	}
+	udelay(100);
+	s3c_gpio_setpull(TOUCH_RST_PIN, S3C_GPIO_PULL_UP);
 	gpio_set_value(TOUCH_RST_PIN, 1);
 	gpio_free(TOUCH_RST_PIN);
 }
 
-static void unidisplay_ts_reset(void)
+static void unidisplay_ts_reset_invert(void)
 {
-	unidisplay_ts_stop();
-	udelay(100);
-	unidisplay_ts_start();
+	if (gpio_request(TOUCH_RST_PIN, "TOUCH_RST_PIN")) {
+		pr_err("%s : gpio request failed.\n", __func__);
+		return;
+	}
+	if (gpio_get_value(TOUCH_RST_PIN)) {
+		s3c_gpio_setpull(TOUCH_RST_PIN, S3C_GPIO_PULL_DOWN);
+		gpio_set_value(TOUCH_RST_PIN, 0);
+	} else {
+		s3c_gpio_setpull(TOUCH_RST_PIN, S3C_GPIO_PULL_UP);
+		gpio_set_value(TOUCH_RST_PIN, 1);
+	}
+	gpio_free(TOUCH_RST_PIN);
+	mdelay(10);
 }
 
 static int unidisplay_ts_pen_up(void)
@@ -215,10 +219,14 @@ static int unidisplay_ts_open(struct input_dev *dev)
 	BUG_ON(tsdata->kidle_task);
 
 	ret = i2c_master_send(tsdata->client, &addr, 1);
-
 	if (ret != 1) {
-		dev_err(&tsdata->client->dev, "Unable to open touchscreen device\n");
-		return -ENODEV;
+		unidisplay_ts_reset_invert();
+		ret = i2c_master_send(tsdata->client, &addr, 1);
+		if (ret != 1) {
+			dev_err(&tsdata->client->dev, \
+				"Unable to open touchscreen device\n");
+			return -ENODEV;
+		}
 	}
 
 	tsdata->kidle_task = kthread_run(unidisplay_ts_thread, tsdata, \
@@ -251,6 +259,7 @@ static int unidisplay_ts_probe(struct i2c_client *client,
 {
 	struct unidisplay_ts_data *tsdata;
 	int err;
+	char addr;
 
 	unidisplay_ts_config();
 	unidisplay_ts_reset();
@@ -259,6 +268,18 @@ static int unidisplay_ts_probe(struct i2c_client *client,
 		dev_err(&client->dev, "i2c func not supported\n");
 		err = -EIO;
 		goto end;
+	}
+
+	addr = 0x10;
+	err = i2c_master_send(client, &addr, 1);
+	if (err < 0) {
+		unidisplay_ts_reset_invert();
+		err = i2c_master_send(client, &addr, 1);
+		if (err < 0) {
+			dev_err(&client->dev, \
+				"Unable to open touchscreen device\n");
+			return err;
+		}
 	}
 
 	tsdata = kzalloc(sizeof(*tsdata), GFP_KERNEL);
