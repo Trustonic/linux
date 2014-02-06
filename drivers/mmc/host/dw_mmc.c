@@ -2721,6 +2721,20 @@ static void dw_mci_notify_change(struct platform_device *dev, int state)
 	}
 }
 
+#if defined(CONFIG_MTK_COMBO) || defined(CONFIG_MTK_WIRELESS_SOLUTION)
+#include <plat/devs.h>
+void dw_mci_force_notify_change(struct platform_device *pdev, int state)
+{
+	dw_mci_notify_change(pdev, state);
+}
+
+void sdmmc_cd_control(int state)
+{
+	dw_mci_force_notify_change(&exynos5_device_dwmci1, state);
+}
+EXPORT_SYMBOL(sdmmc_cd_control);
+#endif
+
 static irqreturn_t dw_mci_detect_interrupt(int irq, void *dev_id)
 {
 	struct dw_mci *host = dev_id;
