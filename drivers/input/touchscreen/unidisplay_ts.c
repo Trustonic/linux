@@ -25,10 +25,16 @@
 #define TOUCH_INT_PIN		EXYNOS5_GPX1(1)
 #define TOUCH_RST_PIN		EXYNOS5_GPD1(4)
 
+#define TOUCHSCREEN_REAL_MINX	0
+#define TOUCHSCREEN_REAL_MAXX	3968
+#define TOUCHSCREEN_REAL_MINY	0
+#define TOUCHSCREEN_REAL_MAXY	2304
+
 #define TOUCHSCREEN_MINX	0
-#define TOUCHSCREEN_MAXX	3968
+#define TOUCHSCREEN_MAXX	1024
 #define TOUCHSCREEN_MINY	0
-#define TOUCHSCREEN_MAXY	2304
+#define TOUCHSCREEN_MAXY	600
+
 #define TOUCH_DEBUG
 #ifdef TOUCH_DEBUG
 #define DEBUG_PRINT(fmt, args...) printk(fmt, ##args)
@@ -184,6 +190,8 @@ static int unidisplay_ts_thread(void *kthread)
 				y1 = buf[4];
 				y1 <<= 8;
 				y1 |= buf[3];
+				x1 = (x1 * TOUCHSCREEN_MAXX) / TOUCHSCREEN_REAL_MAXX;
+				y1 = (y1 * TOUCHSCREEN_MAXY) / TOUCHSCREEN_REAL_MAXY;
 				INPUT_REPORT(x1, y1, 1, 255, 1);
 			}
 			if (type & 0x2) {
@@ -193,6 +201,8 @@ static int unidisplay_ts_thread(void *kthread)
 				y1 = buf[8];
 				y1 <<= 8;
 				y1 |= buf[7];
+				x1 = (x1 * TOUCHSCREEN_MAXX) / TOUCHSCREEN_REAL_MAXX;
+				y1 = (y1 * TOUCHSCREEN_MAXY) / TOUCHSCREEN_REAL_MAXY;
 				INPUT_REPORT(x1, y1, 2, 255, 1);
 			}
 			input_sync(tsdata->input);
