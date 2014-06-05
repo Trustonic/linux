@@ -23,6 +23,7 @@
 #include <linux/io.h>
 #include <linux/ion.h>
 
+#include <asm/setup.h>
 #include <asm/mach/arch.h>
 #include <asm/hardware/gic.h>
 #include <asm/mach-types.h>
@@ -518,6 +519,26 @@ static void __init smdk5250_machine_init(void)
 	exynos5_arndale_uhostphy_reset();
 }
 
+static void __init arndale_fixup(struct tag *tags, char **cmdline, struct meminfo *mi)
+{
+      mi->bank[0].start = 0x40000000;
+      mi->bank[0].size = 1024 * SZ_1M;
+
+      mi->bank[1].start = 0x80000000;
+      /* 1024 - 32 - 8 MB == 984 MB             */
+      /* |             |                        */
+      /* |-------------| 0xBD80 0000 TUI buffer */
+      /* |   8 MB      |                        */
+      /* |-------------| 0xBE00 0000 t-base     */
+      /* |             |                        */
+      /* |  32 MB      |                        */
+      /* |             |                        */
+      /* |-------------| 0xC000 0000 end of DDR */
+      mi->bank[1].size = 984 * SZ_1M;
+
+      mi->nr_banks = 2;
+}
+
 MACHINE_START(ARNDALE, "ARNDALE")
 	.atag_offset	= 0x100,
 	.init_early	= smdk5250_init_early,
@@ -528,4 +549,5 @@ MACHINE_START(ARNDALE, "ARNDALE")
 	.timer		= &exynos4_timer,
 	.restart	= exynos5_restart,
 	.reserve	= exynos_reserve_mem,
+	.fixup          = &arndale_fixup,
 MACHINE_END
