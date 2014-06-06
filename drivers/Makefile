@@ -136,5 +136,5 @@ obj-$(CONFIG_HYPERV)		+= hv/
 
 obj-$(CONFIG_PM_DEVFREQ)	+= devfreq/
 
-obj-$(CONFIG_MOBICORE_DRIVER)	+= gud/
 obj-$(CONFIG_MTK_COMBO)		+= mtk_wcn_combo/
+obj-$(CONFIG_TRUSTONIC_TRUSTED_UI)+= trustonic/
