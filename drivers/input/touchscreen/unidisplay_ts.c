@@ -12,6 +12,7 @@
 #include <linux/delay.h>
 #include <linux/kthread.h>
 #include <linux/freezer.h>
+#include <linux/t-base-tui.h>
 
 #include <mach/gpio.h>
 #include <mach/regs-gpio.h>
@@ -166,7 +167,12 @@ static int unidisplay_ts_thread(void *kthread)
 		if (pendown) {
 			u8 addr = 0x10;
 			memset(buf, 0, sizeof(buf));
-			ret = i2c_master_send(tsdata->client, &addr, 1);
+			if (!(TRUSTEDUI_MODE_INPUT_SECURED & trustedui_get_current_mode())) {
+			    ret = i2c_master_send(tsdata->client, &addr, 1);
+			}
+			else {
+			    ret = 0;
+			}
 			if (ret != 1) {
 				dev_err(&tsdata->client->dev,\
 				"Unable to write to i2c touchscreen\n");
@@ -174,7 +180,12 @@ static int unidisplay_ts_thread(void *kthread)
 				timeout = MAX_SCHEDULE_TIMEOUT;
 				goto wait_event;
 			}
-			ret = i2c_master_recv(tsdata->client, buf, 9);
+			if (!(TRUSTEDUI_MODE_INPUT_SECURED & trustedui_get_current_mode())) {
+			    ret = i2c_master_recv(tsdata->client, buf, 9);
+			}
+			else {
+			    ret = 0;
+			}
 			if (ret != 9) {
 				dev_err(&tsdata->client->dev,\
 				"Unable to read to i2c touchscreen!\n");
