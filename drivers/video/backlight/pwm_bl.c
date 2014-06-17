@@ -21,6 +21,8 @@
 #include <linux/pwm_backlight.h>
 #include <linux/slab.h>
 
+#include <linux/t-base-tui.h>
+
 struct pwm_bl_data {
 	struct pwm_device	*pwm;
 	struct device		*dev;
@@ -49,8 +51,15 @@ static int pwm_backlight_update_status(struct backlight_device *bl)
 		brightness = pb->notify(pb->dev, brightness);
 
 	if (brightness == 0) {
-		pwm_config(pb->pwm, 0, pb->period);
-		pwm_disable(pb->pwm);
+		/* Turn OFF the backlight only when TUI is OFF */
+		if(TRUSTEDUI_MODE_OFF == trustedui_get_current_mode()) {
+			pwm_config(pb->pwm, 0, pb->period);
+			pwm_disable(pb->pwm);
+		} else {
+			/* Keep backlight ON */
+			printk("%s keep backlight ON tui_mode=0x%X \n", __func__,
+					trustedui_get_current_mode());
+		}
 	} else {
 		brightness = pb->lth_brightness +
 			(brightness * (pb->period - pb->lth_brightness) / max);

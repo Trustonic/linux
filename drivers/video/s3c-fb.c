@@ -58,6 +58,8 @@
 #include <linux/debugfs.h>
 #endif
 
+#include <video/s3c-fb.h>
+#include <linux/t-base-tui.h>
 
 /* This driver will export a number of framebuffer interfaces depending
  * on the configuration passed in via the platform data. Each fb instance
@@ -82,11 +84,33 @@
 } while (0)
 #endif /* FB_S3C_DEBUG_REGWRITE */
 
+#undef readl
+#define readl(c)                                                           \
+   ({ u32 __v = 0;                                                    \
+    if(!(TRUSTEDUI_MODE_VIDEO_SECURED & trustedui_get_current_mode())) { \
+        __v = readl_relaxed(c);                                   \
+    } else {                                                          \
+        __v;                                                      \
+    }                                                                 \
+    __iormb(); __v;                                                   \
+    })
+
+#undef writel
+#define writel(v,c)                                                        \
+   ({ __iowmb();                                                      \
+    if(!(TRUSTEDUI_MODE_VIDEO_SECURED & trustedui_get_current_mode())) { \
+        writel_relaxed(v,c);                                      \
+    } else {                                                          \
+    }                                                                 \
+    })
+
+#define FASTCALL_OWNER_SIP 0x81000000
+
 #define VSYNC_TIMEOUT_MSEC 50
 
 #define MAX_BW_PER_WINDOW	(2560 * 1600 * 4 * 60)
 
-struct s3c_fb;
+//struct s3c_fb;
 struct s3c_fb_user_window local_window;
 
 #ifdef CONFIG_ION_EXYNOS
@@ -125,259 +149,6 @@ extern struct ion_device *ion_exynos;
 #define VIDOSD_C(win, variant) (OSD_BASE(win, variant) + 0x08)
 #define VIDOSD_D(win, variant) (OSD_BASE(win, variant) + 0x0C)
 
-/**
- * struct s3c_fb_variant - fb variant information
- * @is_2443: Set if S3C2443/S3C2416 style hardware.
- * @nr_windows: The number of windows.
- * @vidtcon: The base for the VIDTCONx registers
- * @wincon: The base for the WINxCON registers.
- * @winmap: The base for the WINxMAP registers.
- * @keycon: The abse for the WxKEYCON registers.
- * @buf_start: Offset of buffer start registers.
- * @buf_size: Offset of buffer size registers.
- * @buf_end: Offset of buffer end registers.
- * @osd: The base for the OSD registers.
- * @palette: Address of palette memory, or 0 if none.
- * @has_prtcon: Set if has PRTCON register.
- * @has_shadowcon: Set if has SHADOWCON register.
- * @has_blendcon: Set if has BLENDCON register.
- * @has_alphacon: Set if has VIDWALPHA register.
- * @has_clksel: Set if VIDCON0 register has CLKSEL bit.
- * @has_fixvclk: Set if VIDCON1 register has FIXVCLK bits.
- */
-struct s3c_fb_variant {
-	unsigned int	is_2443:1;
-	unsigned short	nr_windows;
-	unsigned int	vidtcon;
-	unsigned short	wincon;
-	unsigned short	winmap;
-	unsigned short	keycon;
-	unsigned short	buf_start;
-	unsigned short	buf_end;
-	unsigned short	buf_size;
-	unsigned short	osd;
-	unsigned short	osd_stride;
-	unsigned short	palette[S3C_FB_MAX_WIN];
-
-	unsigned int	has_prtcon:1;
-	unsigned int	has_shadowcon:1;
-	unsigned int	has_blendcon:1;
-	unsigned int	has_alphacon:1;
-	unsigned int	has_clksel:1;
-	unsigned int	has_fixvclk:1;
-};
-
-/**
- * struct s3c_fb_win_variant
- * @has_osd_c: Set if has OSD C register.
- * @has_osd_d: Set if has OSD D register.
- * @has_osd_alpha: Set if can change alpha transparency for a window.
- * @palette_sz: Size of palette in entries.
- * @palette_16bpp: Set if palette is 16bits wide.
- * @osd_size_off: If != 0, supports setting up OSD for a window; the appropriate
- *                register is located at the given offset from OSD_BASE.
- * @valid_bpp: 1 bit per BPP setting to show valid bits-per-pixel.
- *
- * valid_bpp bit x is set if (x+1)BPP is supported.
- */
-struct s3c_fb_win_variant {
-	unsigned int	has_osd_c:1;
-	unsigned int	has_osd_d:1;
-	unsigned int	has_osd_alpha:1;
-	unsigned int	palette_16bpp:1;
-	unsigned short	osd_size_off;
-	unsigned short	palette_sz;
-	u32		valid_bpp;
-};
-
-/**
- * struct s3c_fb_driverdata - per-device type driver data for init time.
- * @variant: The variant information for this driver.
- * @win: The window information for each window.
- */
-struct s3c_fb_driverdata {
-	struct s3c_fb_variant	variant;
-	struct s3c_fb_win_variant *win[S3C_FB_MAX_WIN];
-};
-
-/**
- * struct s3c_fb_palette - palette information
- * @r: Red bitfield.
- * @g: Green bitfield.
- * @b: Blue bitfield.
- * @a: Alpha bitfield.
- */
-struct s3c_fb_palette {
-	struct fb_bitfield	r;
-	struct fb_bitfield	g;
-	struct fb_bitfield	b;
-	struct fb_bitfield	a;
-};
-
-#ifdef CONFIG_ION_EXYNOS
-struct s3c_dma_buf_data {
-	struct ion_handle *ion_handle;
-	struct dma_buf *dma_buf;
-	struct dma_buf_attachment *attachment;
-	struct sg_table *sg_table;
-	dma_addr_t dma_addr;
-	struct sync_fence *fence;
-};
-
-struct s3c_reg_data {
-	struct list_head	list;
-	u32			shadowcon;
-	u32			wincon[S3C_FB_MAX_WIN];
-	u32			win_rgborder[S3C_FB_MAX_WIN];
-	u32			winmap[S3C_FB_MAX_WIN];
-	u32			vidosd_a[S3C_FB_MAX_WIN];
-	u32			vidosd_b[S3C_FB_MAX_WIN];
-	u32			vidosd_c[S3C_FB_MAX_WIN];
-	u32			vidosd_d[S3C_FB_MAX_WIN];
-	u32			vidw_alpha0[S3C_FB_MAX_WIN];
-	u32			vidw_alpha1[S3C_FB_MAX_WIN];
-	u32			blendeq[S3C_FB_MAX_WIN - 1];
-	u32			vidw_buf_start[S3C_FB_MAX_WIN];
-	u32			vidw_buf_end[S3C_FB_MAX_WIN];
-	u32			vidw_buf_size[S3C_FB_MAX_WIN];
-	struct s3c_dma_buf_data	dma_buf_data[S3C_FB_MAX_WIN];
-	unsigned int		bandwidth;
-};
-#endif
-
-/**
- * struct s3c_fb_win - per window private data for each framebuffer.
- * @windata: The platform data supplied for the window configuration.
- * @parent: The hardware that this window is part of.
- * @fbinfo: Pointer pack to the framebuffer info for this window.
- * @varint: The variant information for this window.
- * @palette_buffer: Buffer/cache to hold palette entries.
- * @pseudo_palette: For use in TRUECOLOUR modes for entries 0..15/
- * @index: The window number of this window.
- * @palette: The bitfields for changing r/g/b into a hardware palette entry.
- */
-struct s3c_fb_win {
-	struct s3c_fb_pd_win	*windata;
-	struct s3c_fb		*parent;
-	struct fb_info		*fbinfo;
-	struct s3c_fb_palette	 palette;
-	struct s3c_fb_win_variant variant;
-
-	u32			*palette_buffer;
-	u32			 pseudo_palette[16];
-	unsigned int		 index;
-#ifdef CONFIG_ION_EXYNOS
-	struct s3c_dma_buf_data	dma_buf_data;
-	struct fb_var_screeninfo prev_var;
-	struct fb_fix_screeninfo prev_fix;
-#endif
-
-	int			fps;
-
-#ifdef CONFIG_FB_EXYNOS_FIMD_MC
-	int use;		/* use of widnow subdev in fimd */
-	int local;		/* use of local path gscaler to window in fimd */
-	struct media_pad pads[FIMD_PADS_NUM];	/* window's pad : 1 sink */
-	struct v4l2_subdev sd;		/* Take a window as a v4l2_subdevice */
-	int end_stream;
-#endif
-};
-
-/**
- * struct s3c_fb_vsync - vsync information
- * @wait:		a queue for processes waiting for vsync
- * @timestamp:		the time of the last vsync interrupt
- * @active:		whether userspace is requesting vsync notifications
- * @irq_refcount:	reference count for the underlying irq
- * @irq_lock:		mutex protecting the irq refcount and register
- * @thread:		notification-generating thread
- */
-struct s3c_fb_vsync {
-	wait_queue_head_t	wait;
-	ktime_t			timestamp;
-	bool			active;
-	int			irq_refcount;
-	struct mutex		irq_lock;
-	struct task_struct	*thread;
-};
-
-#ifdef CONFIG_DEBUG_FS
-#define S3C_FB_DEBUG_FIFO_TIMESTAMPS 32
-#define S3C_FB_DEBUG_REGS_SIZE 0x0280
-
-struct s3c_fb_debug {
-	ktime_t		fifo_timestamps[S3C_FB_DEBUG_FIFO_TIMESTAMPS];
-	unsigned int	num_timestamps;
-	unsigned int	first_timestamp;
-	u8		regs_at_underflow[S3C_FB_DEBUG_REGS_SIZE];
-};
-#endif
-
-/**
- * struct s3c_fb - overall hardware state of the hardware
- * @slock: The spinlock protection for this data sturcture.
- * @dev: The device that we bound to, for printing, etc.
- * @bus_clk: The clk (hclk) feeding our interface and possibly pixclk.
- * @lcd_clk: The clk (sclk) feeding pixclk.
- * @regs: The mapped hardware registers.
- * @variant: Variant information for this hardware.
- * @enabled: A bitmask of enabled hardware windows.
- * @output_on: Flag if the physical output is enabled.
- * @pdata: The platform configuration data passed with the device.
- * @windows: The hardware windows that have been claimed.
- * @irq_no: IRQ line number
- * @vsync_info: VSYNC-related information (count, queues...)
- */
-struct s3c_fb {
-	spinlock_t		slock;
-	struct device		*dev;
-	struct clk		*bus_clk;
-	struct clk		*lcd_clk;
-	void __iomem		*regs;
-	struct s3c_fb_variant	 variant;
-
-	bool			output_on;
-	struct mutex		output_lock;
-
-	struct s3c_fb_platdata	*pdata;
-	struct s3c_fb_win	*windows[S3C_FB_MAX_WIN];
-
-	int			 irq_no;
-	struct s3c_fb_vsync	 vsync_info;
-
-#ifdef CONFIG_ION_EXYNOS
-	struct ion_client	*fb_ion_client;
-
-	struct list_head	update_regs_list;
-	struct mutex		update_regs_list_lock;
-	struct kthread_worker	update_regs_worker;
-	struct task_struct	*update_regs_thread;
-	struct kthread_work	update_regs_work;
-
-	struct sw_sync_timeline *timeline;
-	int			timeline_max;
-#endif
-
-#ifdef CONFIG_FB_EXYNOS_FIMD_MC
-	struct exynos_md *md;
-	unsigned int win_index;
-#endif
-#ifdef CONFIG_FB_EXYNOS_FIMD_MC_WB
-	struct exynos_md *md_wb;
-	int use_wb;	/* use of fimd subdev for writeback */
-	int local_wb;	/* use of writeback path to gscaler in fimd */
-	struct media_pad pads_wb;	/* FIMD1's pad */
-	struct v4l2_subdev sd_wb;	/* Take a FIMD1 as a v4l2_subdevice */
-#endif
-
-#ifdef CONFIG_DEBUG_FS
-	struct dentry		*debug_dentry;
-	struct s3c_fb_debug	debug_data;
-#endif
-	struct exynos5_bus_mif_handle *fb_mif_handle;
-	struct exynos5_bus_int_handle *fb_int_handle;
-
-};
 
 static void s3c_fb_dump_registers(struct s3c_fb *sfb)
 {
@@ -1194,31 +965,35 @@ static int s3c_fb_pan_display(struct fb_var_screeninfo *var,
 static void s3c_fb_enable_irq(struct s3c_fb *sfb)
 {
 	void __iomem *regs = sfb->regs;
+
 	u32 irq_ctrl_reg;
-
 	pm_runtime_get_sync(sfb->dev);
-	irq_ctrl_reg = readl(regs + VIDINTCON0);
-
-	irq_ctrl_reg |= VIDINTCON0_INT_ENABLE;
-	irq_ctrl_reg |= VIDINTCON0_INT_FRAME;
+	if (!(TRUSTEDUI_MODE_VIDEO_SECURED & trustedui_get_current_mode())) {
+		irq_ctrl_reg = readl(regs + VIDINTCON0);
+		irq_ctrl_reg |= VIDINTCON0_INT_ENABLE;
+		irq_ctrl_reg |= VIDINTCON0_INT_FRAME;
 #ifdef CONFIG_DEBUG_FS
-	irq_ctrl_reg &= ~VIDINTCON0_FIFOLEVEL_MASK;
-	irq_ctrl_reg |= VIDINTCON0_FIFOLEVEL_EMPTY;
-	irq_ctrl_reg |= VIDINTCON0_INT_FIFO;
-	irq_ctrl_reg |= VIDINTCON0_FIFIOSEL_WINDOW0;
-	irq_ctrl_reg |= VIDINTCON0_FIFIOSEL_WINDOW1;
-	irq_ctrl_reg |= VIDINTCON0_FIFIOSEL_WINDOW2;
-	irq_ctrl_reg |= VIDINTCON0_FIFIOSEL_WINDOW3;
-	irq_ctrl_reg |= VIDINTCON0_FIFIOSEL_WINDOW4;
+		irq_ctrl_reg &= ~VIDINTCON0_FIFOLEVEL_MASK;
+		irq_ctrl_reg |= VIDINTCON0_FIFOLEVEL_EMPTY;
+		irq_ctrl_reg |= VIDINTCON0_INT_FIFO;
+		irq_ctrl_reg |= VIDINTCON0_FIFIOSEL_WINDOW0;
+		irq_ctrl_reg |= VIDINTCON0_FIFIOSEL_WINDOW1;
+		irq_ctrl_reg |= VIDINTCON0_FIFIOSEL_WINDOW2;
+		irq_ctrl_reg |= VIDINTCON0_FIFIOSEL_WINDOW3;
+		irq_ctrl_reg |= VIDINTCON0_FIFIOSEL_WINDOW4;
 #endif
 
-	irq_ctrl_reg &= ~VIDINTCON0_FRAMESEL0_MASK;
-	irq_ctrl_reg |= VIDINTCON0_FRAMESEL0_VSYNC;
-	irq_ctrl_reg &= ~VIDINTCON0_FRAMESEL1_MASK;
-	irq_ctrl_reg |= VIDINTCON0_FRAMESEL1_NONE;
+		irq_ctrl_reg &= ~VIDINTCON0_FRAMESEL0_MASK;
+		irq_ctrl_reg |= VIDINTCON0_FRAMESEL0_VSYNC;
+		irq_ctrl_reg &= ~VIDINTCON0_FRAMESEL1_MASK;
+		irq_ctrl_reg |= VIDINTCON0_FRAMESEL1_NONE;
 
-	writel(irq_ctrl_reg, regs + VIDINTCON0);
+		writel(irq_ctrl_reg, regs + VIDINTCON0);
+	} else {
+		printk("%s called during TUI session!\n", __func__);
+	}
 	pm_runtime_put_sync(sfb->dev);
+
 }
 
 /**
@@ -1228,24 +1003,31 @@ static void s3c_fb_enable_irq(struct s3c_fb *sfb)
 static void s3c_fb_disable_irq(struct s3c_fb *sfb)
 {
 	void __iomem *regs = sfb->regs;
+
 	u32 irq_ctrl_reg;
 
 	pm_runtime_get_sync(sfb->dev);
-	irq_ctrl_reg = readl(regs + VIDINTCON0);
+
+	if (!(TRUSTEDUI_MODE_VIDEO_SECURED & trustedui_get_current_mode())) {
+		irq_ctrl_reg = readl(regs + VIDINTCON0);
 
 #ifdef CONFIG_DEBUG_FS
-	irq_ctrl_reg &= VIDINTCON0_INT_FIFO;
+		irq_ctrl_reg &= VIDINTCON0_INT_FIFO;
 #endif
-	irq_ctrl_reg &= ~VIDINTCON0_INT_FRAME;
-	irq_ctrl_reg &= ~VIDINTCON0_INT_ENABLE;
+		irq_ctrl_reg &= ~VIDINTCON0_INT_FRAME;
+		irq_ctrl_reg &= ~VIDINTCON0_INT_ENABLE;
 
-	writel(irq_ctrl_reg, regs + VIDINTCON0);
+		writel(irq_ctrl_reg, regs + VIDINTCON0);
+	} else {
+		printk("%s called during TUI session!\n", __func__);
+	}
 	pm_runtime_put_sync(sfb->dev);
 }
 
-static void s3c_fb_activate_vsync(struct s3c_fb *sfb)
+void s3c_fb_activate_vsync(struct s3c_fb *sfb)
 {
 	int prev_refcount;
+
 
 	mutex_lock(&sfb->vsync_info.irq_lock);
 
@@ -1256,12 +1038,11 @@ static void s3c_fb_activate_vsync(struct s3c_fb *sfb)
 	mutex_unlock(&sfb->vsync_info.irq_lock);
 }
 
-static void s3c_fb_deactivate_vsync(struct s3c_fb *sfb)
+void s3c_fb_deactivate_vsync(struct s3c_fb *sfb)
 {
 	int new_refcount;
 
 	mutex_lock(&sfb->vsync_info.irq_lock);
-
 	new_refcount = --sfb->vsync_info.irq_refcount;
 	WARN_ON(new_refcount < 0);
 	if (!new_refcount)
@@ -1306,6 +1087,7 @@ static irqreturn_t s3c_fb_irq(int irq, void *dev_id)
 	spin_lock(&sfb->slock);
 
 #ifdef CONFIG_FB_EXYNOS_FIMD_MC
+
 	win_no = sfb->win_index;
 
 	if (sfb->windows[win_no]->end_stream) {
@@ -1349,19 +1131,23 @@ static irqreturn_t s3c_fb_irq(int irq, void *dev_id)
 		sfb->md->in_str_off = false;
 #endif
 
-	irq_sts_reg = readl(regs + VIDINTCON1);
+	if(!(TRUSTEDUI_MODE_VIDEO_SECURED & trustedui_get_current_mode())) {
+		irq_sts_reg = readl(regs + VIDINTCON1);
 
-	if (irq_sts_reg & VIDINTCON1_INT_FRAME) {
+		if (irq_sts_reg & VIDINTCON1_INT_FRAME) {
 
-		/* VSYNC interrupt, accept it */
-		writel(VIDINTCON1_INT_FRAME, regs + VIDINTCON1);
+			/* VSYNC interrupt, accept it */
+			writel(VIDINTCON1_INT_FRAME, regs + VIDINTCON1);
 
-		sfb->vsync_info.timestamp = timestamp;
-		wake_up_interruptible_all(&sfb->vsync_info.wait);
-	}
-	if (irq_sts_reg & VIDINTCON1_INT_FIFO) {
-		writel(VIDINTCON1_INT_FIFO, regs + VIDINTCON1);
-		s3c_fb_log_fifo_underflow_locked(sfb, timestamp);
+			sfb->vsync_info.timestamp = timestamp;
+			wake_up_interruptible_all(&sfb->vsync_info.wait);
+		}
+		if (irq_sts_reg & VIDINTCON1_INT_FIFO) {
+			writel(VIDINTCON1_INT_FIFO, regs + VIDINTCON1);
+			s3c_fb_log_fifo_underflow_locked(sfb, timestamp);
+		}
+	} else {
+		printk("%s called during TUI session!\n", __func__);
 	}
 
 	spin_unlock(&sfb->slock);
@@ -3961,12 +3747,18 @@ static int s3c_fb_disable(struct s3c_fb *sfb)
 		vidcon0 |= VIDCON0_ENVID;
 		vidcon0 &= ~VIDCON0_ENVID_F;
 		writel(vidcon0, sfb->regs + VIDCON0);
-	} else
+	} else {
 		dev_warn(sfb->dev, "ENVID not set while disabling fb");
-
-	if (!sfb->variant.has_clksel)
+	}
+	if (!sfb->variant.has_clksel) {
 		clk_disable(sfb->lcd_clk);
+	}
 
+	if ((TRUSTEDUI_MODE_OFF != trustedui_get_current_mode())) {
+		// wait until bit 0 is cleared
+		while (readl(sfb->regs + VIDCON0) & (VIDCON0_ENVID_F)) {
+		}
+	}
 	clk_disable(sfb->bus_clk);
 #ifdef CONFIG_ION_EXYNOS
 	iovmm_deactivate(&s5p_device_fimd1.dev);
@@ -4003,8 +3795,9 @@ static int s3c_fb_enable(struct s3c_fb *sfb)
 
 	clk_enable(sfb->bus_clk);
 
-	if (!sfb->variant.has_clksel)
+	if (!sfb->variant.has_clksel) {
 		clk_enable(sfb->lcd_clk);
+	}
 
 	/* setup gpio and output polarity controls */
 	pd->setup_gpio();
@@ -4085,9 +3878,9 @@ static int s3c_fb_runtime_suspend(struct device *dev)
 	struct platform_device *pdev = to_platform_device(dev);
 	struct s3c_fb *sfb = platform_get_drvdata(pdev);
 
-	if (!sfb->variant.has_clksel)
+	if (!sfb->variant.has_clksel) {
 		clk_disable(sfb->lcd_clk);
-
+	}
 	clk_disable(sfb->bus_clk);
 
 #ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ
@@ -4540,6 +4333,9 @@ late_initcall(s3c_fb_init);
 module_init(s3c_fb_init);
 #endif
 module_exit(s3c_fb_cleanup);
+
+EXPORT_SYMBOL(s3c_fb_deactivate_vsync);
+EXPORT_SYMBOL(s3c_fb_activate_vsync);
 
 MODULE_AUTHOR("Ben Dooks <ben@simtec.co.uk>");
 MODULE_DESCRIPTION("Samsung S3C SoC Framebuffer driver");
