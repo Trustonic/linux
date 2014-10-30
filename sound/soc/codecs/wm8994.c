@@ -911,7 +911,8 @@ static void vmid_dereference(struct snd_soc_codec *codec)
 	dev_dbg(codec->dev, "Dereferencing VMID, refcount is now %d\n",
 		wm8994->vmid_refcount);
 
-	if (wm8994->vmid_refcount == 0) {
+	/* This is nuked as restoration fails and we don't care about PM here */
+	if (wm8994->vmid_refcount == 0 && false) {
 		if (wm8994->hubs.lineout1_se)
 			snd_soc_update_bits(codec, WM8994_POWER_MANAGEMENT_3,
 					    WM8994_LINEOUT1N_ENA |
