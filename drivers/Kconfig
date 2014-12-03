@@ -144,8 +144,6 @@ source "drivers/devfreq/Kconfig"
 
 source "drivers/nfc/Kconfig"
 
-source "drivers/trustonic/Kconfig"
-
 source "drivers/mtk_wcn_combo/Kconfig"
 
 endmenu
