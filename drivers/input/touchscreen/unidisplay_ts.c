@@ -167,12 +167,13 @@ static int unidisplay_ts_thread(void *kthread)
 		if (pendown) {
 			u8 addr = 0x10;
 			memset(buf, 0, sizeof(buf));
-			if (!(TRUSTEDUI_MODE_INPUT_SECURED & trustedui_get_current_mode())) {
-			    ret = i2c_master_send(tsdata->client, &addr, 1);
-			}
-			else {
-			    ret = 0;
-			}
+#ifdef CONFIG_TRUSTONIC_TRUSTED_UI
+			if (TRUSTEDUI_MODE_INPUT_SECURED & trustedui_get_current_mode())
+                            ret = 0;
+			else
+#endif
+                            ret = i2c_master_send(tsdata->client, &addr, 1);
+
 			if (ret != 1) {
 				dev_err(&tsdata->client->dev,\
 				"Unable to write to i2c touchscreen\n");
@@ -180,12 +181,13 @@ static int unidisplay_ts_thread(void *kthread)
 				timeout = MAX_SCHEDULE_TIMEOUT;
 				goto wait_event;
 			}
-			if (!(TRUSTEDUI_MODE_INPUT_SECURED & trustedui_get_current_mode())) {
-			    ret = i2c_master_recv(tsdata->client, buf, 9);
-			}
-			else {
-			    ret = 0;
-			}
+#ifdef CONFIG_TRUSTONIC_TRUSTED_UI
+                        if (TRUSTEDUI_MODE_INPUT_SECURED & trustedui_get_current_mode())
+                            ret = 0;
+                        else
+#endif
+                            ret = i2c_master_recv(tsdata->client, buf, 9);
+
 			if (ret != 9) {
 				dev_err(&tsdata->client->dev,\
 				"Unable to read to i2c touchscreen!\n");

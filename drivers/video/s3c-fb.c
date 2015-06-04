@@ -84,6 +84,7 @@
 } while (0)
 #endif /* FB_S3C_DEBUG_REGWRITE */
 
+#ifdef CONFIG_TRUSTONIC_TRUSTED_UI
 #undef readl
 #define readl(c)                                                           \
    ({ u32 __v = 0;                                                    \
@@ -105,6 +106,7 @@
     })
 
 #define FASTCALL_OWNER_SIP 0x81000000
+#endif
 
 #define VSYNC_TIMEOUT_MSEC 50
 
@@ -968,7 +970,9 @@ static void s3c_fb_enable_irq(struct s3c_fb *sfb)
 
 	u32 irq_ctrl_reg;
 	pm_runtime_get_sync(sfb->dev);
+#ifdef CONFIG_TRUSTONIC_TRUSTED_UI
 	if (!(TRUSTEDUI_MODE_VIDEO_SECURED & trustedui_get_current_mode())) {
+#endif
 		irq_ctrl_reg = readl(regs + VIDINTCON0);
 		irq_ctrl_reg |= VIDINTCON0_INT_ENABLE;
 		irq_ctrl_reg |= VIDINTCON0_INT_FRAME;
@@ -989,9 +993,11 @@ static void s3c_fb_enable_irq(struct s3c_fb *sfb)
 		irq_ctrl_reg |= VIDINTCON0_FRAMESEL1_NONE;
 
 		writel(irq_ctrl_reg, regs + VIDINTCON0);
+#ifdef CONFIG_TRUSTONIC_TRUSTED_UI
 	} else {
 		printk("%s called during TUI session!\n", __func__);
 	}
+#endif
 	pm_runtime_put_sync(sfb->dev);
 
 }
@@ -1008,7 +1014,9 @@ static void s3c_fb_disable_irq(struct s3c_fb *sfb)
 
 	pm_runtime_get_sync(sfb->dev);
 
+#ifdef CONFIG_TRUSTONIC_TRUSTED_UI
 	if (!(TRUSTEDUI_MODE_VIDEO_SECURED & trustedui_get_current_mode())) {
+#endif
 		irq_ctrl_reg = readl(regs + VIDINTCON0);
 
 #ifdef CONFIG_DEBUG_FS
@@ -1018,9 +1026,11 @@ static void s3c_fb_disable_irq(struct s3c_fb *sfb)
 		irq_ctrl_reg &= ~VIDINTCON0_INT_ENABLE;
 
 		writel(irq_ctrl_reg, regs + VIDINTCON0);
+#ifdef CONFIG_TRUSTONIC_TRUSTED_UI
 	} else {
 		printk("%s called during TUI session!\n", __func__);
 	}
+#endif
 	pm_runtime_put_sync(sfb->dev);
 }
 
@@ -1131,7 +1141,9 @@ static irqreturn_t s3c_fb_irq(int irq, void *dev_id)
 		sfb->md->in_str_off = false;
 #endif
 
+#ifdef CONFIG_TRUSTONIC_TRUSTED_UI
 	if(!(TRUSTEDUI_MODE_VIDEO_SECURED & trustedui_get_current_mode())) {
+#endif
 		irq_sts_reg = readl(regs + VIDINTCON1);
 
 		if (irq_sts_reg & VIDINTCON1_INT_FRAME) {
@@ -1146,9 +1158,11 @@ static irqreturn_t s3c_fb_irq(int irq, void *dev_id)
 			writel(VIDINTCON1_INT_FIFO, regs + VIDINTCON1);
 			s3c_fb_log_fifo_underflow_locked(sfb, timestamp);
 		}
+#ifdef CONFIG_TRUSTONIC_TRUSTED_UI
 	} else {
 		printk("%s called during TUI session!\n", __func__);
 	}
+#endif
 
 	spin_unlock(&sfb->slock);
 	return IRQ_HANDLED;
@@ -3750,15 +3764,14 @@ static int s3c_fb_disable(struct s3c_fb *sfb)
 	} else {
 		dev_warn(sfb->dev, "ENVID not set while disabling fb");
 	}
-	if (!sfb->variant.has_clksel) {
+	if (!sfb->variant.has_clksel)
 		clk_disable(sfb->lcd_clk);
-	}
 
-	if ((TRUSTEDUI_MODE_OFF != trustedui_get_current_mode())) {
+#ifdef CONFIG_TRUSTONIC_TRUSTED_UI
+	if ((TRUSTEDUI_MODE_OFF != trustedui_get_current_mode()))
 		// wait until bit 0 is cleared
-		while (readl(sfb->regs + VIDCON0) & (VIDCON0_ENVID_F)) {
-		}
-	}
+		while (readl(sfb->regs + VIDCON0) & (VIDCON0_ENVID_F));
+#endif
 	clk_disable(sfb->bus_clk);
 #ifdef CONFIG_ION_EXYNOS
 	iovmm_deactivate(&s5p_device_fimd1.dev);
@@ -3795,9 +3808,8 @@ static int s3c_fb_enable(struct s3c_fb *sfb)
 
 	clk_enable(sfb->bus_clk);
 
-	if (!sfb->variant.has_clksel) {
+	if (!sfb->variant.has_clksel)
 		clk_enable(sfb->lcd_clk);
-	}
 
 	/* setup gpio and output polarity controls */
 	pd->setup_gpio();
@@ -3878,9 +3890,8 @@ static int s3c_fb_runtime_suspend(struct device *dev)
 	struct platform_device *pdev = to_platform_device(dev);
 	struct s3c_fb *sfb = platform_get_drvdata(pdev);
 
-	if (!sfb->variant.has_clksel) {
+	if (!sfb->variant.has_clksel)
 		clk_disable(sfb->lcd_clk);
-	}
 	clk_disable(sfb->bus_clk);
 
 #ifdef CONFIG_ARM_EXYNOS5_BUS_DEVFREQ

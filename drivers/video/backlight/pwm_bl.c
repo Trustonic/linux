@@ -51,15 +51,19 @@ static int pwm_backlight_update_status(struct backlight_device *bl)
 		brightness = pb->notify(pb->dev, brightness);
 
 	if (brightness == 0) {
+#ifdef CONFIG_TRUSTONIC_TRUSTED_UI
 		/* Turn OFF the backlight only when TUI is OFF */
-		if(TRUSTEDUI_MODE_OFF == trustedui_get_current_mode()) {
+		if (TRUSTEDUI_MODE_OFF == trustedui_get_current_mode()) {
+#endif
 			pwm_config(pb->pwm, 0, pb->period);
 			pwm_disable(pb->pwm);
+#ifdef CONFIG_TRUSTONIC_TRUSTED_UI
 		} else {
 			/* Keep backlight ON */
 			printk("%s keep backlight ON tui_mode=0x%X \n", __func__,
 					trustedui_get_current_mode());
 		}
+#endif
 	} else {
 		brightness = pb->lth_brightness +
 			(brightness * (pb->period - pb->lth_brightness) / max);
