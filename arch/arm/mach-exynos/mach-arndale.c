@@ -525,16 +525,16 @@ static void __init arndale_fixup(struct tag *tags, char **cmdline, struct meminf
       mi->bank[0].size = 1024 * SZ_1M;
 
       mi->bank[1].start = 0x80000000;
-      /* 1024 - 32 - 8 MB == 984 MB             */
+      /* 1024 - 32 - 12 MB == 980 MB            */
       /* |             |                        */
-      /* |-------------| 0xBD80 0000 TUI buffer */
-      /* |   8 MB      |                        */
+      /* |-------------| 0xBD40 0000 TUI buffer */
+      /* |  12 MB      |                        */
       /* |-------------| 0xBE00 0000 t-base     */
       /* |             |                        */
       /* |  32 MB      |                        */
       /* |             |                        */
       /* |-------------| 0xC000 0000 end of DDR */
-      mi->bank[1].size = 984 * SZ_1M;
+      mi->bank[1].size = 980 * SZ_1M;
 
       mi->nr_banks = 2;
 }
